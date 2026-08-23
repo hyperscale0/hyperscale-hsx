@@ -37,6 +37,8 @@ jobs:
 
       # No NODE_AUTH_TOKEN and no NPM_TOKEN secret anywhere: the registry
       # trusts this workflow file by name, and the OIDC token is minted per run.
+      # No --provenance flag either: npm refuses it while the source repository
+      # is private (E422), and attaches provenance on its own once it is public.
       #
       # `latest` is passed explicitly rather than left to npm's default. npm
       # refuses to publish a prerelease under the default tag (publish.js
