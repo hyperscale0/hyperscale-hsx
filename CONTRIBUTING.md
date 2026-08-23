@@ -98,10 +98,10 @@ Small and focused beats large and comprehensive. Say what you were trying to
 compile and why the compiler would not let you; a fixture that fails without
 the change is the strongest thing you can put in an issue.
 
-**In the rare case Hyperscale accepts a pull request, the author signs a CLA
-first.** The AGPL alone does not let Hyperscale LLC offer the contribution
-under the commercial license it sells alongside it, and the AGPL says nothing
-about patents, so the patent terms live in the CLA too.
+**In the rare case Hyperscale accepts a pull request, the author signs
+[the CLA](./CLA.md) first.** The AGPL alone does not let Hyperscale LLC offer
+the contribution under the commercial license it sells alongside it, and the
+AGPL says nothing about patents, so the patent terms live in the CLA too.
 
 By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 Found a vulnerability? Do not open an issue: [SECURITY.md](./SECURITY.md) has

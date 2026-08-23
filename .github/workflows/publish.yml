@@ -47,13 +47,3 @@ jobs:
       # `npm install` on the newest release with no manual step.
       - name: Publish
         run: npm publish --tag latest --access public
-
-      # Best effort: the OIDC token authenticates `npm publish`, not dist-tag
-      # writes. When the registry refuses it, `latest` is already correct and
-      # only the `@alpha` alias lags.
-      - name: Point the alpha tag at this release
-        run: |
-          PKG=$(node -p "require('./package.json').name")
-          VERSION=$(node -p "require('./package.json').version")
-          npm dist-tag add "$PKG@$VERSION" alpha \
-            || echo "alpha tag not set (needs account auth); latest is correct"

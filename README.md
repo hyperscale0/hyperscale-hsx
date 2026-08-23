@@ -28,9 +28,8 @@ npm install @hyperscale0/hsx
 ```
 
 Every release before 1.0.0 is an alpha, and `latest` follows the newest one, so
-a bare install gets it. `npm install @hyperscale0/hsx@alpha` is the explicit
-form and resolves to the same version. Pin an exact version if you need one:
-until 1.0.0 a change to the surface ships as a minor bump, not a major.
+a bare install gets it. Pin an exact version if you need one: until 1.0.0 a
+change to the surface ships as a minor bump, not a major.
 
 ## A program
 
@@ -134,8 +133,8 @@ exported as `HSX_IR_VERSION`. A consumer reads that one integer to decide
 whether it understands the document. It moves only when the emitted IR shape
 changes in a way a consumer must notice.
 
-**Package version** is this package's semver, currently `1.0.0-alpha.1`,
-published only under the `alpha` dist-tag. It moves whenever the compiler
+**Package version** is this package's semver, currently `1.0.0-alpha.2`,
+published to `latest`. It moves whenever the compiler
 changes, including changes that only affect a diagnostic's wording.
 
 IR version 1 is unstable until the package reaches 1.0.0. Until then an alpha
