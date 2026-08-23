@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-alpha.2",
   "description": "The HSX language: a compiler from a textual description of a financial product's money movement to the HSX-JSON IR.",
   "keywords": [
     "hsx",
@@ -29,7 +29,7 @@
   "module": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {
-    "hsx": "./bin/hsx.ts"
+    "hsx": "./dist/bin/hsx.js"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -53,12 +53,11 @@
     "node": ">=22.0.0"
   },
   "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "bun test && tsc -p tsconfig.json",
+    "check": "bun test && tsc -p tsconfig.json && bun run build && bun scripts/check-bin.ts",
     "postpack": "bun scripts/pack-exports.ts restore",
     "prepack": "bun run build && bun scripts/pack-exports.ts apply",
     "test": "bun test",

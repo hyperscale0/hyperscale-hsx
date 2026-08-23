@@ -24,12 +24,13 @@ executed.
 ## Install
 
 ```bash
-npm install @hyperscale0/hsx@alpha
+npm install @hyperscale0/hsx
 ```
 
-The `@alpha` tag is not optional. There is no `latest` tag before 1.0.0, so a
-bare `npm install @hyperscale0/hsx` fails loudly rather than quietly installing
-something you did not choose.
+Every release before 1.0.0 is an alpha, and `latest` follows the newest one, so
+a bare install gets it. `npm install @hyperscale0/hsx@alpha` is the explicit
+form and resolves to the same version. Pin an exact version if you need one:
+until 1.0.0 a change to the surface ships as a minor bump, not a major.
 
 ## A program
 

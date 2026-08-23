@@ -29,6 +29,12 @@ jobs:
       - name: Build
         run: bun run build
 
+      # alpha.1 published a `bin` pointing at TypeScript, so every install got
+      # a node_modules/.bin link Node refused to run. This asserts the built
+      # target exists, is .js, and carries the node shebang.
+      - name: Every bin target is node-executable
+        run: bun scripts/check-bin.ts
+
       # The CLI is the surface most likely to break without a test noticing,
       # so CI exercises both subcommands against a real file, and pins the
       # exit code of the example that is refused on purpose.

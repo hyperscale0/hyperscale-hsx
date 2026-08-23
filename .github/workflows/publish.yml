@@ -37,5 +37,21 @@ jobs:
 
       # No NODE_AUTH_TOKEN and no NPM_TOKEN secret anywhere: the registry
       # trusts this workflow file by name, and the OIDC token is minted per run.
+      #
+      # `latest` is passed explicitly rather than left to npm's default. npm
+      # refuses to publish a prerelease under the default tag (publish.js
+      # checks `isDefaultTag`), and moving a dist-tag after the fact needs an
+      # interactive 2FA code. Publishing straight to `latest` keeps a bare
+      # `npm install` on the newest release with no manual step.
       - name: Publish
-        run: npm publish --tag alpha --access public --provenance
+        run: npm publish --tag latest --access public --provenance
+
+      # Best effort: the OIDC token authenticates `npm publish`, not dist-tag
+      # writes. When the registry refuses it, `latest` is already correct and
+      # only the `@alpha` alias lags.
+      - name: Point the alpha tag at this release
+        run: |
+          PKG=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          npm dist-tag add "$PKG@$VERSION" alpha \
+            || echo "alpha tag not set (needs account auth); latest is correct"

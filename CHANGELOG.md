@@ -11,6 +11,16 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-alpha.2] - 2026-08-23
+
+### Fixed
+
+- `bin` points at the built JavaScript; alpha.1's registry metadata pointed at
+  TypeScript source. npm builds the packument from package.json as it sits on
+  disk after `postpack`, so the pack-time rewrite never reached `bin`, and
+  every install linked `.bin/hsx` to `bin/hsx.ts`, which Node refuses to
+  execute.
+
 ### Changed
 
 - Licensed AGPL-3.0-only with a commercial license from Hyperscale LLC;
@@ -55,5 +65,6 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.1...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.2...HEAD
+[1.0.0-alpha.2]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.1...v1.0.0-alpha.2
 [1.0.0-alpha.1]: https://github.com/hyperscale0/hyperscale-hsx/releases/tag/v1.0.0-alpha.1
