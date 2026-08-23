@@ -44,7 +44,7 @@ jobs:
       # interactive 2FA code. Publishing straight to `latest` keeps a bare
       # `npm install` on the newest release with no manual step.
       - name: Publish
-        run: npm publish --tag latest --access public --provenance
+        run: npm publish --tag latest --access public
 
       # Best effort: the OIDC token authenticates `npm publish`, not dist-tag
       # writes. When the registry refuses it, `latest` is already correct and
