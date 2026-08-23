@@ -1,0 +1,28 @@
+program comic_den "ComicDen"
+
+import { swap } from "settlement"
+
+party hind: person
+party tariq: person
+
+settlement trade = swap {
+  between: [hind, tariq]
+  amounts {
+    hind: hindPays: money(SAR)
+    tariq: tariqPays: money(SAR)
+  }
+  fees {
+    hind: hindFee: money(SAR)
+    tariq: tariqFee: money(SAR)
+  }
+  release: port confirm_exchange
+  dispute: port resolve_trade within P14D
+}
+
+port confirm_exchange {
+  allowed: [hind, tariq]
+}
+
+port resolve_trade {
+  allowed: [hind, tariq]
+}

@@ -1,0 +1,67 @@
+// A complete small product: a tutoring marketplace.
+//
+// Three settlements, three different jobs:
+//
+//   lesson       a student's payment is held until the tutor confirms the
+//                lesson happened; the platform's 8% comes out of the payout
+//   kit_deposit  the tutor's equipment deposit is a reservation on the
+//                student's own account, claimed on damage or returned intact
+//   tutor_payout the marketplace's weekly pool, split between the two tutors
+//                who ran the sessions, with the remainder going to the lead
+//
+// Everything a caller can decide goes through a port, and every port names
+// exactly who may answer it.
+
+program study_hall "Study hall"
+
+import { held_payment, deposit, pooled_split } from "settlement"
+
+party student:     person
+party tutor:       business
+party lead_tutor:  business
+party school:      business
+
+asset lesson_kit: good { title_transfer: on_platform }
+
+settlement lesson = held_payment {
+  payer:   student
+  payee:   tutor
+  amount:  lessonFee: money(SAR)
+  fees { tutor: 8% }
+  release: port confirm_lesson | at(lessonEndsAt)
+}
+
+settlement kit_deposit = deposit {
+  payer:  student
+  holder: tutor
+  amount: kitDeposit: money(SAR)
+  claim:  port assess_kit
+  return: port release_kit
+}
+
+settlement tutor_payout = pooled_split {
+  payer:      school
+  amount:     weeklyPool: money(SAR)
+  payout_due: payoutDate
+  split { lead_tutor: 55%, tutor: 45%, remainder_to: lead_tutor }
+}
+
+// The tutor confirms the lesson happened. If nobody answers, `at(lessonEndsAt)`
+// releases the money to the tutor on the stored date: inaction resolves in the
+// direction the parties already agreed on, instead of stranding the payment.
+port confirm_lesson {
+  allowed: [tutor]
+  shape {
+    kitId:       id(lesson_kit)
+    lessonNotes: text
+  }
+}
+
+port assess_kit {
+  allowed: [tutor]
+  shape { damageReport: text }
+}
+
+port release_kit {
+  allowed: [tutor]
+}

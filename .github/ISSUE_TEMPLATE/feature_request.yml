@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a change to the language, the diagnostics, or the emitted IR.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        HSX is small on purpose. The bar for a new keyword or a new archetype is
+        high: it has to describe a settlement shape the existing nine cannot,
+        and it has to lower to money events the runtime already understands.
+        Proposals that make an existing program shorter are easier to land than
+        proposals that make a new program possible.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The program you cannot write today
+      description: Show the source you want to write, or the source you have to write instead.
+      render: hsx
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should change
+      description: Which stage moves. Lexer, grammar, checker, lowering, or the IR itself.
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: What breaks
+      description: >
+        Does an existing program change meaning, change verdict, or lower to
+        different money events? If the emitted IR changes shape, say whether
+        HSX_IR_VERSION has to move.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried first
+      description: Which existing archetype or clause came closest, and where it fell short.

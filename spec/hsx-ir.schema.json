@@ -1,0 +1,522 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hyperscale0/hyperscale-hsx/spec/hsx-ir.schema.json",
+  "title": "HSX compile artifacts",
+  "description": "What `compile()` produces when the verdict is `valid` or `warning`, and what `hsx build` writes: the HSX-JSON IR document a runtime executes, plus the congruent Business Frame that describes the same product in business terms. This schema covers what the compiler EMITS. A runtime may accept a wider grammar; nothing the compiler emits may fall outside this file.",
+  "type": "object",
+  "required": ["document", "frame"],
+  "additionalProperties": false,
+  "properties": {
+    "document": { "$ref": "#/$defs/document" },
+    "frame": { "$ref": "#/$defs/frame" }
+  },
+
+  "$defs": {
+    "snakeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 48,
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "camelName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 48,
+      "pattern": "^[a-z][A-Za-z0-9]*$"
+    },
+    "endpoint": {
+      "description": "A party name, or one of the two endpoints every settlement has without declaring them: `platform` and `escrow`.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 48
+    },
+    "isoDuration": {
+      "description": "A fixed ISO-8601 duration. Calendar months never appear: they drift, so they cannot anchor an exact money deadline.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 24,
+      "pattern": "^P([0-9]+[WDHMS]|T[0-9]+[HMS])"
+    },
+    "prose": { "type": "string", "minLength": 1, "maxLength": 400 },
+
+    "document": {
+      "title": "HSX-JSON IR document",
+      "description": "One compiled program. Every settlement in the source becomes one noun; every noun carries its money fields, its conservation partitions, and one verb per admissible lifecycle step.",
+      "type": "object",
+      "required": ["hsx", "nouns", "product", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "hsx": {
+          "description": "The IR format version, exported as `HSX_IR_VERSION`. A consumer reads this integer to decide whether it understands the document.",
+          "const": 1
+        },
+        "product": {
+          "description": "The program name from the `program` header.",
+          "$ref": "#/$defs/snakeName"
+        },
+        "title": {
+          "description": "The program's human title, from the header string or derived from its name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "subjects": {
+          "description": "One entry per declared asset: the non-money thing the settlements are about.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["kind", "title", "value"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "$ref": "#/$defs/snakeName" },
+              "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+              "value": { "enum": ["none", "optional", "required"] }
+            }
+          }
+        },
+        "nouns": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/noun" }
+        }
+      }
+    },
+
+    "noun": {
+      "description": "One lowered settlement.",
+      "type": "object",
+      "required": ["id", "summary", "title", "verbs"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The settlement's own name. Settlement names are noun ids; nothing renames them.",
+          "$ref": "#/$defs/snakeName"
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "desc": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "escrow": {
+          "description": "Present and true when this settlement takes custody of money in its own escrow account.",
+          "const": true
+        },
+        "distinctParties": {
+          "description": "Present and true when two of this settlement's roles must be different parties at runtime.",
+          "const": true
+        },
+        "actors": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/snakeName" },
+          "additionalProperties": { "enum": ["payer", "beneficiary", "party"] }
+        },
+        "fields": {
+          "description": "Every value an instance stores. `money` is a positive minor-unit integer; `date` is required, `date?` optional.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/camelName" },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["desc", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "desc": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "type": { "enum": ["money", "date", "date?"] }
+            }
+          }
+        },
+        "partitions": {
+          "description": "Conservation laws over stored amounts: the piece fields sum exactly to the total field, proven at create admission before any money moves.",
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["pieces", "total"],
+            "additionalProperties": false,
+            "properties": {
+              "pieces": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 12,
+                "items": { "$ref": "#/$defs/camelName" }
+              },
+              "total": { "$ref": "#/$defs/camelName" }
+            }
+          }
+        },
+        "verbs": {
+          "description": "One entry per admissible lifecycle step. `create` is always present and is the only verb with no `from`.",
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/snakeName" },
+          "additionalProperties": { "$ref": "#/$defs/verb" }
+        }
+      }
+    },
+
+    "verb": {
+      "type": "object",
+      "required": ["summary", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "description": "States this verb may run in. Absent on `create`.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/snakeName" }
+        },
+        "to": {
+          "description": "The state the instance is in once this verb succeeds.",
+          "$ref": "#/$defs/snakeName"
+        },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "moneyEvent": {
+          "description": "The Business Frame money event this verb's moves belong to.",
+          "$ref": "#/$defs/snakeName"
+        },
+        "moves": {
+          "description": "The ledger operations this verb performs, in order, as one atomic batch.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/move" }
+        },
+        "due": {
+          "description": "The verb runs when the stored date in `field` (plus `offset`) arrives, under the named rule.",
+          "type": "object",
+          "required": ["field"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "$ref": "#/$defs/camelName" },
+            "rule": { "$ref": "#/$defs/snakeName" },
+            "offset": { "$ref": "#/$defs/isoDuration" }
+          }
+        },
+        "deadline": {
+          "description": "The verb stops being admissible once the stored date in `field` (plus `offset`) has passed.",
+          "type": "object",
+          "required": ["field"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "$ref": "#/$defs/camelName" },
+            "offset": { "$ref": "#/$defs/isoDuration" }
+          }
+        },
+        "setsAt": {
+          "description": "Running this verb stamps `field` with now plus `offset`, arming a later deadline.",
+          "type": "object",
+          "required": ["field", "offset"],
+          "additionalProperties": false,
+          "properties": {
+            "field": { "$ref": "#/$defs/camelName" },
+            "offset": { "$ref": "#/$defs/isoDuration" }
+          }
+        },
+        "port": {
+          "description": "The verb is a decision port: only these actors may call it, and the answer comes from the tenant's own backend.",
+          "type": "object",
+          "required": ["allowed"],
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/snakeName" }
+            }
+          }
+        },
+        "requiresDrainedAccount": {
+          "description": "The verb is admissible only when the settlement's escrow account holds nothing, so a terminal state can never strand custody.",
+          "type": "object",
+          "required": ["path"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "const": "refs.escrowAccountId" }
+          }
+        }
+      }
+    },
+
+    "move": {
+      "description": "One ledger operation. `create` transfers money; `reserve` places a hold; `post` captures a reservation; `void` releases one.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["amount", "from", "key", "operation", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": { "const": "create" },
+            "key": { "$ref": "#/$defs/snakeName" },
+            "amount": { "$ref": "#/$defs/camelName" },
+            "from": { "$ref": "#/$defs/endpoint" },
+            "to": { "$ref": "#/$defs/endpoint" },
+            "moneyEvent": { "$ref": "#/$defs/snakeName" },
+            "clawbackOf": {
+              "description": "This transfer reverses the named earlier reservation.",
+              "$ref": "#/$defs/snakeName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["amount", "from", "key", "operation", "to"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": { "const": "reserve" },
+            "key": { "$ref": "#/$defs/snakeName" },
+            "amount": { "$ref": "#/$defs/camelName" },
+            "from": { "$ref": "#/$defs/endpoint" },
+            "to": { "$ref": "#/$defs/endpoint" },
+            "moneyEvent": { "$ref": "#/$defs/snakeName" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["key", "operation", "reservation"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": { "const": "post" },
+            "key": { "$ref": "#/$defs/snakeName" },
+            "reservation": { "$ref": "#/$defs/snakeName" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["key", "operation", "reservation"],
+          "additionalProperties": false,
+          "properties": {
+            "operation": { "const": "void" },
+            "key": { "$ref": "#/$defs/snakeName" },
+            "reservation": { "$ref": "#/$defs/snakeName" },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 120 }
+          }
+        }
+      ]
+    },
+
+    "frame": {
+      "title": "Business Frame",
+      "description": "The same product stated in business terms, congruent with the document by construction: every money movement in the IR is covered by exactly one money event here.",
+      "type": "object",
+      "required": [
+        "actors",
+        "confidence",
+        "conservationGroups",
+        "design",
+        "feePolicy",
+        "fees",
+        "headline",
+        "mechanics",
+        "moneyEvents",
+        "offPlatform",
+        "openQuestions",
+        "rules",
+        "subjects",
+        "summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "headline": { "$ref": "#/$defs/prose" },
+        "summary": { "$ref": "#/$defs/prose" },
+        "confidence": {
+          "description": "Always `high`: a compiled frame is derived, not inferred.",
+          "const": "high"
+        },
+        "mechanics": {
+          "description": "The commercial shapes this program's archetypes add up to.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "credit",
+              "escrow",
+              "insurance",
+              "marketplace",
+              "recurring_billing"
+            ]
+          }
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "label", "maxCount", "minCount", "role"],
+            "additionalProperties": false,
+            "properties": {
+              "key": { "$ref": "#/$defs/snakeName" },
+              "label": { "$ref": "#/$defs/prose" },
+              "minCount": { "type": "integer", "minimum": 0 },
+              "maxCount": { "type": "integer", "minimum": 1 },
+              "role": {
+                "enum": [
+                  "payer",
+                  "beneficiary",
+                  "provider",
+                  "holder",
+                  "platform"
+                ]
+              }
+            }
+          }
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "title"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "$ref": "#/$defs/snakeName" },
+              "title": { "$ref": "#/$defs/prose" }
+            }
+          }
+        },
+        "moneyEvents": {
+          "type": "array",
+          "maxItems": 14,
+          "items": { "$ref": "#/$defs/moneyEvent" }
+        },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rule" }
+        },
+        "fees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "on", "structure"],
+            "additionalProperties": false,
+            "properties": {
+              "label": { "$ref": "#/$defs/prose" },
+              "on": { "$ref": "#/$defs/prose" },
+              "structure": { "$ref": "#/$defs/prose" }
+            }
+          }
+        },
+        "feePolicy": { "enum": ["defined", "none"] },
+        "design": {
+          "description": "One line per lowered settlement, saying what the compiler decided and why.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/prose" }
+        },
+        "offPlatform": {
+          "description": "What changes hands outside the platform. Money never appears here.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "why"],
+            "additionalProperties": false,
+            "properties": {
+              "label": { "$ref": "#/$defs/prose" },
+              "why": { "$ref": "#/$defs/prose" }
+            }
+          }
+        },
+        "conservationGroups": {
+          "description": "Always empty from the compiler: conservation is proven on the noun's `partitions`, not restated here.",
+          "type": "array",
+          "maxItems": 0
+        },
+        "openQuestions": {
+          "description": "Always empty from the compiler: a program that left a question open would not have compiled.",
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+
+    "moneyEvent": {
+      "description": "One movement of money, named so a rule can gate it and a person can read it.",
+      "type": "object",
+      "required": [
+        "allocationTotalBps",
+        "amount",
+        "amountDependencies",
+        "amountMode",
+        "amountSchedule",
+        "distribution",
+        "fromActor",
+        "key",
+        "kind",
+        "label",
+        "occurrence",
+        "timing",
+        "toActor",
+        "trigger"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/snakeName" },
+        "kind": {
+          "enum": [
+            "charge",
+            "hold",
+            "installment",
+            "payout",
+            "penalty",
+            "premium",
+            "refund"
+          ]
+        },
+        "label": { "$ref": "#/$defs/prose" },
+        "trigger": { "$ref": "#/$defs/prose" },
+        "amount": {
+          "description": "The amount in words. The exact arithmetic lives on the noun's fields and partitions.",
+          "$ref": "#/$defs/prose"
+        },
+        "fromActor": { "$ref": "#/$defs/endpoint" },
+        "toActor": { "$ref": "#/$defs/endpoint" },
+        "occurrence": { "enum": ["once", "repeatable"] },
+        "timing": { "enum": ["external_schedule", "on_lifecycle"] },
+        "amountMode": { "const": "fixed" },
+        "distribution": { "const": "single" },
+        "allocationTotalBps": { "const": 0 },
+        "amountDependencies": { "type": "array", "maxItems": 0 },
+        "amountSchedule": { "type": "array", "maxItems": 0 }
+      }
+    },
+
+    "rule": {
+      "description": "A condition on the product: what must be true before a money event may run.",
+      "type": "object",
+      "required": [
+        "allowedActors",
+        "detail",
+        "dueDriven",
+        "enforcement",
+        "gatesEvent",
+        "key",
+        "kind",
+        "label",
+        "tenantTunable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "$ref": "#/$defs/snakeName" },
+        "kind": { "enum": ["deadline", "release_condition"] },
+        "label": { "$ref": "#/$defs/prose" },
+        "detail": { "$ref": "#/$defs/prose" },
+        "allowedActors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/snakeName" }
+        },
+        "gatesEvent": {
+          "description": "The money event this rule gates, or null when it gates the lifecycle rather than one movement.",
+          "anyOf": [{ "$ref": "#/$defs/snakeName" }, { "type": "null" }]
+        },
+        "dueDriven": {
+          "description": "True when a stored date decides the rule, false when a decision port does.",
+          "type": "boolean"
+        },
+        "enforcement": {
+          "description": "`tenant_app` means the tenant's own backend answers; `platform` means the runtime decides without asking.",
+          "enum": ["platform", "tenant_app"]
+        },
+        "tenantTunable": {
+          "description": "Always false from the compiler: the source is the only place these terms change.",
+          "const": false
+        }
+      }
+    }
+  }
+}

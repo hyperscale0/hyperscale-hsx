@@ -1,0 +1,24 @@
+// Construction retention: the contractor holds part of every subcontractor
+// invoice until the milestone is approved or the defects-liability period
+// ends. The date is the DEFAULT exit, not a second decider. Inaction
+// resolves in the protected party's favour, which is the one promise a
+// tenant-called port can never make.
+
+program retention_holdback "Construction retention"
+
+import { held_payment } from "settlement"
+
+party contractor:    business
+party subcontractor: business
+
+settlement retention = held_payment {
+  payer:  contractor
+  payee:  subcontractor
+  amount: retainedAmount: money(SAR)
+  release: port approve_release | at(releaseDueAt)   // the anchor releases it
+  on_cancel(funded) { contractor: 100% }
+}
+
+port approve_release {
+  allowed: [contractor]
+}

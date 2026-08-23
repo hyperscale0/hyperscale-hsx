@@ -1,0 +1,76 @@
+{
+  "name": "@hyperscale0/hsx",
+  "version": "1.0.0-alpha.1",
+  "description": "The HSX language: a compiler from a textual description of a financial product's money movement to the HSX-JSON IR.",
+  "keywords": [
+    "hsx",
+    "compiler",
+    "dsl",
+    "fintech",
+    "escrow",
+    "settlement",
+    "payments",
+    "money-movement",
+    "language"
+  ],
+  "homepage": "https://github.com/hyperscale0/hyperscale-hsx#readme",
+  "bugs": {
+    "url": "https://github.com/hyperscale0/hyperscale-hsx/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyperscale0/hyperscale-hsx.git"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "Hyperscale LLC",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "hsx": "./bin/hsx.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./spec/hsx-ir.schema.json": "./spec/hsx-ir.schema.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "AUTHORS",
+    "CHANGELOG.md",
+    "LICENSE",
+    "LICENSING.md",
+    "README.md",
+    "SECURITY.md",
+    "TRADEMARKS.md",
+    "bin",
+    "dist",
+    "spec",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "bun test && tsc -p tsconfig.json",
+    "postpack": "bun scripts/pack-exports.ts restore",
+    "prepack": "bun run build && bun scripts/pack-exports.ts apply",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "6.0.3"
+  },
+  "contributors": [
+    "Meshael AlBakaawi",
+    "Amir Ayub",
+    "Sara AlBakaawi"
+  ]
+}

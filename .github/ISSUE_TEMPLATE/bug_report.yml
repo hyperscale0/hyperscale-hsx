@@ -1,0 +1,53 @@
+name: Bug report
+description: The compiler accepted something it should refuse, refused something it should accept, or emitted the wrong IR.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A bug report without a source file is a guess. Paste the smallest `.hsx`
+        program that shows the problem, even if it is ten lines of nonsense.
+
+  - type: textarea
+    id: source
+    attributes:
+      label: The program
+      description: The smallest `.hsx` source that reproduces it.
+      render: hsx
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Paste the output of `hsx check <file>` verbatim, diagnostics and exit code.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: Which verdict, which diagnostic, or which part of the IR should differ, and why.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `hsx --version`.
+      placeholder: "1.0.0-alpha.1"
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Bun or Node, and the version.
+      placeholder: "bun 1.4.0"
+    validations:
+      required: true

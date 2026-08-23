@@ -1,0 +1,45 @@
+// A commerce cooperative: instant checkout with asymmetric fees, a refundable
+// rental deposit, and a weekly fulfillment pool split between the partners.
+// Exercises instant_transfer, deposit, and pooled_split in one company.
+
+program commerce_escrow "Commerce cooperative"
+
+import { instant_transfer, deposit, pooled_split } from "settlement"
+
+party shopper:  person
+party merchant: business
+party courier:  business
+party packer:   business
+
+asset order: good { title_transfer: off_platform }
+
+settlement checkout = instant_transfer {
+  payer:  shopper
+  payee:  merchant
+  amount: orderTotal: money(SAR)
+  fees { shopper: 1%, merchant: 2% }
+}
+
+settlement rental_deposit = deposit {
+  payer:  shopper
+  holder: merchant
+  amount: depositAmount: money(SAR)
+  claim:  port assess_damage
+  return: port release_deposit
+}
+
+settlement fulfillment_pool = pooled_split {
+  payer:      merchant
+  amount:     poolTotal: money(SAR)
+  payout_due: payoutDate
+  split { courier: 60%, packer: 40%, remainder_to: courier }
+}
+
+port assess_damage {
+  allowed:    [merchant]
+  shape:      { damageReport: text }
+}
+
+port release_deposit {
+  allowed:    [merchant]
+}

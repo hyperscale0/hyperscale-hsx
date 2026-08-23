@@ -1,0 +1,26 @@
+// The used-car escrow: the acceptance program of the settlement algebra.
+// One held payment, buyer-confirmed release through the tenant's backend,
+// asymmetric fees, and a penalty-bearing cancellation split.
+
+program used_car_escrow "Used-car escrow"
+
+import { held_payment } from "settlement"
+
+party buyer:  person
+party seller: business
+
+asset vehicle: good { title_transfer: off_platform }
+
+settlement sale = held_payment {
+  payer:  buyer
+  payee:  seller
+  amount: price: money(SAR)
+  release: port confirm_handover          // buyer-only, their backend decides
+  fees { buyer: 1%, seller: 2% }
+  on_cancel(funded) { buyer: 99.5%, seller: 0.5% }
+}
+
+port confirm_handover {
+  allowed:    [buyer]
+  shape:      { vehicleId: id(vehicle) }
+}

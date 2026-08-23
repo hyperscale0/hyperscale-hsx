@@ -1,0 +1,42 @@
+{
+  "name": "hsx",
+  "displayName": "HSX",
+  "description": "Syntax highlighting for the HSX settlement language.",
+  "version": "1.0.0-alpha.1",
+  "publisher": "hyperscale0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyperscale0/hyperscale-hsx.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "hsx",
+        "aliases": [
+          "HSX",
+          "hsx"
+        ],
+        "extensions": [
+          ".hsx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "hsx",
+        "scopeName": "source.hsx",
+        "path": "./syntaxes/hsx.tmLanguage.json"
+      }
+    ]
+  }
+}

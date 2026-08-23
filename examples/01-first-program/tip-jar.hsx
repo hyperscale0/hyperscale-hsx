@@ -1,0 +1,17 @@
+// The smallest HSX program that moves money.
+//
+// A listener tips a podcast host. Nothing is held, nobody has to decide
+// anything, and the money goes straight through.
+
+program tip_jar "Tip jar"
+
+import { instant_transfer } from "settlement"
+
+party listener: person
+party host:     business
+
+settlement tip = instant_transfer {
+  payer:  listener
+  payee:  host
+  amount: tipAmount: money(SAR)
+}

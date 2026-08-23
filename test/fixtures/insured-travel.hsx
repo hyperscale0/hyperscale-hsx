@@ -1,0 +1,43 @@
+// An insured travel platform: the package price collected over three monthly
+// installments, on-trip extras metered at a committed rate card, and a working
+// capital advance to the agency repaid over three fortnightly anchors.
+// Exercises scheduled, metered, and advance.
+
+program insured_travel "Insured travel platform"
+
+import { scheduled, metered, advance } from "settlement"
+
+party traveler: person
+party agency:   business
+party lender:   business
+
+asset trip: service { title_transfer: on_platform }
+
+settlement package_plan = scheduled {
+  payer:     traveler
+  payee:     agency
+  amount:    packagePrice: money(SAR)
+  count:     3
+  every:     P30D
+  first_due: firstInstallmentDue
+}
+
+settlement trip_extras = metered {
+  payer:    traveler
+  payee:    agency
+  close_by: tripEndDate
+  rates {
+    excursion: excursionFee: money(SAR)
+    city_tour: cityTourFee:  money(SAR)
+  }
+}
+
+settlement agency_advance = advance {
+  funder:    lender
+  to:        agency
+  amount:    advanceAmount: money(SAR)
+  fee:       3%
+  count:     3
+  every:     P2W
+  first_due: firstRepaymentDue
+}

@@ -1,0 +1,41 @@
+name: Publish
+
+# Publishing is a release, not a push: cut a GitHub release and this runs.
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write # mint the OIDC token npm trusted publishing exchanges
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest # GitHub-hosted: trusted publishing and provenance both require it
+    steps:
+      - uses: actions/checkout@v4
+
+      # prepack runs `bun run build` and rewrites the manifest's entry points,
+      # so the publish job needs Bun even though npm does the publishing.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted publishing landed in npm 11.5.1. Node 24 ships an older 11.x,
+      # so pin the floor rather than trust the bundled version.
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run check
+
+      # No NODE_AUTH_TOKEN and no NPM_TOKEN secret anywhere: the registry
+      # trusts this workflow file by name, and the OIDC token is minted per run.
+      - name: Publish
+        run: npm publish --tag alpha --access public --provenance

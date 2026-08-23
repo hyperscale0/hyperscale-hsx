@@ -1,0 +1,57 @@
+// An insured car marketplace: the sale price held in escrow until handover,
+// the insurance premium held until the policy binds and then forwarded to the
+// carrier minus commission, and a refundable test-drive deposit.
+// Exercises held_payment (no cancellation), premium_forward, and deposit.
+
+program insured_car_marketplace "Insured car marketplace"
+
+import { held_payment, premium_forward, deposit } from "settlement"
+
+party buyer:   person
+party seller:  business
+party insurer: business
+
+asset vehicle: good { title_transfer: off_platform }
+
+settlement sale = held_payment {
+  payer:   buyer
+  payee:   seller
+  amount:  price: money(SAR)
+  release: port confirm_handover
+  fees { seller: 2% }
+}
+
+settlement coverage = premium_forward {
+  payer:      buyer
+  carrier:    insurer
+  amount:     premium: money(SAR)
+  bind:       port confirm_policy
+  commission: 5%
+}
+
+settlement test_drive_deposit = deposit {
+  payer:  buyer
+  holder: seller
+  amount: depositAmount: money(SAR)
+  claim:  port assess_vehicle
+  return: port return_deposit
+}
+
+port confirm_handover {
+  allowed:    [buyer]
+  shape:      { vehicleId: id(vehicle) }
+}
+
+port confirm_policy {
+  allowed:    [insurer]
+  shape:      { policyNumber: text }
+}
+
+port assess_vehicle {
+  allowed:    [seller]
+  shape:      { damageReport: text }
+}
+
+port return_deposit {
+  allowed:    [seller]
+}

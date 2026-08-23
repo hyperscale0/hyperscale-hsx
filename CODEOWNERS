@@ -1,0 +1,3 @@
+# Every change gets a maintainer review. GitHub resolves the last matching rule,
+# so keep this file to the one line unless a directory needs different owners.
+* @hyperscale0/maintainers

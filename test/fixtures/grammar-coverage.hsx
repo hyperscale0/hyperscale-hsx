@@ -1,0 +1,42 @@
+// Every syntactic form the parser accepts that the other fixtures leave
+// uncovered: a program header with no title string, an asset with no
+// attribute block, an entry whose value is a block written without the colon,
+// a quoted duration, and the `date` and `money(...)` port field types.
+//
+// It is a real program too, not a grammar dump: a climbing gym holds one
+// membership payment until access is granted, and collects the next season
+// over two anchors.
+
+program plain_header
+
+import { held_payment, scheduled } from "settlement"
+
+party member: person
+party club:   business
+
+asset locker: access
+
+settlement dues = held_payment {
+  payer:   member
+  payee:   club
+  amount:  duesAmount: money(SAR)
+  release: port confirm_access
+}
+
+settlement next_season = scheduled {
+  payer:     member
+  payee:     club
+  amount:    seasonAmount: money(SAR)
+  count:     2
+  every:     "P30D"
+  first_due: firstSeasonDue
+}
+
+port confirm_access {
+  allowed: [club]
+  shape {
+    grantedOn:   date
+    depositHeld: money(SAR)
+    lockerId:    id(locker)
+  }
+}

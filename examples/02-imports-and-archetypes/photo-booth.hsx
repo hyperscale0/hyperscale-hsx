@@ -1,0 +1,37 @@
+// Imports, archetypes, and the decision port.
+//
+// A photo-booth rental company. The renter pays up front, but the money sits
+// in escrow until the booth is delivered. The company's own backend answers
+// "was it delivered?" through the `confirm_delivery` port; nothing on the
+// platform guesses. If the booking falls through after funding, the renter
+// gets almost everything back and the company keeps a small penalty.
+
+program photo_booth "Photo booth rentals"
+
+import { held_payment } from "settlement"
+
+party renter:  person
+party company: business
+
+asset booth: good { title_transfer: off_platform }
+
+settlement booking = held_payment {
+  payer:   renter
+  payee:   company
+  amount:  bookingFee: money(SAR)
+
+  // The platform takes 3% out of the company's payout, and charges the
+  // renter 1% on top of the booking fee at funding.
+  fees { renter: 1%, company: 3% }
+
+  release: port confirm_delivery
+  on_cancel(funded) { renter: 90%, company: 10% }
+}
+
+port confirm_delivery {
+  allowed: [company]
+  shape {
+    boothId:     id(booth)
+    deliveredOn: date
+  }
+}

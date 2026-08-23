@@ -1,0 +1,22 @@
+// The same program with all three mistakes repaired: the grocer is declared,
+// the port the release decides through exists, and the cancellation split
+// accounts for the whole held amount.
+
+program corner_shop "Corner shop"
+
+import { held_payment } from "settlement"
+
+party shopper: person
+party grocer:  business
+
+settlement basket = held_payment {
+  payer:   shopper
+  payee:   grocer
+  amount:  basketTotal: money(SAR)
+  release: port confirm_pickup
+  on_cancel(funded) { shopper: 60%, grocer: 40% }
+}
+
+port confirm_pickup {
+  allowed: [grocer]
+}
