@@ -487,14 +487,29 @@ source coordinates, for every archetype:
 
 ## Limits
 
-| Limit                    | Value                     | Why                                                                                                                                            |
-| ------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Money events per program | 14 (`MONEY_EVENT_BUDGET`) | The Business Frame carries at most this many. Every installment anchor, fee leg, cancellation leg, abandonment refund, and forward counts one. |
-| Schedule anchors         | 2 to 12                   | Keeps a schedule finite by construction.                                                                                                       |
-| Percent precision        | 1 basis point             | Money that rounds at compile time disappears at runtime.                                                                                       |
-| Durations                | days and weeks            | Calendar months drift.                                                                                                                         |
-| Swap parties             | exactly 2                 |                                                                                                                                                |
-| Pool recipients          | at least 2                | A pool distributing to one recipient is a transfer.                                                                                            |
+| Limit                    | Value                     | Why                                                                                                                                                       |
+| ------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Source size              | 262,144 UTF-8 bytes       | Measured before the lexer runs, so an oversized file is refused without being parsed. The largest program in the corpus is 13,934 bytes.                  |
+| Nesting depth            | 64 parser steps           | Lists, blocks, calls, and bindings are parsed by recursion, and past roughly 9,000 levels that exhausts the call stack. The deepest real program nests 5. |
+| Money events per program | 14 (`MONEY_EVENT_BUDGET`) | The Business Frame carries at most this many. Every installment anchor, fee leg, cancellation leg, abandonment refund, and forward counts one.            |
+| Schedule anchors         | 2 to 12                   | Keeps a schedule finite by construction.                                                                                                                  |
+| Percent precision        | 1 basis point             | Money that rounds at compile time disappears at runtime.                                                                                                  |
+| Durations                | days and weeks            | Calendar months drift.                                                                                                                                    |
+| Swap parties             | exactly 2                 |                                                                                                                                                           |
+| Pool recipients          | at least 2                | A pool distributing to one recipient is a transfer.                                                                                                       |
+
+A parser step is one nested expression or block, which is not always one
+level of source. `key { ... }` costs one step per level; `key: { ... }` costs
+two, because the value after the colon is parsed as an expression and that
+expression is then the block. So the 64-step budget buys these depths:
+
+| Shape                | Source levels |
+| -------------------- | ------------- |
+| `key { key { … }}`   | 63            |
+| `[[[ … ]]]`          | 62            |
+| `f(f(f( … )))`       | 62            |
+| `a: b: c: …`         | 61            |
+| `key: { key: { … }}` | 31            |
 
 Two generated names colliding is also a refusal rather than a silent
 overwrite: if two settlements would mint the same internal key, or one

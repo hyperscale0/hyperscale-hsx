@@ -133,9 +133,9 @@ exported as `HSX_IR_VERSION`. A consumer reads that one integer to decide
 whether it understands the document. It moves only when the emitted IR shape
 changes in a way a consumer must notice.
 
-**Package version** is this package's semver, currently `1.0.0-alpha.2`,
-published to `latest`. It moves whenever the compiler
-changes, including changes that only affect a diagnostic's wording.
+**Package version** is this package's semver, in `package.json`. It moves
+whenever the compiler changes, including changes that only affect a
+diagnostic's wording.
 
 IR version 1 is unstable until the package reaches 1.0.0. Until then an alpha
 release may change what the compiler emits, and every such change is listed in

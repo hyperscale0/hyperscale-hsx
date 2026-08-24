@@ -5,6 +5,8 @@ import { compile } from "../src/index.ts";
 import { checkProgram, parseProgram } from "../src/index.ts";
 import { lowerProgram, pieceAmounts } from "../src/lower.ts";
 import { lineColAt } from "../src/index.ts";
+import { lineColIn, lineIndex } from "../src/ast.ts";
+import { HSX_LIMITS } from "../src/limits.ts";
 import type {
   BlockExpr,
   CallExpr,
@@ -778,6 +780,17 @@ describe("parse", () => {
       );
       expect(lineColAt(FIXTURE, sale!.span.start).line).toBe(14);
     });
+
+    // `compile` resolves diagnostic coordinates through the index, everything
+    // else through `lineColAt`. If the two ever disagree, a diagnostic points
+    // at a different line than the AST says it does, so pin them together
+    // over every offset of a real fixture plus both out-of-range clamps.
+    it("resolves every offset the same through the index as through lineColAt", () => {
+      const index = lineIndex(FIXTURE);
+      for (let offset = -1; offset <= FIXTURE.length + 1; offset += 1) {
+        expect(lineColIn(index, offset)).toEqual(lineColAt(FIXTURE, offset));
+      }
+    });
   });
 
   describe("parseProgram · diagnostics", () => {
@@ -860,6 +873,105 @@ describe("parse", () => {
           diagnostic.message.includes("not part of the HSX language"),
         ),
       ).toBe(true);
+    });
+  });
+
+  describe("parseProgram · limits", () => {
+    // A port body is level 1 and its shape block is level 2, so the value of
+    // `x` opens at level 3 and the deepest list that still fits the ceiling
+    // is maxNestingDepth - 2.
+    const nestedList = (depth: number): string =>
+      `port p { shape { x: ${"[".repeat(depth)}${"]".repeat(depth)} } }`;
+
+    it("parses a nesting that lands exactly on the ceiling", () => {
+      const { diagnostics } = parseProgram(
+        nestedList(HSX_LIMITS.maxNestingDepth - 2),
+      );
+      expect(diagnostics).toEqual([]);
+    });
+
+    // The refusal is the first diagnostic; the rest are ordinary recovery
+    // noise from the unread tail, one per token the block walks over.
+    it("refuses one level past the ceiling", () => {
+      const { diagnostics } = parseProgram(
+        nestedList(HSX_LIMITS.maxNestingDepth - 1),
+      );
+      expect(diagnostics[0]?.message).toContain("depth budget of 64");
+    });
+
+    // The budget counts parser steps, and `key: { ... }` spends two of them
+    // per source level where `key { ... }` spends one. Pinned because the
+    // reference table quotes these numbers to builders.
+    it("buys fewer source levels for the form that costs two steps", () => {
+      const deepest = (build: (levels: number) => string): number => {
+        let last = 0;
+        for (let levels = 1; levels <= 200; levels += 1) {
+          const refused = parseProgram(build(levels)).diagnostics.some(
+            (diagnostic) => diagnostic.message.includes("depth budget"),
+          );
+          if (refused) break;
+          last = levels;
+        }
+        return last;
+      };
+      expect(
+        deepest((n) => `port p { shape ${"{ k ".repeat(n)}${"}".repeat(n)} }`),
+      ).toBe(63);
+      expect(
+        deepest(
+          (n) => `port p { shape ${"{ k: ".repeat(n)}text${" }".repeat(n)} }`,
+        ),
+      ).toBe(31);
+    });
+
+    // SECURITY.md: "Parsing and checking are total by design: they return
+    // diagnostics, they never throw." Before the ceiling, each of these
+    // exhausted the call stack somewhere between 9,000 and 20,000 levels and
+    // threw a RangeError out of compile().
+    it("returns a verdict instead of throwing on every recursive production", () => {
+      const deep = 50_000;
+      const shapes = [
+        `port p { shape { x: ${"[".repeat(deep)}${"]".repeat(deep)} } }`,
+        `port p { shape { x: ${"x: ".repeat(deep)}text } }`,
+        `port p { shape { x: ${"f(".repeat(deep)}${")".repeat(deep)} } }`,
+        `port p { shape ${"{ k ".repeat(deep)}${"}".repeat(deep)} }`,
+      ];
+      for (const source of shapes) {
+        expect(compile(source).verdict).toBe("invalid");
+      }
+    });
+
+    it("refuses a source over the byte ceiling without lexing it", () => {
+      const { diagnostics, program } = parseProgram(
+        "x".repeat(HSX_LIMITS.maxSourceBytes + 1),
+      );
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]?.message).toContain("HSX reads at most 262144");
+      expect(program.decls).toEqual([]);
+    });
+
+    // The ceiling counts UTF-8 bytes and the diagnostic names how many the
+    // file has. Both halves have to hold whether or not the code-unit count
+    // clears the ceiling on its own: an earlier version short-circuited on
+    // `source.length` in that case and printed code units as bytes, so a
+    // 900,000-byte file was reported as 300000.
+    it("reports the source's UTF-8 size, not its code-unit count", () => {
+      const cases = [
+        // 100,000 code units, under the ceiling; 300,000 bytes, over it.
+        { bytes: 300_000, source: "あ".repeat(100_000) },
+        // 300,000 code units, over the ceiling on its own. Three bytes each.
+        { bytes: 900_000, source: "あ".repeat(300_000) },
+        // 600,000 code units, because each G-clef is a surrogate pair.
+        { bytes: 1_200_000, source: "𝄞".repeat(300_000) },
+      ];
+      for (const { bytes, source } of cases) {
+        expect(new TextEncoder().encode(source).byteLength).toBe(bytes);
+        const { diagnostics } = parseProgram(source);
+        expect(diagnostics).toHaveLength(1);
+        expect(diagnostics[0]?.message).toBe(
+          `this file is ${bytes} bytes; HSX reads at most 262144`,
+        );
+      }
     });
   });
 

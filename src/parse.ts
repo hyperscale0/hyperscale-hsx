@@ -24,6 +24,7 @@ import type {
   StringExpr,
 } from "./ast.ts";
 import { lex, type Token } from "./lex.ts";
+import { HSX_LIMITS } from "./limits.ts";
 
 export interface ParseResult {
   readonly diagnostics: readonly Diagnostic[];
@@ -31,6 +32,22 @@ export interface ParseResult {
 }
 
 export function parseProgram(source: string): ParseResult {
+  // Measured before lexing. The ceiling counts UTF-8 bytes, so the encode is
+  // the measurement rather than an extra step: `source.length` counts UTF-16
+  // code units, which is a third of the size for CJK text.
+  const sourceBytes = new TextEncoder().encode(source).byteLength;
+  if (sourceBytes > HSX_LIMITS.maxSourceBytes) {
+    return {
+      diagnostics: [
+        {
+          message: `this file is ${sourceBytes} bytes; HSX reads at most ${HSX_LIMITS.maxSourceBytes}`,
+          span: { end: 0, start: 0 },
+        },
+      ],
+      program: { decls: [], span: { end: 0, start: 0 } },
+    };
+  }
+
   const lexed = lex(source);
   const parser = new Parser(lexed.tokens, [...lexed.diagnostics]);
   const program = parser.parseProgram(source.length);
@@ -41,6 +58,7 @@ class Parser {
   readonly diagnostics: Diagnostic[];
   private readonly tokens: readonly Token[];
   private index = 0;
+  private depth = 0;
 
   constructor(tokens: readonly Token[], diagnostics: Diagnostic[]) {
     this.tokens = tokens;
@@ -270,7 +288,40 @@ class Parser {
 
   // --- Entries and expressions ---------------------------------------------
 
+  /**
+   * Every recursive edge in the grammar passes through `parseExpr` or
+   * `parseBlock`: the list, block, call-argument, and binding-type branches of
+   * one, and the block to entry to block cycle of the other. Guarding those
+   * two entry points is therefore the whole ceiling, and the guard lives in
+   * one place instead of five.
+   *
+   * The budget counts those entries, not source levels, and the two are not
+   * the same number: `k { ... }` spends one per level, while `k: { ... }`
+   * spends two because the colon branch enters `parseExpr` and `parseExpr`
+   * then enters `parseBlock`. So the message names a budget rather than a
+   * depth. A builder told they exceeded "64 levels" would count 32 braces and
+   * have nothing to act on.
+   */
+  private enterNesting(span: Span): boolean {
+    if (this.depth >= HSX_LIMITS.maxNestingDepth) {
+      this.error(
+        span,
+        `this nests past the parser's depth budget of ${HSX_LIMITS.maxNestingDepth}; flatten it`,
+      );
+      return false;
+    }
+    this.depth += 1;
+    return true;
+  }
+
   private parseBlock(): BlockExpr | undefined {
+    if (!this.enterNesting(this.peek().span)) return undefined;
+    const block = this.parseBlockUnguarded();
+    this.depth -= 1;
+    return block;
+  }
+
+  private parseBlockUnguarded(): BlockExpr | undefined {
     const open = this.advance();
     const entries: Entry[] = [];
     while (!this.atPunct("}") && !this.at("eof")) {
@@ -337,6 +388,13 @@ class Parser {
   }
 
   private parseExpr(): Expr | undefined {
+    if (!this.enterNesting(this.peek().span)) return undefined;
+    const expr = this.parseExprUnguarded();
+    this.depth -= 1;
+    return expr;
+  }
+
+  private parseExprUnguarded(): Expr | undefined {
     const token = this.peek();
 
     if (token.kind === "string") {

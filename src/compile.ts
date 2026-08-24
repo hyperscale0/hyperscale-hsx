@@ -11,7 +11,7 @@
  * Every diagnostic points at SOURCE coordinates, never at lowered IR paths.
  */
 
-import { lineColAt } from "./ast.ts";
+import { lineColIn, lineIndex } from "./ast.ts";
 import { checkProgram } from "./check.ts";
 import { lowerProgram } from "./lower.ts";
 import { parseProgram } from "./parse.ts";
@@ -47,13 +47,17 @@ export interface CompileResult {
 
 export function compile(source: string): CompileResult {
   const diagnostics: CompileDiagnostic[] = [];
+  // Scanned once here rather than per diagnostic: a source can carry one
+  // diagnostic per two bytes, and rescanning from offset zero for each one
+  // made a 128 KB file cost 2.4 seconds of coordinate arithmetic.
+  const lines = lineIndex(source);
   const at = (
     stage: CompileDiagnostic["stage"],
     severity: CompileDiagnostic["severity"],
     message: string,
     offset: number,
   ): void => {
-    const position = lineColAt(source, offset);
+    const position = lineColIn(lines, offset);
     diagnostics.push({
       column: position.column,
       line: position.line,

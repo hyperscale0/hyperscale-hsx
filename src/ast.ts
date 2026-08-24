@@ -35,6 +35,44 @@ export function lineColAt(source: string, offset: number): LineCol {
   return { column: clamped - lineStart + 1, line };
 }
 
+/**
+ * One source scanned once, so many offsets resolve without rescanning it.
+ * `lineColAt` walks from offset zero every time, which turns a run of d
+ * diagnostics over an n-byte source into O(n*d) work. A caller holding this
+ * pays O(n) once and O(log n) per offset.
+ */
+export interface LineIndex {
+  /** Source length, so `lineColIn` clamps exactly as `lineColAt` does. */
+  readonly length: number;
+  /** Offset of the first character of each line, ascending. Line 1 starts at 0. */
+  readonly starts: readonly number[];
+}
+
+/** Scan a source once for the offset every line starts at. */
+export function lineIndex(source: string): LineIndex {
+  const starts = [0];
+  for (let index = 0; index < source.length; index += 1) {
+    if (source.charCodeAt(index) === 10) starts.push(index + 1);
+  }
+  return { length: source.length, starts };
+}
+
+/**
+ * Resolve one offset against a prebuilt index. Returns exactly what
+ * `lineColAt` returns for the same source and offset.
+ */
+export function lineColIn(index: LineIndex, offset: number): LineCol {
+  const clamped = Math.max(0, Math.min(offset, index.length));
+  let low = 0;
+  let high = index.starts.length - 1;
+  while (low < high) {
+    const middle = Math.floor((low + high + 1) / 2);
+    if ((index.starts[middle] as number) <= clamped) low = middle;
+    else high = middle - 1;
+  }
+  return { column: clamped - (index.starts[low] as number) + 1, line: low + 1 };
+}
+
 // --- Expressions -----------------------------------------------------------
 
 export interface IdentExpr {

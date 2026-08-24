@@ -11,6 +11,35 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-alpha.3] - 2026-08-25
+
+### Fixed
+
+- `compile()` no longer throws on a deeply nested source. Lists, blocks, calls,
+  and bindings are parsed by recursion and nothing bounded it, so a file
+  nesting past roughly 9,000 levels exhausted the call stack and a `RangeError`
+  escaped `compile()`, which SECURITY.md says never happens. Parsing stops at
+  the depth budget now and reports an ordinary parse diagnostic. The deepest
+  program in the corpus nests 5 levels.
+- Diagnostic coordinates cost O(n + d log n) instead of O(n·d). `compile()`
+  resolved every diagnostic by rescanning the source from offset zero. On the
+  largest file this release will read, 262,144 bytes carrying one diagnostic
+  per two bytes, that was 10,304 ms of line and column arithmetic for 131,072
+  diagnostics while the parse itself took 18 ms. It scans once and
+  binary-searches now: same coordinates, 2.6 ms.
+
+### Added
+
+- Two source limits, both checked before the program is read. A file over
+  262,144 UTF-8 bytes, the same ceiling UDL uses, is refused before the lexer
+  runs. Nesting is refused past a parser depth budget of 64.
+
+  The depth budget counts nested expressions and blocks, which is not the same
+  number as source levels: `key { … }` spends one per level and `key: { … }`
+  spends two, so the budget buys 63 levels of the first and 31 of the second.
+  `docs/reference.md` carries the conversion for every shape. Both refusals are
+  ordinary parse diagnostics, not exceptions.
+
 ## [1.0.0-alpha.2] - 2026-08-23
 
 ### Fixed
@@ -65,6 +94,7 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.2...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.3...HEAD
+[1.0.0-alpha.3]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.2...v1.0.0-alpha.3
 [1.0.0-alpha.2]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.1...v1.0.0-alpha.2
 [1.0.0-alpha.1]: https://github.com/hyperscale0/hyperscale-hsx/releases/tag/v1.0.0-alpha.1
