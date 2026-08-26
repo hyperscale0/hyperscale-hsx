@@ -14,4 +14,4 @@
 export const HSX_IR_VERSION = 1;
 
 /** Kept equal to the package.json version by `test/spec.spec.ts`. */
-export const HSX_VERSION = "1.0.0-alpha.3";
+export const HSX_VERSION = "1.0.0-alpha.4";

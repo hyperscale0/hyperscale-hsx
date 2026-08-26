@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0-alpha.4",
   "description": "The HSX language: a compiler from a textual description of a financial product's money movement to the HSX-JSON IR.",
   "keywords": [
     "hsx",
