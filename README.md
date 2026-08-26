@@ -128,10 +128,10 @@ is worse than shipping none.
 
 Two numbers move independently.
 
-**IR version** is the literal `"hsx": 1` stamped into every compiled document,
-exported as `HSX_IR_VERSION`. A consumer reads that one integer to decide
-whether it understands the document. It moves only when the emitted IR shape
-changes in a way a consumer must notice.
+**IR version** is the literal `"hsx": 1` stamped into every compiled document.
+A consumer reads that one integer off the document to decide whether it
+understands it. It moves only when the emitted IR shape changes in a way a
+consumer must notice.
 
 **Package version** is this package's semver, in `package.json`. It moves
 whenever the compiler changes, including changes that only affect a

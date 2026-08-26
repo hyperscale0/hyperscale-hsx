@@ -16,7 +16,7 @@ type TokenKind =
   | "punct"
   | "string";
 
-const KEYWORDS = [
+export const KEYWORDS = [
   "asset",
   "from",
   "import",

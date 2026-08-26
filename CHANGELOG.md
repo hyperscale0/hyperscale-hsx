@@ -4,12 +4,26 @@ All notable changes to this package are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this package
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The IR format version (`"hsx": 1`, exported as `HSX_IR_VERSION`) moves
+The IR format version (`"hsx": 1`, stamped into every compiled document) moves
 independently of the package version. While the package is below 1.0.0, an
 alpha release may change what IR version 1 contains; every such change is
 listed here.
 
 ## [Unreleased]
+
+### Removed
+
+- Eleven names left the package entry point: the AST types `BlockExpr`,
+  `CallExpr`, `ListExpr`, `PercentExpr`, `PortDecl`, `PortRefExpr`, and
+  `SettlementDecl`, plus `lineColAt`, `CompileResult`, `HSX_IR_VERSION`, and
+  `HSX_VERSION`. Nothing outside this package imported any of them, and the
+  seven AST types were seven of the twenty-two the tree defines, chosen by no
+  rule anyone could restate. What the entry point exports now is what callers
+  use: `compile`, `checkProgram`, `lowerProgram`, `parseProgram`, and
+  `MONEY_EVENT_BUDGET`. Every removed name still exists in its own module for
+  the compiler's own use. Read the IR format version off the compiled
+  document's `hsx` field, which is what `spec/hsx-ir.schema.json` pins and what
+  a consumer of the JSON artifact already holds.
 
 ## [1.0.0-alpha.3] - 2026-08-25
 

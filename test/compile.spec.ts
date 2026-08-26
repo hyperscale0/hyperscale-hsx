@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { compile } from "../src/index.ts";
 import { checkProgram, parseProgram } from "../src/index.ts";
 import { lowerProgram, pieceAmounts } from "../src/lower.ts";
-import { lineColAt } from "../src/index.ts";
-import { lineColIn, lineIndex } from "../src/ast.ts";
+import { lineColAt, lineColIn, lineIndex } from "../src/ast.ts";
 import { HSX_LIMITS } from "../src/limits.ts";
 import type {
   BlockExpr,
@@ -15,7 +14,7 @@ import type {
   PortDecl,
   PortRefExpr,
   SettlementDecl,
-} from "../src/index.ts";
+} from "../src/ast.ts";
 import { percentToBps } from "../src/parse.ts";
 
 const FIXTURE = readFileSync(

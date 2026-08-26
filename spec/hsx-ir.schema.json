@@ -47,7 +47,7 @@
       "additionalProperties": false,
       "properties": {
         "hsx": {
-          "description": "The IR format version, exported as `HSX_IR_VERSION`. A consumer reads this integer to decide whether it understands the document.",
+          "description": "The IR format version. A consumer reads this integer to decide whether it understands the document.",
           "const": 1
         },
         "product": {

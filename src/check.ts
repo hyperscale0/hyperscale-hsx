@@ -38,7 +38,7 @@ import {
 } from "./model.ts";
 
 /** Every archetype the settlement stdlib ships; all of them lower today. */
-const SETTLEMENT_ARCHETYPES = [
+export const SETTLEMENT_ARCHETYPES = [
   "advance",
   "deposit",
   "held_payment",
