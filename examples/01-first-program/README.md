@@ -14,10 +14,10 @@ hsx build tip-jar.hsx     # the compiled IR
 name is `snake_case` and becomes the IR document's `product`; the title is
 optional and is what people read.
 
-**`import { instant_transfer } from "settlement"`** brings in one archetype.
-`"settlement"` is the only module there is, and it holds ten archetypes. An
-archetype you have not imported cannot be instantiated, so the imports at the
-top tell you what shape of company this is before you read a line of it.
+**`import { instant_transfer } from "settlement"`** brings in one settlement brick.
+`"settlement"` is the only module there is, and it holds seventeen settlement
+bricks. A brick you have not imported cannot be instantiated, so the imports
+at the top tell you what shape of company this is before you read a line of it.
 
 **`party listener: person`** declares who is involved. A party is a `person`
 or a `business`. Both are needed here: `instant_transfer` names a payer and a

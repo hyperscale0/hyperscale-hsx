@@ -1,4 +1,4 @@
-# 2 · Imports, archetypes, and the port
+# 2 · Imports, settlement bricks, and the port
 
 [`photo-booth.hsx`](./photo-booth.hsx) is a photo-booth rental company. The
 renter pays up front, but the money does not reach the company until the booth

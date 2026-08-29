@@ -11,6 +11,11 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-beta.1] - 2026-08-29
+
+- This is the first beta and has no package behavior changes from
+  1.0.0-alpha.6.
+
 ## [1.0.0-alpha.6] - 2026-08-29
 
 ### Fixed
@@ -159,7 +164,7 @@ listed here.
 
 ## [1.0.0-alpha.1] - 2026-08-22
 
-First public release. The compiler is not new, it has been in production use.
+First public release.
 This is the first version published as a package anyone can install.
 
 ### Added
@@ -195,7 +200,8 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.6...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-beta.1...HEAD
+[1.0.0-beta.1]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.6...v1.0.0-beta.1
 [1.0.0-alpha.6]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...v1.0.0-alpha.6
 [1.0.0-alpha.5]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.4...v1.0.0-alpha.5
 [1.0.0-alpha.4]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.3...v1.0.0-alpha.4

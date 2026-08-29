@@ -6,7 +6,7 @@ server, no diagnostics in the editor. For diagnostics, run `hsx check`.
 
 The grammar's token classes come from the compiler's lexer and checker, so
 what the editor colours and what the compiler recognises stay the same set:
-the seven keywords, the ten archetypes the `settlement` module exports, the
+the seven keywords, the seventeen bricks the `settlement` module exports, the
 party and asset kinds, the four port field types, currency codes, fixed
 durations, percents, and comments.
 

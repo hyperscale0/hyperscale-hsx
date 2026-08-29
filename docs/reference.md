@@ -293,8 +293,9 @@ each name is `camelCase`, each type is one of
 
 ## The settlement standard library
 
-Ten archetypes ship in `"settlement"`, and all ten lower. The tables below
-list each one's entries: **required** entries are bold.
+Seventeen settlement bricks ship in `"settlement"`, and all seventeen lower.
+The compiler API calls them archetypes. The tables below list each brick's
+entries: **required** entries are bold.
 
 Shared value shapes:
 

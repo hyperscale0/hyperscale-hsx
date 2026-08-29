@@ -1,9 +1,10 @@
 # HSX
 
-HSX is a language for describing how money moves through a financial product.
-You write the product's parties, the things they trade, and the settlements
-between them; the compiler turns that into an intermediate representation the
-Hyperscale engine executes.
+HSX is the authoring language for a composed financial company. You declare
+the parties, assets, and settlement bricks that define how value moves. The
+compiler emits HSX-JSON IR plus a congruent Business Frame. Hyperscale's
+composer checks that output, expands it into UDL, plans the change, and freezes
+the admitted contract into a Product build.
 
 Seventeen lines of HSX ([`car-escrow.hsx`](./test/fixtures/car-escrow.hsx)) are
 a used-car escrow: the buyer's money is held, the buyer's own backend confirms
@@ -15,11 +16,11 @@ to hand-write them and get them right.
 
 The line here is the one HCL draws with Terraform. **The language is open.**
 The lexer, the parser, the typechecker, the lowering, the diagnostics, the IR
-schema, and this compiler are AGPL-3.0-only and live in this repository. **The
-runtime that executes the IR is the product**, and it is not open. HSX targets
-it the way HCL targets a provider: you can read every rule the compiler
-enforces, compile any program, and inspect the exact document that gets
-executed.
+schema, and this compiler are AGPL-3.0-only and are in this repository. **The
+composer and runtime are the product**, and they are not open. HSX targets the
+composer the way HCL targets a provider: you can read every compiler rule,
+compile any program, and inspect the exact document and Business Frame the
+composer receives. This package never executes an operation or moves money.
 
 ## Install
 
@@ -115,12 +116,12 @@ is worse than shipping none.
 ## Learn it
 
 - [`examples/`](./examples/) has four programs, in order: the smallest one that
-  moves money, archetypes and ports, a walk through the diagnostics, and a
-  complete small product. Each has its own README, and each is compiled by the
-  test suite so they cannot rot.
+  moves money, settlement bricks and ports, a walk through the diagnostics,
+  and a complete small product. Each has its own README, and each is compiled
+  by the test suite so they cannot rot.
 - [`docs/reference.md`](./docs/reference.md) is the language reference: lexical
   grammar, EBNF, what each stage does, the diagnostic model, and every
-  archetype in the `settlement` standard library with its parameters and
+  brick in the `settlement` standard library with its parameters and
   constraints.
 - [`editors/vscode/`](./editors/vscode/) carries the syntax highlighting.
 
@@ -144,11 +145,10 @@ the literal to `2`.
 
 ## Status
 
-Alpha. Eleven settlement archetypes ship and all eleven lower. The compiler is in
-production use; the surface is settled enough to build on and the version
-number is honest about the rest. What is most likely to move: diagnostic
-wording (there are no stable diagnostic codes yet), and the archetype
-parameter surfaces as more products land.
+Alpha. Seventeen settlement bricks ship and all seventeen lower. Hyperscale's
+composer and founder CLI use this compiler today. The package remains pre-1.0,
+so diagnostic wording and brick parameters can still change on a minor
+release. There are no stable diagnostic codes yet.
 
 ## Contributing
 

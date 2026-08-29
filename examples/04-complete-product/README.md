@@ -8,7 +8,7 @@ hsx check study-hall.hsx
 hsx build study-hall.hsx --out ir.json
 ```
 
-| Settlement     | Archetype      | What it does                                                                                           |
+| Settlement     | Brick          | What it does                                                                                           |
 | -------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
 | `lesson`       | `held_payment` | Holds the student's payment until the tutor confirms the lesson, or until the stored end date arrives. |
 | `kit_deposit`  | `deposit`      | Reserves the equipment deposit on the student's own account. Claimed on damage, returned intact.       |
@@ -79,7 +79,7 @@ tutor_payout_payout_2
 ```
 
 The Business Frame's `mechanics` come back as `escrow` and `marketplace`,
-derived from the archetypes rather than declared.
+derived from the settlement bricks rather than declared.
 
 One program carries at most **20** money events (`MONEY_EVENT_BUDGET`). This
 one uses nine. Every installment anchor, fee leg, cancellation leg, and

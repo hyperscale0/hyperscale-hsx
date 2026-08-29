@@ -66,7 +66,7 @@ settlement payment = instant_transfer {
     ).toBe(true);
   });
 
-  it("keeps representative lowering for all eleven archetypes within local caps", () => {
+  it("keeps representative lowering for every settlement brick within local caps", () => {
     const programs = {
       advance: `program p "P"
 import { advance } from "settlement"
