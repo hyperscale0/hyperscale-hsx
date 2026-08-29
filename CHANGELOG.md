@@ -11,6 +11,17 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-alpha.6] - 2026-08-29
+
+### Fixed
+
+- Alpha.6 carries a `held_payment` or `premium_forward` release port's actor
+  allowlist and declared input fields into the generated release verb. Alpha.5
+  kept those constraints in the checked program and Business Frame but dropped
+  them from HSX-JSON IR, so a runtime consuming the IR could admit the release
+  without the declared actor or evidence. Recompile affected programs with
+  alpha.6.
+
 ## [1.0.0-alpha.5] - 2026-08-29
 
 ### Added
@@ -184,7 +195,8 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.6...HEAD
+[1.0.0-alpha.6]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...v1.0.0-alpha.6
 [1.0.0-alpha.5]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.4...v1.0.0-alpha.5
 [1.0.0-alpha.4]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.3...v1.0.0-alpha.4
 [1.0.0-alpha.3]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.2...v1.0.0-alpha.3

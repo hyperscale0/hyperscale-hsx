@@ -2028,6 +2028,16 @@ function lowerHeldFamily(
           to: piece.releaseTo,
         },
       ],
+      ...(index === 0
+        ? {
+            port: {
+              allowed: [...params.port.allowed],
+              fields: Object.fromEntries(
+                params.port.fields.map((field) => [field.name, "text"]),
+              ),
+            },
+          }
+        : {}),
       summary:
         index === 0
           ? `Confirm through ${params.port.name} and start the ${params.releaseWord} payout`
