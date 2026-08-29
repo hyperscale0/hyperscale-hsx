@@ -52,7 +52,7 @@
     },
     "archetype": {
       "comment": "Every name the settlement standard library exports.",
-      "match": "\\b(advance|deposit|held_payment|instant_transfer|metered|pooled_split|premium_forward|scheduled|swap)\\b",
+      "match": "\\b(advance|captured_payment|conditional_disbursement|credit_facility|deposit|funding_round|held_payment|instant_transfer|metered|pooled_split|premium_forward|recurring_collection|rotating_pool|scheduled|settlement_batch|swap|weighted_distribution)\\b",
       "name": "support.class.archetype.hsx"
     },
     "type-constructor": {

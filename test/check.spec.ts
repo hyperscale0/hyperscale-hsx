@@ -713,7 +713,6 @@ describe("carve", () => {
     payer:  contractor
     payee:  subcontractor
     amount: retainedAmount: money(SAR)
-    fees { subcontractor: 1.5% }
     release: port approve_release | at(defectsPeriodEnd)
     on_cancel(funded) { contractor: 100% }
   }`;
@@ -721,15 +720,14 @@ describe("carve", () => {
   const FINANCING = `settlement financing = advance {
     funder:  financier
     to:      subcontractor
-    amount:  advanceAmount: money(SAR)
-    fee:     4%
+    amount:  retainedAmount: money(SAR)
     against: retention.release
   }`;
 
   const RECOURSE = `settlement recourse = scheduled {
     payer:     subcontractor
     payee:     financier
-    amount:    recourseAmount: money(SAR)
+    amount:    retainedAmount: money(SAR)
     count:     3
     every:     P30D
     first_due: recourseFirstDueAt
@@ -835,42 +833,36 @@ describe("carve", () => {
       });
     });
 
-    it("keeps decimals lexing now that . is punctuation", () => {
-      // 1.5% must still reach the partition as 150 bps, not as `1` `.` `5%`.
+    it("keeps a fee-free carve on the gross money field", () => {
       const fields = compiled().noun("retention").fields as Json;
-      expect(fields.piece1Amount.desc).toBe(
-        "98.5% of retainedAmount (carries the integer-division remainder): released to the financier; on cancellation to the contractor. Computed as floor(retainedAmount * 9850 / 10000) in SAR minor units",
+      expect(fields.retainedAmount.desc).toBe(
+        "The held amount in SAR minor units, funded and paid out whole",
       );
-      expect(fields.piece2Amount.desc).toBe(
-        "1.5% of retainedAmount: released to the platform; on cancellation to the contractor. Computed as floor(retainedAmount * 150 / 10000) in SAR minor units",
-      );
+      expect(fields.piece1Amount).toBeUndefined();
     });
 
     it("releases the financed party's whole share to the funder", () => {
       const retention = compiled().noun("retention");
       const verbs = retention.verbs as Json;
       expect(moves(verbs.approve_release)).toEqual([
-        "piece1Amount escrow->financier",
+        "retainedAmount escrow->financier",
       ]);
       expect(moves(verbs.release_on_deadline)).toEqual([
-        "piece1Amount escrow->financier",
+        "retainedAmount escrow->financier",
       ]);
     });
 
-    it("leaves the platform fee, the cancel split, and abandonment alone", () => {
+    it("leaves cancellation and pre-funding abandonment intact", () => {
       const verbs = compiled().noun("retention").verbs as Json;
-      expect(moves(verbs.release_piece_2)).toEqual([
-        "piece2Amount escrow->platform",
+      expect(moves(verbs.cancel)).toEqual([
+        "retainedAmount escrow->contractor",
       ]);
-      expect(moves(verbs.cancel)).toEqual(["piece1Amount escrow->contractor"]);
-      expect(moves(verbs.refund_piece_2)).toEqual([
-        "piece2Amount escrow->contractor",
-      ]);
-      expect(moves(verbs.unfund_piece_1)).toEqual([
-        "piece1Amount escrow->contractor",
-      ]);
+      expect(verbs.abandon.moves).toBeUndefined();
+      expect(verbs.abandon.requiresDrainedAccount).toEqual({
+        path: "refs.escrowAccountId",
+      });
       expect(moves(verbs.fund_piece_1)).toEqual([
-        "piece1Amount contractor->escrow",
+        "retainedAmount contractor->escrow",
       ]);
     });
 
@@ -922,10 +914,26 @@ describe("carve", () => {
         "settle",
       ]);
       expect(Object.keys(financing.fields)).toEqual([
-        "advanceAmount",
-        "feeAmount",
-        "repayableAmount",
+        "retainedAmount",
+        "carveHoldId",
+        "carveRecourse1Id",
       ]);
+      expect(financing.verbs.disburse.requires).toEqual({
+        carveHoldId: {
+          match: {
+            "fields.currency": "fields.currency",
+            "fields.retainedAmount": "fields.retainedAmount",
+          },
+          statuses: ["funded"],
+        },
+        carveRecourse1Id: {
+          match: {
+            "fields.currency": "fields.currency",
+            "fields.retainedAmount": "fields.retainedAmount",
+          },
+          statuses: ["active"],
+        },
+      });
       expect(
         Object.values(financing.verbs as Json).some((verb: Json) => verb.due),
       ).toBe(false);
@@ -939,7 +947,7 @@ describe("carve", () => {
     it("moves the advance to the financed party and closes without money", () => {
       const verbs = compiled().noun("financing").verbs as Json;
       expect(moves(verbs.disburse)).toEqual([
-        "advanceAmount financier->subcontractor",
+        "retainedAmount financier->subcontractor",
       ]);
       expect(verbs.disburse).toMatchObject({
         from: ["created"],
@@ -947,27 +955,24 @@ describe("carve", () => {
       });
       expect(verbs.settle).toEqual({
         from: ["advanced"],
+        publicIntent: "settleFinancing",
         summary:
           "Close the advance once the retention has released to the financier",
         to: "repaid",
       });
     });
 
-    it("still conserves the funder's discount against the advance", () => {
-      expect(compiled().noun("financing").partitions).toEqual([
-        { pieces: ["advanceAmount", "feeAmount"], total: "repayableAmount" },
-      ]);
+    it("does not invent a repayable total for a fee-free carve", () => {
+      expect(compiled().noun("financing").partitions).toBeUndefined();
     });
 
-    it("carries the whole financed program on seven money events", () => {
+    it("carries the whole financed program on five money events", () => {
       expect(
         (compiled().frame.moneyEvents as Json[]).map((event) => event.key),
       ).toEqual([
         "retention_fund",
         "retention_release_financier",
-        "retention_release_platform",
         "retention_cancel_contractor",
-        "retention_abandon",
         "financing_disburse",
         "recourse_installments",
       ]);
@@ -1004,7 +1009,7 @@ describe("carve", () => {
       // Uncarved again: the hold pays its own payee.
       expect(
         moves((scheduled.noun("retention").verbs as Json).approve_release),
-      ).toEqual(["piece1Amount escrow->subcontractor"]);
+      ).toEqual(["retainedAmount escrow->subcontractor"]);
     });
 
     it("compiles the shipped fixture with nothing to say about it", () => {
@@ -1066,16 +1071,16 @@ describe("carve", () => {
         "settlement financing draws against a held payment's release, like: against: retention.release",
       );
       expect(against("retention.cancel")).toContain(
-        "an advance carves a hold's release; there is no exit named cancel on retention to draw against",
+        "settlement financing references retention.cancel, but held_payment does not expose that exit; it exposes release",
       );
       expect(against("recourse.release")).toContain(
-        "settlement financing draws against recourse, which is a scheduled; only a held payment has a release to carve",
+        "settlement financing references recourse.release, but scheduled does not expose that exit; it exposes obligation",
       );
       expect(against("holdback.release")).toContain(
-        "settlement financing draws against holdback, but no settlement with that name is declared",
+        "settlement financing references holdback, but no settlement with that name is declared",
       );
       expect(against("contractor.release")).toContain(
-        "settlement financing draws against contractor, which is a party; an advance carves a held payment's release",
+        "settlement financing references contractor, which is a party; settlement exits belong to settlements",
       );
     });
 
@@ -1093,6 +1098,78 @@ describe("carve", () => {
         ),
       ).toContain(
         "settlement financing advances subcontractor, but retention releases to financier; an advance carves the release of the party it finances",
+      );
+    });
+
+    it("requires the carve and hold to name the same money field", () => {
+      expect(
+        refusal(
+          source({
+            financing: FINANCING.replace(
+              "retainedAmount: money(SAR)",
+              "advanceAmount: money(SAR)",
+            ),
+          }),
+        ),
+      ).toContain(
+        "settlement financing advances field advanceAmount, but retention.release carries retainedAmount; a carve must name the same money field",
+      );
+    });
+
+    it("requires the carve and hold to use one currency", () => {
+      expect(
+        refusal(
+          source({
+            financing: FINANCING.replace("money(SAR)", "money(USD)"),
+          }),
+        ),
+      ).toContain(
+        "settlement financing advances USD, but retention.release carries SAR; a carve must use one currency",
+      );
+    });
+
+    it("rejects a fee-bearing carved advance", () => {
+      expect(
+        refusal(
+          source({
+            financing: FINANCING.replace(
+              "amount:  retainedAmount: money(SAR)",
+              "amount:  retainedAmount: money(SAR)\n    fee: 4%",
+            ),
+          }),
+        ),
+      ).toContain(
+        "settlement financing adds a fee to a carved advance, but retention.release can only prove repayment of the principal field; use a fee-free carve or a scheduled advance",
+      );
+    });
+
+    it("rejects a carve after the hold deducts a payee fee", () => {
+      expect(
+        refusal(
+          source({
+            hold: HOLD.replace(
+              "amount: retainedAmount: money(SAR)",
+              "amount: retainedAmount: money(SAR)\n    fees { subcontractor: 1.5% }",
+            ),
+          }),
+        ),
+      ).toContain(
+        "settlement financing carves retention.release after a payee fee reduces it; a carved hold must release the full principal field to the funder",
+      );
+    });
+
+    it("does not accept loosely matched scheduled recourse", () => {
+      expect(
+        refusal(
+          source({
+            recourse: RECOURSE.replace(
+              "retainedAmount: money(SAR)",
+              "otherAmount: money(SAR)",
+            ),
+          }),
+        ),
+      ).toContain(
+        "settlement financing has no repayment path when retention is refunded instead of released; add a scheduled settlement collecting from the subcontractor to the financier",
       );
     });
 
@@ -1123,7 +1200,7 @@ describe("carve", () => {
   settlement second_financing = advance {
     funder:  bank
     to:      subcontractor
-    amount:  secondAdvanceAmount: money(SAR)
+    amount:  retainedAmount: money(SAR)
     against: retention.release
   }`,
           }),
@@ -1146,7 +1223,6 @@ describe("carve", () => {
     payer:  contractor
     payee:  subcontractor
     amount: retainedAmount: money(SAR)
-    fees { subcontractor: 1.5% }
     release: port approve_release
   }`,
           recourse: "",
@@ -1244,18 +1320,13 @@ describe("swap", () => {
       ).toBe(false);
     });
 
-    it("compiles P0D to direct posting with no dead clawback surface", () => {
-      const noun = compiledNoun(
-        source("dispute: port resolve_trade within P0D"),
+    it("refuses a zero-day dispute declaration with no lifecycle", () => {
+      const result = compile(source("dispute: port resolve_trade within P0D"));
+      expect(result.verdict).toBe("invalid");
+      expect(result.artifacts).toBeUndefined();
+      expect(result.diagnostics.map((item) => item.message)).toContain(
+        "dispute on settlement trade uses a fixed duration in days or weeks, like P14D; calendar months cannot define an exact money deadline",
       );
-      expect(noun.fields.clawbackAt).toBeUndefined();
-      expect(noun.verbs.post).toBeUndefined();
-      expect(noun.verbs.dispute).toBeUndefined();
-      expect(noun.verbs.release.to).toBe("settled");
-      expect(
-        noun.verbs.release.moves.map((move: any) => move.operation),
-      ).toEqual(["create", "create"]);
-      expect(noun.distinctParties).toBe(true);
     });
 
     it("refuses missing legs, mixed currencies, and calendar windows", () => {

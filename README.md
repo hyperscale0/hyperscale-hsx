@@ -144,7 +144,7 @@ the literal to `2`.
 
 ## Status
 
-Alpha. Nine settlement archetypes ship and all nine lower. The compiler is in
+Alpha. Eleven settlement archetypes ship and all eleven lower. The compiler is in
 production use; the surface is settled enough to build on and the version
 number is honest about the rest. What is most likely to move: diagnostic
 wording (there are no stable diagnostic codes yet), and the archetype

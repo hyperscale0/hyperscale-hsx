@@ -1,0 +1,22 @@
+program payout_batch "Payout batch"
+import { settlement_batch } from "settlement"
+
+party settlement_account: business
+party payout_destination: business
+
+settlement payout_batch = settlement_batch {
+  settlement_account: settlement_account
+  source_capture_refs: captureReference
+  fee_entries: feeReference
+  external_reversal_offsets: externalReversalReference
+  close_trigger: closeAt
+  payout_destination: payout_destination
+  negative_position: reject
+  payout_acknowledgement: port acknowledge_payout
+  payout_beneficiary_ref: payoutBeneficiaryId
+}
+
+port acknowledge_payout {
+  allowed: [payout_destination]
+  shape: { acknowledgementReference: text }
+}

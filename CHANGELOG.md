@@ -11,6 +11,80 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-alpha.5] - 2026-08-29
+
+### Added
+
+- Six settlement archetypes now compile and lower. `funding_round` caps locked
+  commitments and contributor count, then collects or refunds each commitment
+  whole. `weighted_distribution` freezes evidence-backed weights and pays by
+  deterministic largest remainder. `credit_facility` owns draw capacity while
+  a referenced `scheduled` obligation owns repayment. `recurring_collection`
+  adds mandate evidence and explicit attempts to that obligation.
+  `conditional_disbursement` stores one evidence-approved amount under a cap.
+  `rotating_pool` fixes its roster, contribution, due anchors, and payout order
+  before activation. Import the required archetype from `"settlement"` and
+  supply every policy entry that its reference table marks as required.
+- Any settlement may declare one `derived_amount` block. The runtime computes
+  `floor(source * bps / 10000)` from a stored money field and callers omit the
+  target field. Version 1 accepts percentage rules from 1 through 9,999 basis
+  points. The checker refuses fixed rules, tiered rules, missing source fields,
+  non-money source fields, and target fields that already exist.
+- `captured_payment` reserves a payer amount for strict partial captures before
+  a stored deadline. The payee may settle the remainder, void before capture,
+  or use separate full-only correction and externally decided reversal ports.
+  Declare the required capture, correction, negative-position, and timeout
+  policies explicitly. Compose another settlement when capture fees are
+  needed, because this archetype refuses `fees`.
+- `settlement_batch` freezes capture lineage and signed adjustments at a stored
+  close date, persists gross, credit, debit, and net subtotals, and instructs
+  one payout from the frozen net. Supply lineage field names, the payout
+  destination and beneficiary reference, and an acknowledgement port. Apply a
+  correction to a later open batch instead of changing a closed batch.
+- `overrideProgramEntries()`, `Program`, and the typed override and issue shapes
+  are public package exports. The function replaces existing integer or
+  basis-point literals in a parsed `Program`, then callers run the checker and
+  lowerer again. Every
+  override declares inclusive integer bounds. Negative, fractional, `NaN`,
+  infinite, out-of-range, missing, ambiguous, and non-literal targets return
+  coded issues, and one bad override prevents every replacement from being
+  returned.
+- `premium_forward` accepts an optional stored policy reference, one non-money
+  endorsement port, a renewal due condition, and explicit-new-forward renewal.
+  Supply `policy_ref`, `renewal_due`, `renewal_policy`, `endorsement`,
+  `endorsement_policy`, and `lapse_policy` together when the forward needs
+  endorsement, lapse, or renewal behavior. The original forwarding shape
+  remains valid.
+
+### Changed
+
+- `scheduled` accepts `mode: obligation` for installment obligations. It emits
+  one payment noun per anchor, binds each payment to its obligation and anchor,
+  allows partial and early payments, and refunds one stored paid row whole.
+  Obligation mode accepts 2 through 7 anchors and refuses rescheduling. Use the
+  original transfer schedule without `mode`, or declare the debtor and every
+  obligation policy explicitly.
+- The program money-event budget is 20 instead of 14, and every settlement has
+  its own event cap. Advance carves now validate their amount field, currency,
+  recourse, and fee rules. Settlement references resolve through
+  archetype-declared exits, and lowering binds referenced noun identity,
+  statuses, amounts, and currency before movement. Recompile programs that
+  previously sat near the budget or used an advance carve. The stricter checker
+  may refuse a carve or reference that alpha.4 accepted.
+- HSX-JSON IR version 1 grew new noun fields for generated-child prefixes,
+  aggregate invariants, derived amounts, typed references, beneficiary IDs,
+  currency, text, counts, and constants. Verbs gained public intents, reference
+  bindings, captured input, payout instructions, signed sums, deterministic
+  distribution, aggregate and exposure checks, and durable-settlement gates.
+  Money events gained fixed, remaining-balance, and runtime-bounded amount
+  modes with dependency lists. Consumers that validate or interpret IR version
+  1 must adopt alpha.5's schema before accepting alpha.5 output.
+- `settlement_batch` now requires `payout_beneficiary_ref`. Instruct emits a
+  payout intent and captures `payoutId` instead of emitting an internal
+  transfer. A system-only reconcile transition records `settlementEvidenceId`
+  after durable evidence matches that payout. The tenant acknowledgement port
+  remains a separate claim.
+
 ## [1.0.0-alpha.4] - 2026-08-26
 
 ### Removed
@@ -110,7 +184,8 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.4...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...HEAD
+[1.0.0-alpha.5]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.4...v1.0.0-alpha.5
 [1.0.0-alpha.4]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.3...v1.0.0-alpha.4
 [1.0.0-alpha.3]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.2...v1.0.0-alpha.3
 [1.0.0-alpha.2]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.1...v1.0.0-alpha.2

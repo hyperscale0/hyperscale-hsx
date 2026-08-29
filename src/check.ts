@@ -15,6 +15,11 @@ import type {
   Span,
 } from "./ast.ts";
 import {
+  ARCHETYPE_DEFINITIONS,
+  type ArchetypeName,
+  SETTLEMENT_ARCHETYPES,
+} from "./archetypes.ts";
+import {
   ASSET_KINDS,
   PARTY_KINDS,
   type AdvanceSource,
@@ -23,9 +28,20 @@ import {
   type CheckDiagnostic,
   type CheckResult,
   type CheckedAsset,
+  type CheckedCaptureReservation,
+  type CheckedConditionalDisbursement,
+  type CheckedCreditFacility,
+  type CheckedDerivedAmount,
+  type CheckedFundingRound,
   type CheckedParty,
   type CheckedPort,
+  type CheckedPremiumForward,
+  type CheckedSettlementReference,
   type CheckedSettlement,
+  type CheckedSettlementBatch,
+  type CheckedRecurringCollection,
+  type CheckedRotatingPool,
+  type CheckedWeightedDistribution,
   type FeeTerm,
   type MeterRate,
   type MoneyField,
@@ -37,75 +53,7 @@ import {
   type SwapFee,
 } from "./model.ts";
 
-/** Every archetype the settlement stdlib ships; all of them lower today. */
-export const SETTLEMENT_ARCHETYPES = [
-  "advance",
-  "deposit",
-  "held_payment",
-  "instant_transfer",
-  "metered",
-  "pooled_split",
-  "premium_forward",
-  "scheduled",
-  "swap",
-] as const;
-
-type ArchetypeName = (typeof SETTLEMENT_ARCHETYPES)[number];
-
-/** Each archetype's parameter surface: the entries its body understands. */
-const ARCHETYPE_SURFACES: Record<
-  ArchetypeName,
-  { readonly keys: readonly string[]; readonly required: readonly string[] }
-> = {
-  advance: {
-    keys: [
-      "against",
-      "amount",
-      "count",
-      "every",
-      "fee",
-      "first_due",
-      "funder",
-      "to",
-    ],
-    // The repayment source is one of two shapes (a schedule, or a carve out of
-    // a hold's release), so the advance case below states that requirement
-    // itself rather than listing either shape's keys here.
-    required: ["funder", "to", "amount"],
-  },
-  deposit: {
-    keys: ["amount", "claim", "holder", "payer", "return"],
-    required: ["payer", "holder", "amount", "claim", "return"],
-  },
-  held_payment: {
-    keys: ["amount", "fees", "on_cancel", "payer", "payee", "release"],
-    required: ["payer", "payee", "amount", "release"],
-  },
-  instant_transfer: {
-    keys: ["amount", "fees", "payer", "payee"],
-    required: ["payer", "payee", "amount"],
-  },
-  metered: {
-    keys: ["close_by", "payer", "payee", "rates"],
-    required: ["payer", "payee", "rates", "close_by"],
-  },
-  pooled_split: {
-    keys: ["amount", "payer", "payout_due", "split"],
-    required: ["payer", "amount", "split", "payout_due"],
-  },
-  premium_forward: {
-    keys: ["amount", "bind", "carrier", "commission", "on_cancel", "payer"],
-    required: ["payer", "carrier", "amount", "bind"],
-  },
-  scheduled: {
-    keys: ["amount", "count", "every", "first_due", "payer", "payee"],
-    required: ["payer", "payee", "amount", "count", "every", "first_due"],
-  },
-  swap: {
-    keys: ["amounts", "between", "dispute", "fees", "release"],
-    required: ["between", "amounts", "release"],
-  },
-};
+export { SETTLEMENT_ARCHETYPES } from "./archetypes.ts";
 
 /** The three terms that together declare a finite schedule. */
 const SCHEDULE_KEYS = ["count", "every", "first_due"] as const;
@@ -124,6 +72,7 @@ export function checkProgram(program: Program): CheckResult {
   const warning = (span: Span, message: string): void => {
     diagnostics.push({ message, severity: "warning", span });
   };
+  const derivedAmounts: CheckedDerivedAmount[] = [];
 
   // --- Header ---------------------------------------------------------------
   const headers = program.decls.filter((decl) => decl.kind === "program");
@@ -338,6 +287,7 @@ export function checkProgram(program: Program): CheckResult {
     /^piece\d+Amount$/,
     /^installment\d+Amount$/,
     /^repayment\d+Amount$/,
+    /^carve(?:Hold|Recourse\d+)Id$/,
     /ShareAmount$/,
     /AccountId$/,
   ];
@@ -464,6 +414,7 @@ export function checkProgram(program: Program): CheckResult {
   const parseDisputeEntry = (
     entry: Entry | undefined,
     owner: string,
+    label = "dispute",
   ):
     | {
         readonly origin: Span;
@@ -477,35 +428,35 @@ export function checkProgram(program: Program): CheckResult {
     if (value.kind !== "port_ref") {
       error(
         value.span,
-        `${owner} needs one whole-trade dispute decision, like: dispute: port resolve_dispute within P14D`,
+        `${owner} needs one ${label} decision through a fixed windowed port`,
       );
       return undefined;
     }
     if (!portNames.has(value.name.name)) {
       error(
         value.name.span,
-        `${owner} disputes through port ${value.name.name}, but no port with that name is declared`,
+        `${owner} routes ${label} through port ${value.name.name}, but no port with that name is declared`,
       );
       return undefined;
     }
     if (!value.within) {
       error(
         value.span,
-        `${owner} dispute needs a fixed window, like: dispute: port ${value.name.name} within P14D`,
+        `${owner} ${label} needs a fixed window, like: ${entry.key.name}: port ${value.name.name} within P14D`,
       );
       return undefined;
     }
     const raw = value.within.name;
     const match = /^P([1-9]\d{0,3})([DW])$/.exec(raw);
-    if (raw !== "P0D" && !match) {
+    if (!match) {
       error(
         value.within.span,
-        `dispute on ${owner} uses a fixed duration in days or weeks, like P14D; calendar months cannot define an exact money deadline`,
+        `${label} on ${owner} uses a fixed duration in days or weeks, like P14D; calendar months cannot define an exact money deadline`,
       );
       return undefined;
     }
-    const magnitude = match ? Number(match[1]) : 0;
-    const days = match?.[2] === "W" ? magnitude * 7 : magnitude;
+    const magnitude = Number(match[1]);
+    const days = match[2] === "W" ? magnitude * 7 : magnitude;
     referencedPorts.add(value.name.name);
     return {
       origin: value.span,
@@ -771,10 +722,98 @@ export function checkProgram(program: Program): CheckResult {
     return undefined;
   };
 
+  const parseFieldName = (
+    entry: Entry | undefined,
+    owner: string,
+  ): string | undefined => {
+    if (!entry) return undefined;
+    noQualifiers(entry, owner);
+    if (entry.value.kind === "ident" && CAMEL_CASE.test(entry.value.name)) {
+      return reservedFieldName(entry.value.name, entry.value.span, owner)
+        ? undefined
+        : entry.value.name;
+    }
+    error(
+      entry.value.span,
+      `${entry.key.name} on ${owner} names a camelCase lineage field, like: ${entry.key.name}: captureReference`,
+    );
+    return undefined;
+  };
+
+  const requireIdentPolicy = (
+    entry: Entry | undefined,
+    owner: string,
+    expected: string,
+    refusal: string,
+  ): boolean => {
+    if (!entry) return false;
+    noQualifiers(entry, owner);
+    if (entry.value.kind === "ident" && entry.value.name === expected) {
+      return true;
+    }
+    error(
+      entry.value.span,
+      `${entry.key.name} on ${owner} is ${expected}; ${refusal}`,
+    );
+    return false;
+  };
+
+  const parseLiteralCount = (
+    entry: Entry | undefined,
+    owner: string,
+    label: string,
+    minimum: number,
+    maximum: number,
+  ): number | undefined => {
+    if (!entry) return undefined;
+    noQualifiers(entry, owner);
+    const parsed =
+      entry.value.kind === "number" ? Number(entry.value.raw) : Number.NaN;
+    if (Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum) {
+      return parsed;
+    }
+    error(
+      entry.value.span,
+      `${label} on ${owner} is a literal integer from ${minimum} through ${maximum}`,
+    );
+    return undefined;
+  };
+
+  const parsePartyList = (
+    entry: Entry | undefined,
+    owner: string,
+    label: string,
+    minimum: number,
+    maximum: number,
+  ): string[] | undefined => {
+    if (!entry) return undefined;
+    noQualifiers(entry, owner);
+    if (
+      entry.value.kind !== "list" ||
+      entry.value.items.length < minimum ||
+      entry.value.items.length > maximum
+    ) {
+      error(
+        entry.value.span,
+        `${label} on ${owner} lists ${minimum} through ${maximum} declared parties`,
+      );
+      return undefined;
+    }
+    const names = entry.value.items
+      .map((item) => partyRef(item, `${owner} ${label}`))
+      .filter((name): name is string => name !== undefined);
+    if (new Set(names).size !== names.length) {
+      error(entry.value.span, `${label} on ${owner} must not repeat a party`);
+      return undefined;
+    }
+    return names.length === entry.value.items.length ? names : undefined;
+  };
+
   const parseSchedule = (
     entries: Map<string, Entry>,
     owner: string,
     origin: Span,
+    maxCount = 12,
   ): ScheduleTerms | undefined => {
     const countEntry = entries.get("count");
     const everyEntry = entries.get("every");
@@ -783,12 +822,12 @@ export function checkProgram(program: Program): CheckResult {
       noQualifiers(countEntry, owner);
       const value = countEntry.value;
       const parsed = value.kind === "number" ? Number(value.raw) : Number.NaN;
-      if (Number.isInteger(parsed) && parsed >= 2 && parsed <= 12) {
+      if (Number.isInteger(parsed) && parsed >= 2 && parsed <= maxCount) {
         count = parsed;
       } else {
         error(
           value.span,
-          `count on ${owner} is a literal number of anchors between 2 and 12; the schedule stays finite by construction`,
+          `count on ${owner} is a literal number of anchors between 2 and ${maxCount}; the schedule stays finite by construction`,
         );
       }
     }
@@ -819,6 +858,61 @@ export function checkProgram(program: Program): CheckResult {
     const firstDueField = parseDateField(entries.get("first_due"), owner);
     if (count === undefined || !every || !firstDueField) return undefined;
     return { count, every, firstDueField, origin };
+  };
+
+  const parseSettlementReference = (
+    entry: Entry,
+    owner: string,
+  ): CheckedSettlementReference | undefined => {
+    noQualifiers(entry, owner);
+    const value = entry.value;
+    if (value.kind !== "settlement_ref") {
+      error(
+        value.span,
+        `${owner} draws against a held payment's release, like: against: retention.release`,
+      );
+      return undefined;
+    }
+    const target = value.owner.name;
+    const targetDecl = settlementDecls.find(
+      (decl) => decl.name.name === target,
+    );
+    if (!targetDecl) {
+      const other = declared.get(target);
+      error(
+        value.owner.span,
+        other
+          ? `${owner} references ${target}, which is a ${other.kind}; settlement exits belong to settlements`
+          : `${owner} references ${target}, but no settlement with that name is declared`,
+      );
+      return undefined;
+    }
+    const targetArchetype = targetDecl.archetype.name;
+    if (
+      !(SETTLEMENT_ARCHETYPES as readonly string[]).includes(targetArchetype)
+    ) {
+      return undefined;
+    }
+    const exits =
+      ARCHETYPE_DEFINITIONS[targetArchetype as ArchetypeName]
+        .referenceableExits;
+    if (!exits.includes(value.member.name)) {
+      const offered =
+        exits.length > 0
+          ? `it exposes ${exits.join(", ")}`
+          : "it exposes no referenceable exits";
+      error(
+        value.member.span,
+        `${owner} references ${target}.${value.member.name}, but ${targetArchetype} does not expose that exit; ${offered}`,
+      );
+      return undefined;
+    }
+    return {
+      exit: value.member.name,
+      origin: value.span,
+      settlement: target,
+      targetArchetype: targetArchetype as ArchetypeName,
+    };
   };
 
   /**
@@ -855,23 +949,8 @@ export function checkProgram(program: Program): CheckResult {
       const schedule = parseSchedule(entries, owner, origin);
       return schedule ? { kind: "schedule", schedule } : undefined;
     }
-    noQualifiers(againstEntry, owner);
-    const value = againstEntry.value;
-    if (value.kind !== "settlement_ref") {
-      error(
-        value.span,
-        `${owner} draws against a held payment's release, like: against: retention.release`,
-      );
-      return undefined;
-    }
-    if (value.member.name !== "release") {
-      error(
-        value.member.span,
-        `an advance carves a hold's release; there is no exit named ${value.member.name} on ${value.owner.name} to draw against`,
-      );
-      return undefined;
-    }
-    return { kind: "carve", origin: value.span, settlement: value.owner.name };
+    const reference = parseSettlementReference(againstEntry, owner);
+    return reference ? { kind: "carve", ...reference } : undefined;
   };
 
   // --- Settlements: one checker per archetype ---------------------------------
@@ -888,8 +967,12 @@ export function checkProgram(program: Program): CheckResult {
     }
 
     const owner = `settlement ${decl.name.name}`;
-    const surface = ARCHETYPE_SURFACES[archetype as ArchetypeName];
-    const entries = entriesOf(decl.body, surface.keys, owner);
+    const surface = ARCHETYPE_DEFINITIONS[archetype as ArchetypeName];
+    const entries = entriesOf(
+      decl.body,
+      [...surface.keys, "derived_amount"],
+      owner,
+    );
     for (const required of surface.required) {
       if (!entries.has(required)) {
         error(decl.span, `${owner} is missing ${required}`);
@@ -912,8 +995,737 @@ export function checkProgram(program: Program): CheckResult {
       }
       return true;
     };
+    const derived = entries.get("derived_amount");
+    if (derived) {
+      noQualifiers(derived, owner);
+      if (derived.value.kind !== "block") {
+        error(
+          derived.value.span,
+          "derived_amount is a block with field, source, rule, and bearer",
+        );
+      } else {
+        const terms = entriesOf(
+          derived.value,
+          ["field", "source", "rule", "bearer"],
+          `${owner} derived_amount`,
+        );
+        for (const key of ["field", "source", "rule", "bearer"] as const) {
+          if (!terms.has(key))
+            error(derived.span, `${owner} derived_amount is missing ${key}`);
+        }
+        const fieldValue = terms.get("field")?.value;
+        const baseValue = terms.get("source")?.value;
+        const ruleValue = terms.get("rule")?.value;
+        const bearerValue = terms.get("bearer")?.value;
+        const field =
+          fieldValue?.kind === "ident" ? fieldValue.name : undefined;
+        const baseField =
+          baseValue?.kind === "ident" ? baseValue.name : undefined;
+        const bearer = bearerValue
+          ? partyRef(bearerValue, `${owner} derived amount bearer`)
+          : undefined;
+        if (fieldValue && fieldValue.kind !== "ident")
+          error(
+            fieldValue.span,
+            "derived amount field must be a camelCase identifier",
+          );
+        if (baseValue && baseValue.kind !== "ident")
+          error(
+            baseValue.span,
+            "derived amount source must name one stored money field",
+          );
+        if (ruleValue && ruleValue.kind !== "percent") {
+          error(
+            ruleValue.span,
+            "derived_amount proves percentage-of rules only; fixed and tiered rules are refused",
+          );
+        }
+        if (
+          ruleValue?.kind === "percent" &&
+          (ruleValue.bps <= 0 || ruleValue.bps >= TOTAL_BPS)
+        ) {
+          error(
+            ruleValue.span,
+            "derived amount percentage must be above 0% and below 100%",
+          );
+        }
+        if (field && !CAMEL_CASE.test(field))
+          error(
+            fieldValue!.span,
+            `derived amount field ${field} must be camelCase`,
+          );
+        if (baseField && !CAMEL_CASE.test(baseField))
+          error(
+            baseValue!.span,
+            `derived amount source ${baseField} must be camelCase`,
+          );
+        if (field && baseField && field === baseField)
+          error(
+            derived.span,
+            "derived amount field must differ from its source field",
+          );
+        if (
+          field &&
+          baseField &&
+          bearer &&
+          ruleValue?.kind === "percent" &&
+          ruleValue.bps > 0 &&
+          ruleValue.bps < TOTAL_BPS
+        ) {
+          derivedAmounts.push({
+            baseField,
+            bearer,
+            bps: ruleValue.bps,
+            field,
+            origin: derived.span,
+            settlement: decl.name.name,
+          });
+        }
+      }
+    }
 
     switch (archetype as ArchetypeName) {
+      case "captured_payment": {
+        const payer = party("payer", "payer");
+        const payee = party("payee", "payee");
+        const sound = distinct(
+          payer,
+          payee,
+          `pays ${payer} from ${payer}; payer and payee must differ`,
+        );
+        const amount = parseAmount(entries.get("amount"), owner);
+        const reserveUntilField = parseDateField(
+          entries.get("reserve_until"),
+          owner,
+        );
+        const correction = parsePortEntry(
+          entries.get("correction"),
+          owner,
+          "payee correction",
+        );
+        const externalReversal = parseDisputeEntry(
+          entries.get("external_reversal"),
+          owner,
+          "external reversal",
+        );
+        const captureInSlices = requireIdentPolicy(
+          entries.get("capture_mode"),
+          owner,
+          "partial_then_full",
+          "capture calls must leave a remainder and settle posts the final remainder",
+        );
+        const fullCorrection = requireIdentPolicy(
+          entries.get("correction_mode"),
+          owner,
+          "full_only",
+          "repeated partial corrections are not representable yet, so the checker refuses them",
+        );
+        const noNegativePosition = requireIdentPolicy(
+          entries.get("negative_position"),
+          owner,
+          "reject",
+          "a correction or reversal must fail when the payee cannot fund it",
+        );
+        const timeoutRejects = requireIdentPolicy(
+          entries.get("timeout"),
+          owner,
+          "reject",
+          "a timeout records no money movement; only a confirmed decision may reverse funds",
+        );
+        if (entries.has("fees")) {
+          error(
+            entries.get("fees")!.span,
+            `${owner} does not price fees inside captured_payment; compose a separate fee settlement so capture and correction amounts stay exact`,
+          );
+        }
+        if (amount && reserveUntilField === amount.name) {
+          error(
+            entries.get("reserve_until")?.span ?? decl.span,
+            `${owner} uses ${amount.name} as both the reserved amount and reserve_until date field; they need distinct names`,
+          );
+          break;
+        }
+        if (
+          payer &&
+          payee &&
+          amount &&
+          reserveUntilField &&
+          correction &&
+          externalReversal &&
+          captureInSlices &&
+          fullCorrection &&
+          noNegativePosition &&
+          timeoutRejects &&
+          sound
+        ) {
+          settlements.push({
+            amount,
+            archetype: "captured_payment",
+            correction,
+            externalReversal,
+            name: decl.name.name,
+            origin: decl.span,
+            payee,
+            payer,
+            reserveUntilField,
+          } satisfies CheckedCaptureReservation);
+        }
+        break;
+      }
+      case "settlement_batch": {
+        const settlementAccount = party(
+          "settlement_account",
+          "settlement account",
+        );
+        const payoutDestination = party(
+          "payout_destination",
+          "payout destination",
+        );
+        const sound = distinct(
+          settlementAccount,
+          payoutDestination,
+          `routes payout from ${settlementAccount} back to itself; settlement account and payout destination must differ`,
+        );
+        const sourceCaptureReferenceField = parseFieldName(
+          entries.get("source_capture_refs"),
+          owner,
+        );
+        const feeReferenceField = parseFieldName(
+          entries.get("fee_entries"),
+          owner,
+        );
+        const externalReversalReferenceField = parseFieldName(
+          entries.get("external_reversal_offsets"),
+          owner,
+        );
+        const closeTriggerField = parseDateField(
+          entries.get("close_trigger"),
+          owner,
+        );
+        const payoutAcknowledgement = parsePortEntry(
+          entries.get("payout_acknowledgement"),
+          owner,
+          "payout acknowledgement",
+        );
+        const payoutBeneficiaryReferenceField = parseFieldName(
+          entries.get("payout_beneficiary_ref"),
+          owner,
+        );
+        const rejectsNegative = requireIdentPolicy(
+          entries.get("negative_position"),
+          owner,
+          "reject",
+          "offsets beyond gross capture entries must stop calculation and post no payout",
+        );
+        const lineageFields = [
+          sourceCaptureReferenceField,
+          feeReferenceField,
+          externalReversalReferenceField,
+          closeTriggerField,
+          payoutBeneficiaryReferenceField,
+        ].filter((field): field is string => field !== undefined);
+        if (new Set(lineageFields).size !== lineageFields.length) {
+          error(
+            decl.span,
+            `${owner} needs distinct source_capture_refs, fee_entries, external_reversal_offsets, close_trigger, and payout_beneficiary_ref field names`,
+          );
+          break;
+        }
+        if (
+          settlementAccount &&
+          payoutDestination &&
+          sourceCaptureReferenceField &&
+          feeReferenceField &&
+          externalReversalReferenceField &&
+          closeTriggerField &&
+          payoutAcknowledgement &&
+          payoutBeneficiaryReferenceField &&
+          rejectsNegative &&
+          sound
+        ) {
+          settlements.push({
+            archetype: "settlement_batch",
+            closeTriggerField,
+            externalReversalReferenceField,
+            feeReferenceField,
+            name: decl.name.name,
+            origin: decl.span,
+            payoutDestination,
+            payoutAcknowledgement,
+            payoutBeneficiaryReferenceField,
+            settlementAccount,
+            sourceCaptureReferenceField,
+          } satisfies CheckedSettlementBatch);
+        }
+        break;
+      }
+      case "funding_round": {
+        const contributor = party("contributor", "contributor");
+        const beneficiary = party("beneficiary", "beneficiary");
+        const target = parseAmount(entries.get("target"), owner);
+        const commitment = parseAmount(entries.get("commitment"), owner);
+        const maxContributors = parseLiteralCount(
+          entries.get("max_contributors"),
+          owner,
+          "max_contributors",
+          2,
+          10_000,
+        );
+        const closeByField = parseDateField(entries.get("close_by"), owner);
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("close_policy"),
+            owner,
+            "threshold",
+            "close must follow the locked committed sum at the stored close date",
+          ),
+          requireIdentPolicy(
+            entries.get("overfund_policy"),
+            owner,
+            "reject",
+            "a commitment past the remaining target headroom must refuse",
+          ),
+          requireIdentPolicy(
+            entries.get("cancel_policy"),
+            owner,
+            "before_close",
+            "a commitment may cancel only while its parent remains open",
+          ),
+          requireIdentPolicy(
+            entries.get("fail_policy"),
+            owner,
+            "whole_commitment_refund",
+            "failure refunds each stored commitment whole",
+          ),
+        ].every(Boolean);
+        const sound = distinct(
+          contributor,
+          beneficiary,
+          `uses ${contributor} as both contributor and beneficiary; the roles must differ`,
+        );
+        if (target && commitment && target.currency !== commitment.currency) {
+          error(
+            commitment.origin,
+            `${owner} mixes ${target.currency} and ${commitment.currency}; target and commitment need one currency`,
+          );
+        }
+        if (target && commitment && target.name === commitment.name) {
+          error(
+            commitment.origin,
+            `${owner} uses ${target.name} for both target and commitment; the parent and child amounts need distinct fields`,
+          );
+        }
+        if (
+          contributor &&
+          beneficiary &&
+          target &&
+          commitment &&
+          target.currency === commitment.currency &&
+          target.name !== commitment.name &&
+          maxContributors &&
+          closeByField &&
+          policiesSound &&
+          sound
+        ) {
+          settlements.push({
+            archetype: "funding_round",
+            beneficiary,
+            cancelPolicy: "before_close",
+            closeByField,
+            closePolicy: "threshold",
+            commitment,
+            contributor,
+            failPolicy: "whole_commitment_refund",
+            maxContributors,
+            name: decl.name.name,
+            origin: decl.span,
+            overfundPolicy: "reject",
+            target,
+          } satisfies CheckedFundingRound);
+        }
+        break;
+      }
+      case "weighted_distribution": {
+        const source = party("source", "source");
+        const recipient = party("recipient", "recipient template");
+        const amount = parseAmount(entries.get("amount"), owner);
+        const weight = parseAmount(entries.get("weight"), owner);
+        const maxRecipients = parseLiteralCount(
+          entries.get("max_recipients"),
+          owner,
+          "max_recipients",
+          2,
+          10_000,
+        );
+        const recordAtField = parseDateField(entries.get("record_at"), owner);
+        const snapshot = parsePortEntry(
+          entries.get("snapshot"),
+          owner,
+          "entitlement snapshot",
+        );
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("rounding_policy"),
+            owner,
+            "largest_remainder",
+            "floor shares use a deterministic largest-remainder allocation with noun id as the tie-break",
+          ),
+          requireIdentPolicy(
+            entries.get("withholding_policy"),
+            owner,
+            "refuse",
+            "withholding needs its own proved retained-amount mechanism",
+          ),
+          requireIdentPolicy(
+            entries.get("correction_policy"),
+            owner,
+            "new_distribution",
+            "post-payout correction is a new linked distribution, never a rewrite or caller amount",
+          ),
+        ].every(Boolean);
+        const sound = distinct(
+          source,
+          recipient,
+          `uses ${source} as both source and recipient; the roles must differ`,
+        );
+        if (amount && weight && amount.currency !== weight.currency) {
+          error(
+            weight.origin,
+            `${owner} mixes ${amount.currency} and ${weight.currency}; pool and stored weights need one denomination`,
+          );
+        }
+        if (amount && weight && amount.name === weight.name) {
+          error(
+            weight.origin,
+            `${owner} uses ${amount.name} for both pool and weight; the fields must differ`,
+          );
+        }
+        if (
+          source &&
+          recipient &&
+          amount &&
+          weight &&
+          amount.currency === weight.currency &&
+          amount.name !== weight.name &&
+          maxRecipients &&
+          recordAtField &&
+          snapshot &&
+          policiesSound &&
+          sound
+        ) {
+          settlements.push({
+            amount,
+            archetype: "weighted_distribution",
+            correctionPolicy: "new_distribution",
+            maxRecipients,
+            name: decl.name.name,
+            origin: decl.span,
+            recipient,
+            recordAtField,
+            roundingPolicy: "largest_remainder",
+            snapshot,
+            source,
+            weight,
+            withholdingPolicy: "refuse",
+          } satisfies CheckedWeightedDistribution);
+        }
+        break;
+      }
+      case "credit_facility": {
+        const lender = party("lender", "lender");
+        const borrower = party("borrower", "borrower");
+        const drawDestination = party("draw_destination", "draw destination");
+        const limit = parseAmount(entries.get("limit"), owner);
+        const expiresAtField = parseDateField(entries.get("expires_at"), owner);
+        const obligationEntry = entries.get("obligation");
+        const obligation = obligationEntry
+          ? parseSettlementReference(obligationEntry, owner)
+          : undefined;
+        const availabilityEntry = entries.get("availability_policy");
+        let availabilityPolicy: "revolving" | "non_revolving" | undefined;
+        if (
+          availabilityEntry?.value.kind === "ident" &&
+          (availabilityEntry.value.name === "revolving" ||
+            availabilityEntry.value.name === "non_revolving")
+        ) {
+          availabilityPolicy = availabilityEntry.value.name;
+        } else if (availabilityEntry) {
+          error(
+            availabilityEntry.value.span,
+            `availability_policy on ${owner} is revolving or non_revolving; the factpack does not justify an implicit choice`,
+          );
+        }
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("expiry_policy"),
+            owner,
+            "freeze_draws",
+            "expiry stops new draws without closing linked debt",
+          ),
+          requireIdentPolicy(
+            entries.get("close_policy"),
+            owner,
+            "no_open_draws",
+            "the facility closes only after every linked obligation resolves",
+          ),
+        ].every(Boolean);
+        const rolesSound = [
+          distinct(
+            lender,
+            borrower,
+            `uses ${lender} as both lender and borrower; the roles must differ`,
+          ),
+          distinct(
+            lender,
+            drawDestination,
+            `draws back to its lender ${lender}; draw_destination must differ`,
+          ),
+        ].every(Boolean);
+        if (
+          lender &&
+          borrower &&
+          drawDestination &&
+          limit &&
+          expiresAtField &&
+          obligation &&
+          availabilityPolicy &&
+          policiesSound &&
+          rolesSound
+        ) {
+          settlements.push({
+            archetype: "credit_facility",
+            availabilityPolicy,
+            borrower,
+            closePolicy: "no_open_draws",
+            drawDestination,
+            expiresAtField,
+            expiryPolicy: "freeze_draws",
+            lender,
+            limit,
+            name: decl.name.name,
+            obligation,
+            origin: decl.span,
+          } satisfies CheckedCreditFacility);
+        }
+        break;
+      }
+      case "recurring_collection": {
+        const obligationEntry = entries.get("obligation");
+        const obligation = obligationEntry
+          ? parseSettlementReference(obligationEntry, owner)
+          : undefined;
+        const mandate = parsePortEntry(
+          entries.get("mandate"),
+          owner,
+          "mandate evidence",
+        );
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("attempt_policy"),
+            owner,
+            "explicit",
+            "every attempt is a separate receipted call",
+          ),
+          requireIdentPolicy(
+            entries.get("period_idempotency"),
+            owner,
+            "obligation_and_anchor",
+            "the parent obligation and stored anchor form the period identity",
+          ),
+          requireIdentPolicy(
+            entries.get("retry_policy"),
+            owner,
+            "explicit_attempt",
+            "PRINCIPLES.md bans hidden retries; a retry needs a new explicit idempotency key",
+          ),
+          requireIdentPolicy(
+            entries.get("failure_policy"),
+            owner,
+            "parent_delinquency",
+            "the scheduled obligation owns due state and delinquency",
+          ),
+        ].every(Boolean);
+        if (obligation && mandate && policiesSound) {
+          settlements.push({
+            archetype: "recurring_collection",
+            attemptPolicy: "explicit",
+            failurePolicy: "parent_delinquency",
+            mandate,
+            name: decl.name.name,
+            obligation,
+            origin: decl.span,
+            periodIdempotency: "obligation_and_anchor",
+            retryPolicy: "explicit_attempt",
+          } satisfies CheckedRecurringCollection);
+        }
+        break;
+      }
+      case "conditional_disbursement": {
+        const source = party("source", "source");
+        const destination = party("destination", "destination");
+        const cap = parseAmount(entries.get("cap"), owner);
+        const amount = parseAmount(entries.get("amount"), owner);
+        const decision = parsePortEntry(
+          entries.get("decision"),
+          owner,
+          "capped disbursement decision",
+        );
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("reopen_policy"),
+            owner,
+            "refuse",
+            "a closed decision cannot be reopened; create a new linked disbursement",
+          ),
+          requireIdentPolicy(
+            entries.get("recovery_policy"),
+            owner,
+            "separate_transfer",
+            "recovery is a new money movement with its own receipt",
+          ),
+        ].every(Boolean);
+        const sound = distinct(
+          source,
+          destination,
+          `pays ${source} from itself; source and destination must differ`,
+        );
+        if (cap && amount && cap.currency !== amount.currency) {
+          error(
+            amount.origin,
+            `${owner} mixes ${cap.currency} and ${amount.currency}; cap and approved amount need one currency`,
+          );
+        }
+        if (cap && amount && cap.name === amount.name) {
+          error(
+            amount.origin,
+            `${owner} uses ${cap.name} for both cap and approved amount; the fields must differ`,
+          );
+        }
+        if (
+          source &&
+          destination &&
+          cap &&
+          amount &&
+          cap.currency === amount.currency &&
+          cap.name !== amount.name &&
+          decision &&
+          policiesSound &&
+          sound
+        ) {
+          settlements.push({
+            amount,
+            archetype: "conditional_disbursement",
+            cap,
+            decision,
+            destination,
+            name: decl.name.name,
+            origin: decl.span,
+            recoveryPolicy: "separate_transfer",
+            reopenPolicy: "refuse",
+            source,
+          } satisfies CheckedConditionalDisbursement);
+        }
+        break;
+      }
+      case "rotating_pool": {
+        const members = parsePartyList(
+          entries.get("members"),
+          owner,
+          "members",
+          2,
+          5,
+        );
+        const payoutOrder = parsePartyList(
+          entries.get("payout_order"),
+          owner,
+          "payout_order",
+          2,
+          5,
+        );
+        const contribution = parseAmount(entries.get("contribution"), owner);
+        const schedule = parseSchedule(entries, owner, decl.span, 12);
+        const guarantor = entries.has("guarantor")
+          ? party("guarantor", "guarantor")
+          : undefined;
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("default_policy"),
+            owner,
+            "due_condition",
+            "default follows an unmet stored contribution due condition",
+          ),
+          requireIdentPolicy(
+            entries.get("guarantee_policy"),
+            owner,
+            "funded_only",
+            "a guarantee changes money only through an explicit funded contribution",
+          ),
+          requireIdentPolicy(
+            entries.get("exit_policy"),
+            owner,
+            "before_activation_only",
+            "membership and order freeze before the first contribution",
+          ),
+        ].every(Boolean);
+        let rosterSound = true;
+        if (members && payoutOrder) {
+          const memberSet = new Set(members);
+          if (
+            payoutOrder.length !== members.length ||
+            payoutOrder.some((name) => !memberSet.has(name))
+          ) {
+            error(
+              entries.get("payout_order")?.span ?? decl.span,
+              `${owner} payout_order must contain every member exactly once`,
+            );
+            rosterSound = false;
+          }
+        }
+        if (members && schedule && schedule.count !== members.length) {
+          error(
+            entries.get("count")?.span ?? decl.span,
+            `${owner} count ${schedule.count} must equal its ${members.length}-member roster`,
+          );
+          rosterSound = false;
+        }
+        if (members && guarantor && members.includes(guarantor)) {
+          error(
+            entries.get("guarantor")?.span ?? decl.span,
+            `${owner} guarantor must differ from every member`,
+          );
+          rosterSound = false;
+        }
+        if (members && guarantor && members.length > 4) {
+          error(
+            entries.get("members")?.span ?? decl.span,
+            `${owner} supports at most 4 members with a guarantor so every generated child binding stays within the 8-entry cap`,
+          );
+          rosterSound = false;
+        }
+        if (
+          members &&
+          payoutOrder &&
+          contribution &&
+          schedule &&
+          policiesSound &&
+          rosterSound
+        ) {
+          settlements.push({
+            archetype: "rotating_pool",
+            contribution,
+            defaultPolicy: "due_condition",
+            exitPolicy: "before_activation_only",
+            guaranteePolicy: "funded_only",
+            ...(guarantor ? { guarantor } : {}),
+            members,
+            name: decl.name.name,
+            origin: decl.span,
+            payoutOrder,
+            schedule,
+          } satisfies CheckedRotatingPool);
+        }
+        break;
+      }
       case "swap": {
         const betweenEntry = entries.get("between");
         let sideA: string | undefined;
@@ -1151,18 +1963,91 @@ export function checkProgram(program: Program): CheckResult {
           [payer, carrier].filter((name): name is string => name !== undefined),
           "this settlement's payer or carrier",
         );
-        if (payer && carrier && amount && bind && sound) {
-          settlements.push({
+        const extensionKeys = [
+          "policy_ref",
+          "renewal_due",
+          "renewal_policy",
+          "endorsement",
+          "endorsement_policy",
+          "lapse_policy",
+        ];
+        const extendsPolicy = extensionKeys.some((key) => entries.has(key));
+        if (extendsPolicy) {
+          for (const key of extensionKeys) {
+            if (!entries.has(key))
+              error(decl.span, `${owner} is missing ${key}`);
+          }
+        }
+        const policyReferenceField = extendsPolicy
+          ? parseFieldName(entries.get("policy_ref"), owner)
+          : undefined;
+        const renewalDueField = extendsPolicy
+          ? parseDateField(entries.get("renewal_due"), owner)
+          : undefined;
+        const endorsement = extendsPolicy
+          ? parsePortEntry(
+              entries.get("endorsement"),
+              owner,
+              "endorsement evidence",
+            )
+          : undefined;
+        const extensionPoliciesSound = !extendsPolicy
+          ? true
+          : [
+              requireIdentPolicy(
+                entries.get("renewal_policy"),
+                owner,
+                "explicit_new_forward",
+                "each renewal creates a new premium_forward instead of moving money from policy state",
+              ),
+              requireIdentPolicy(
+                entries.get("endorsement_policy"),
+                owner,
+                "non_money_only",
+                "a money adjustment needs a separate corrected movement",
+              ),
+              requireIdentPolicy(
+                entries.get("lapse_policy"),
+                owner,
+                "due_condition",
+                "lapse follows the stored renewal due condition",
+              ),
+            ].every(Boolean);
+        if (
+          payer &&
+          carrier &&
+          amount &&
+          bind &&
+          sound &&
+          extensionPoliciesSound &&
+          (!extendsPolicy ||
+            (policyReferenceField && renewalDueField && endorsement))
+        ) {
+          const checked: CheckedPremiumForward = {
             amount,
             archetype: "premium_forward",
             bind,
             carrier,
             commissionBps,
+            ...(endorsement ? { endorsement } : {}),
+            ...(extendsPolicy &&
+            policyReferenceField &&
+            renewalDueField &&
+            endorsement
+              ? {
+                  endorsementPolicy: "non_money_only" as const,
+                  lapsePolicy: "due_condition" as const,
+                  policyReferenceField,
+                  renewalDueField,
+                  renewalPolicy: "explicit_new_forward" as const,
+                }
+              : {}),
             name: decl.name.name,
             ...(onCancel ? { onCancel } : {}),
             origin: decl.span,
             payer,
-          });
+          };
+          settlements.push(checked);
         }
         break;
       }
@@ -1211,7 +2096,16 @@ export function checkProgram(program: Program): CheckResult {
           `pays ${payer} from ${payer}; payer and payee must differ`,
         );
         const amount = parseAmount(entries.get("amount"), owner);
-        const schedule = parseSchedule(entries, owner, decl.span);
+        const requestedMode = entries.get("mode")?.value;
+        const obligationModeRequested =
+          requestedMode?.kind === "ident" &&
+          requestedMode.name === "obligation";
+        const schedule = parseSchedule(
+          entries,
+          owner,
+          decl.span,
+          obligationModeRequested ? 7 : 12,
+        );
         if (amount && schedule && amount.name === schedule.firstDueField) {
           error(
             schedule.origin,
@@ -1219,10 +2113,126 @@ export function checkProgram(program: Program): CheckResult {
           );
           break;
         }
-        if (payer && payee && amount && schedule && sound) {
+        const modeEntry = entries.get("mode");
+        const obligationKeys = [
+          "advance_to",
+          "debtor",
+          "delinquency_policy",
+          "partial_payment",
+          "refund_policy",
+          "repayment_matching",
+          "reschedule_policy",
+        ];
+        const hasObligationKey = obligationKeys.some((key) => entries.has(key));
+        if (!modeEntry && hasObligationKey) {
+          error(
+            decl.span,
+            `${owner} uses obligation policies without mode: obligation`,
+          );
+          break;
+        }
+        if (!modeEntry) {
+          if (payer && payee && amount && schedule && sound) {
+            settlements.push({
+              amount,
+              archetype: "scheduled",
+              mode: "transfer",
+              name: decl.name.name,
+              origin: decl.span,
+              payee,
+              payer,
+              schedule,
+            });
+          }
+          break;
+        }
+        if (
+          !requireIdentPolicy(
+            modeEntry,
+            owner,
+            "obligation",
+            "omit mode for a fixed transfer schedule",
+          )
+        ) {
+          break;
+        }
+        const requiredPolicies = [
+          "debtor",
+          "partial_payment",
+          "repayment_matching",
+          "refund_policy",
+          "reschedule_policy",
+          "delinquency_policy",
+        ];
+        for (const key of requiredPolicies) {
+          if (!entries.has(key)) error(decl.span, `${owner} is missing ${key}`);
+        }
+        const debtor = party("debtor", "debtor");
+        const advanceTo = entries.has("advance_to")
+          ? party("advance_to", "advance recipient")
+          : undefined;
+        const policiesSound = [
+          requireIdentPolicy(
+            entries.get("partial_payment"),
+            owner,
+            "anchor_bound",
+            "payments must bind to one stored installment anchor",
+          ),
+          requireIdentPolicy(
+            entries.get("repayment_matching"),
+            owner,
+            "obligation_and_anchor",
+            "each payment must name both the obligation and its installment anchor; fuzzy or balance-wide matching is refused",
+          ),
+          requireIdentPolicy(
+            entries.get("refund_policy"),
+            owner,
+            "full_payment_only",
+            "a refund reverses one stored payment whole so it cannot exceed that payment",
+          ),
+          requireIdentPolicy(
+            entries.get("reschedule_policy"),
+            owner,
+            "refuse",
+            "forward-version carryover is not mechanically proven; create a new obligation after closing this one",
+          ),
+          requireIdentPolicy(
+            entries.get("delinquency_policy"),
+            owner,
+            "due_condition",
+            "delinquency must come from an unmet stored due anchor",
+          ),
+        ].every(Boolean);
+        const rolesSound = [
+          distinct(
+            debtor,
+            payee,
+            `${owner} names ${debtor} as both debtor and settlement recipient; they must differ`,
+          ),
+          advanceTo
+            ? distinct(
+                advanceTo,
+                debtor,
+                `${owner} advances to its debtor ${debtor}; advance_to must name a distinct recipient`,
+              )
+            : true,
+        ].every(Boolean);
+        if (
+          payer &&
+          payee &&
+          amount &&
+          schedule &&
+          sound &&
+          debtor &&
+          policiesSound &&
+          rolesSound
+        ) {
           settlements.push({
+            ...(advanceTo ? { advanceTo } : {}),
             amount,
             archetype: "scheduled",
+            debtor,
+            mode: "obligation",
             name: decl.name.name,
             origin: decl.span,
             payee,
@@ -1279,6 +2289,7 @@ export function checkProgram(program: Program): CheckResult {
         const closeByField = parseDateField(entries.get("close_by"), owner);
         const rates: MeterRate[] = [];
         const ratesEntry = entries.get("rates");
+        let withinEventCap = true;
         if (ratesEntry) {
           noQualifiers(ratesEntry, owner);
           if (ratesEntry.value.kind !== "block") {
@@ -1287,6 +2298,16 @@ export function checkProgram(program: Program): CheckResult {
               `rates is a block of per-unit prices, like: rates { api_call: unitFee: money(SAR) }`,
             );
           } else {
+            const maxRates =
+              ARCHETYPE_DEFINITIONS.metered.maxRates ??
+              ARCHETYPE_DEFINITIONS.metered.eventCap;
+            if (ratesEntry.value.entries.length > maxRates) {
+              error(
+                ratesEntry.value.span,
+                `${owner} prices ${ratesEntry.value.entries.length} meters, but metered allows at most ${maxRates} so one settlement stays within its ${ARCHETYPE_DEFINITIONS.metered.eventCap}-event cap`,
+              );
+              withinEventCap = false;
+            }
             for (const rate of ratesEntry.value.entries) {
               if (!SNAKE_CASE.test(rate.key.name)) {
                 error(
@@ -1338,7 +2359,14 @@ export function checkProgram(program: Program): CheckResult {
           );
           break;
         }
-        if (payer && payee && closeByField && rates.length > 0 && sound) {
+        if (
+          payer &&
+          payee &&
+          closeByField &&
+          rates.length > 0 &&
+          sound &&
+          withinEventCap
+        ) {
           settlements.push({
             archetype: "metered",
             closeByField,
@@ -1376,6 +2404,16 @@ export function checkProgram(program: Program): CheckResult {
           );
           break;
         }
+        const maxRecipients =
+          ARCHETYPE_DEFINITIONS.pooled_split.maxRecipients ??
+          Math.floor(ARCHETYPE_DEFINITIONS.pooled_split.eventCap / 2);
+        const withinEventCap = !split || split.shares.length <= maxRecipients;
+        if (!withinEventCap) {
+          error(
+            splitEntry!.value.span,
+            `${owner} splits to ${split!.shares.length} recipients, but pooled_split allows at most ${maxRecipients} so funding and payout stay within its ${ARCHETYPE_DEFINITIONS.pooled_split.eventCap}-event cap`,
+          );
+        }
         // The lowering names each share field ${camelCase(party)}ShareAmount;
         // camelCasing is not injective (a_2b and a2b collide), so two shares
         // must never map onto one generated field.
@@ -1410,7 +2448,7 @@ export function checkProgram(program: Program): CheckResult {
           );
           break;
         }
-        if (payer && amount && distributeDueField && split) {
+        if (payer && amount && distributeDueField && split && withinEventCap) {
           settlements.push({
             amount,
             archetype: "pooled_split",
@@ -1522,6 +2560,120 @@ export function checkProgram(program: Program): CheckResult {
 
   const checkedPortByName = new Map(ports.map((port) => [port.name, port]));
   for (const settlement of settlements) {
+    if (settlement.archetype === "captured_payment") {
+      const correctionPort = checkedPortByName.get(settlement.correction.port);
+      if (
+        correctionPort &&
+        (correctionPort.allowed.length !== 1 ||
+          correctionPort.allowed[0] !== settlement.payee)
+      ) {
+        error(
+          correctionPort.origin,
+          `captured_payment ${settlement.name} correction port ${correctionPort.name} must allow only its payee ${settlement.payee}`,
+        );
+      }
+      const reversalPort = checkedPortByName.get(
+        settlement.externalReversal.port,
+      );
+      if (
+        reversalPort &&
+        !reversalPort.fields.some(
+          (field) =>
+            field.name === "externalReference" && field.type.kind === "text",
+        )
+      ) {
+        error(
+          reversalPort.origin,
+          `captured_payment ${settlement.name} external reversal port ${reversalPort.name} needs shape { externalReference: text }`,
+        );
+      }
+      continue;
+    }
+    if (settlement.archetype === "settlement_batch") {
+      const acknowledgementPort = checkedPortByName.get(
+        settlement.payoutAcknowledgement.port,
+      );
+      if (
+        acknowledgementPort &&
+        !acknowledgementPort.fields.some(
+          (field) =>
+            field.name === "acknowledgementReference" &&
+            field.type.kind === "text",
+        )
+      ) {
+        error(
+          acknowledgementPort.origin,
+          `settlement_batch ${settlement.name} payout acknowledgement port ${acknowledgementPort.name} needs shape { acknowledgementReference: text }`,
+        );
+      }
+      continue;
+    }
+    if (settlement.archetype === "weighted_distribution") {
+      const port = checkedPortByName.get(settlement.snapshot.port);
+      if (
+        port &&
+        !port.fields.some(
+          (field) =>
+            field.name === "evidenceReference" && field.type.kind === "text",
+        )
+      ) {
+        error(
+          port.origin,
+          `weighted_distribution ${settlement.name} snapshot port ${port.name} needs shape { evidenceReference: text }`,
+        );
+      }
+      continue;
+    }
+    if (settlement.archetype === "recurring_collection") {
+      const port = checkedPortByName.get(settlement.mandate.port);
+      if (
+        port &&
+        !port.fields.some(
+          (field) =>
+            field.name === "evidenceReference" && field.type.kind === "text",
+        )
+      ) {
+        error(
+          port.origin,
+          `recurring_collection ${settlement.name} mandate port ${port.name} needs shape { evidenceReference: text }`,
+        );
+      }
+      continue;
+    }
+    if (settlement.archetype === "conditional_disbursement") {
+      const port = checkedPortByName.get(settlement.decision.port);
+      if (
+        port &&
+        (!port.fields.some(
+          (field) =>
+            field.name === "evidenceReference" && field.type.kind === "text",
+        ) ||
+          port.allowed.length !== 1 ||
+          port.allowed[0] !== settlement.source)
+      ) {
+        error(
+          port.origin,
+          `conditional_disbursement ${settlement.name} decision port ${port.name} must allow only ${settlement.source} and needs shape { evidenceReference: text }`,
+        );
+      }
+      continue;
+    }
+    if (settlement.archetype === "premium_forward" && settlement.endorsement) {
+      const port = checkedPortByName.get(settlement.endorsement.port);
+      if (
+        port &&
+        !port.fields.some(
+          (field) =>
+            field.name === "evidenceReference" && field.type.kind === "text",
+        )
+      ) {
+        error(
+          port.origin,
+          `premium_forward ${settlement.name} endorsement port ${port.name} needs shape { evidenceReference: text }`,
+        );
+      }
+      continue;
+    }
     if (settlement.archetype !== "swap") continue;
     const parties = new Set(settlement.sides.map((side) => side.party));
     const decisions = [
@@ -1544,11 +2696,76 @@ export function checkProgram(program: Program): CheckResult {
     }
   }
 
+  const scheduledObligations = new Map(
+    settlements
+      .filter(
+        (settlement) =>
+          settlement.archetype === "scheduled" &&
+          settlement.mode === "obligation",
+      )
+      .map((settlement) => [settlement.name, settlement]),
+  );
+  const collectionOwnerByObligation = new Map<string, string>();
+  for (const settlement of settlements) {
+    if (
+      settlement.archetype !== "credit_facility" &&
+      settlement.archetype !== "recurring_collection"
+    ) {
+      continue;
+    }
+    const target = scheduledObligations.get(settlement.obligation.settlement);
+    const owner = `settlement ${settlement.name}`;
+    if (!target) {
+      error(
+        settlement.obligation.origin,
+        `${owner} must compose with scheduled in mode: obligation; ${settlement.obligation.settlement} is not one`,
+      );
+      continue;
+    }
+    if (settlement.archetype === "credit_facility") {
+      if (target.advanceTo) {
+        error(
+          settlement.obligation.origin,
+          `${owner} references ${target.name}, which already owns an advance; facility draws and obligation repayment must have one disbursement owner`,
+        );
+      }
+      if (
+        target.payee !== settlement.lender ||
+        target.debtor !== settlement.borrower ||
+        target.amount.currency !== settlement.limit.currency
+      ) {
+        error(
+          settlement.obligation.origin,
+          `${owner} must link an obligation whose payee is ${settlement.lender}, debtor is ${settlement.borrower}, and currency is ${settlement.limit.currency}`,
+        );
+      }
+      continue;
+    }
+    const mandatePort = checkedPortByName.get(settlement.mandate.port);
+    const firstCollection = collectionOwnerByObligation.get(target.name);
+    if (firstCollection) {
+      error(
+        settlement.obligation.origin,
+        `${owner} and settlement ${firstCollection} both collect ${target.name}; one obligation may have one collection policy owner`,
+      );
+    } else {
+      collectionOwnerByObligation.set(target.name, settlement.name);
+    }
+    if (
+      mandatePort &&
+      (mandatePort.allowed.length !== 1 ||
+        mandatePort.allowed[0] !== target.payer)
+    ) {
+      error(
+        mandatePort.origin,
+        `${owner} mandate port ${mandatePort.name} must allow only the obligation payer ${target.payer}`,
+      );
+    }
+  }
+
   // --- Carved advances: the hold each one draws against -----------------------
-  // `against: retention.release` is the only cross-declaration reference in the
-  // language, so it is the only place a settlement's terms are judged against
-  // another's. Everything here resolves at check time; nothing is left for a
-  // caller to pick.
+  // The generic reference checker above has resolved the named target and exit.
+  // This pass proves the business terms required by an advance carve.
   const heldByName = new Map(
     settlements
       .filter((settlement) => settlement.archetype === "held_payment")
@@ -1561,23 +2778,13 @@ export function checkProgram(program: Program): CheckResult {
     const owner = `settlement ${settlement.name}`;
     const target = settlement.source.settlement;
     const origin = settlement.source.origin;
-    const targetDecl = settlementDecls.find(
-      (decl) => decl.name.name === target,
-    );
-    if (!targetDecl) {
-      const other = declared.get(target);
+    if (
+      settlement.source.targetArchetype !== "held_payment" ||
+      settlement.source.exit !== "release"
+    ) {
       error(
         origin,
-        other
-          ? `${owner} draws against ${target}, which is a ${other.kind}; an advance carves a held payment's release`
-          : `${owner} draws against ${target}, but no settlement with that name is declared`,
-      );
-      continue;
-    }
-    if (targetDecl.archetype.name !== "held_payment") {
-      error(
-        origin,
-        `${owner} draws against ${target}, which is a ${targetDecl.archetype.name}; only a held payment has a release to carve`,
+        `${owner} can only carve held_payment.release; ${target}.${settlement.source.exit} is a ${settlement.source.targetArchetype} exit`,
       );
       continue;
     }
@@ -1590,6 +2797,34 @@ export function checkProgram(program: Program): CheckResult {
       error(
         origin,
         `${owner} advances ${settlement.advanced}, but ${target} releases to ${hold.payee}; an advance carves the release of the party it finances`,
+      );
+      continue;
+    }
+    if (hold.amount.name !== settlement.amount.name) {
+      error(
+        origin,
+        `${owner} advances field ${settlement.amount.name}, but ${target}.release carries ${hold.amount.name}; a carve must name the same money field`,
+      );
+      continue;
+    }
+    if (hold.amount.currency !== settlement.amount.currency) {
+      error(
+        origin,
+        `${owner} advances ${settlement.amount.currency}, but ${target}.release carries ${hold.amount.currency}; a carve must use one currency`,
+      );
+      continue;
+    }
+    if (settlement.feeBps > 0) {
+      error(
+        origin,
+        `${owner} adds a fee to a carved advance, but ${target}.release can only prove repayment of the principal field; use a fee-free carve or a scheduled advance`,
+      );
+      continue;
+    }
+    if (hold.fees.some((fee) => fee.bearer === hold.payee && fee.bps > 0)) {
+      error(
+        origin,
+        `${owner} carves ${target}.release after a payee fee reduces it; a carved hold must release the full principal field to the funder`,
       );
       continue;
     }
@@ -1617,8 +2852,11 @@ export function checkProgram(program: Program): CheckResult {
     const recourse = settlements.some(
       (other) =>
         other.archetype === "scheduled" &&
+        other.mode === "transfer" &&
         other.payer === settlement.advanced &&
-        other.payee === settlement.funder,
+        other.payee === settlement.funder &&
+        other.amount.name === settlement.amount.name &&
+        other.amount.currency === settlement.amount.currency,
     );
     if (recourse) continue;
     const repayment = `add a scheduled settlement collecting from the ${settlement.advanced.replaceAll("_", " ")} to the ${settlement.funder.replaceAll("_", " ")}`;
@@ -1667,6 +2905,7 @@ export function checkProgram(program: Program): CheckResult {
     diagnostics,
     program: {
       assets: [...assets.values()],
+      derivedAmounts,
       name: header.name.name,
       parties: [...parties.values()],
       ports,

@@ -1,0 +1,17 @@
+program derived_transfer "Derived transfer"
+import { instant_transfer } from "settlement"
+
+party payer: person
+party payee: business
+
+settlement transfer = instant_transfer {
+  payer: payer
+  payee: payee
+  amount: transferAmount: money(SAR)
+  derived_amount {
+    field: platformAmount
+    source: transferAmount
+    rule: 2.5%
+    bearer: payer
+  }
+}

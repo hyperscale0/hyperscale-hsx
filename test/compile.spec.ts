@@ -144,8 +144,34 @@ ${settlement("three", "gate_three", "priceThree")}
     expect(result.artifacts).toBeUndefined();
     const first = result.diagnostics[0]!;
     expect(first.stage).toBe("lower");
-    expect(first.message).toContain("at most 14");
+    expect(first.message).toContain("at most 20");
     expect(first.line).toBeGreaterThan(1);
+  });
+
+  it("fails closed when a 48-character noun would overflow publicIntent", () => {
+    const noun = "a".repeat(48);
+    const result = compile(`program boundary "Boundary"
+import { held_payment } from "settlement"
+party buyer: person
+party seller: business
+settlement ${noun} = held_payment {
+  payer: buyer
+  payee: seller
+  amount: price: money(SAR)
+  release: port approve
+}
+port approve { allowed: [buyer] }
+`);
+
+    expect(result.verdict).toBe("invalid");
+    expect(result.artifacts).toBeUndefined();
+    expect(result.diagnostics).toContainEqual({
+      column: 1,
+      line: 5,
+      message: `settlement ${noun} generates public intent "create${noun.charAt(0).toUpperCase()}${noun.slice(1)}" with 54 characters; rename the settlement so each public intent fits the 48-character camelName limit`,
+      severity: "error",
+      stage: "lower",
+    });
   });
 
   it("a port is only allowed and shape; decided_by is not part of the language", () => {
@@ -411,6 +437,7 @@ describe("lower", () => {
       // `created` holds nothing, so it closes directly with no money movement.
       expect(verbs.abandon).toMatchObject({
         from: ["created"],
+        requiresDrainedAccount: { path: "refs.escrowAccountId" },
         to: "abandoned",
       });
       expect(verbs.abandon!.moves?.[0]).toBeUndefined();
@@ -606,7 +633,7 @@ describe("lower", () => {
   `;
       // Each full settlement costs 7 events under grouped accounting (fund,
       // fee, 2 release groups, 2 cancel groups, abandonment refund): two of
-      // them = 14 fit exactly; three = 21 > 14.
+      // them = 14 fit; three = 21 > 20.
       const twoSettlements = lowerSource(`program two "Two"
   import { held_payment } from "settlement"
   party buyer: person
@@ -625,7 +652,7 @@ describe("lower", () => {
   `);
       expect(result.ok).toBe(false);
       if (result.ok) return;
-      expect(result.issues[0]?.message).toContain("at most 14");
+      expect(result.issues[0]?.message).toContain("at most 20");
     });
   });
 });

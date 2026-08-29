@@ -125,9 +125,8 @@ export interface PortRefExpr {
 }
 
 /**
- * `retention.release`, one settlement naming another settlement's exit. The
- * only cross-settlement reference the language has: it is resolved wholly at
- * check time, never by a caller at runtime.
+ * `retention.release`, one settlement naming another settlement's declared
+ * referenceable exit. The checker resolves it wholly before lowering.
  */
 export interface SettlementRefExpr {
   readonly kind: "settlement_ref";

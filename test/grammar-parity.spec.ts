@@ -42,6 +42,12 @@ describe("editors/vscode grammar parity", () => {
     );
   });
 
+  it("keeps obligation schedules under scheduled", () => {
+    const archetypes = alternates("archetype");
+    expect(archetypes).toContain("scheduled");
+    expect(archetypes).not.toContain("installment_obligation");
+  });
+
   it("highlights exactly the keywords the lexer reserves", () => {
     // `port` introduces a declaration and appears in value position, so it is
     // spelled in two rules; the union is what must match.

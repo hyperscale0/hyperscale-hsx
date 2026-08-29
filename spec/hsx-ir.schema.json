@@ -24,6 +24,14 @@
       "maxLength": 48,
       "pattern": "^[a-z][A-Za-z0-9]*$"
     },
+    "nounRefPath": {
+      "type": "string",
+      "pattern": "^(fields|refs)\\.[a-z][A-Za-z0-9]*$|^nounInstanceId$"
+    },
+    "instanceValuePath": {
+      "type": "string",
+      "pattern": "^(fields|refs)\\.[a-z][A-Za-z0-9]*$"
+    },
     "endpoint": {
       "description": "A party name, or one of the two endpoints every settlement has without declaring them: `platform` and `escrow`.",
       "type": "string",
@@ -93,6 +101,11 @@
           "description": "The settlement's own name. Settlement names are noun ids; nothing renames them.",
           "$ref": "#/$defs/snakeName"
         },
+        "prefix": {
+          "description": "Optional explicit letter-only instance id prefix for generated child nouns.",
+          "type": "string",
+          "pattern": "^[a-z]{2,8}$"
+        },
         "title": { "type": "string", "minLength": 1, "maxLength": 60 },
         "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
         "desc": { "type": "string", "minLength": 1, "maxLength": 400 },
@@ -109,8 +122,89 @@
           "propertyNames": { "$ref": "#/$defs/snakeName" },
           "additionalProperties": { "enum": ["payer", "beneficiary", "party"] }
         },
+        "aggregateInvariants": {
+          "description": "Per-parent caps over generated child nouns, enforced under the parent lock before a child enters a counted status.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "childField",
+                  "childNounId",
+                  "childRefField",
+                  "childStatuses",
+                  "parentField"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "childField": { "$ref": "#/$defs/camelName" },
+                  "childNounId": { "$ref": "#/$defs/snakeName" },
+                  "childRefField": { "$ref": "#/$defs/camelName" },
+                  "childStatuses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": { "$ref": "#/$defs/snakeName" }
+                  },
+                  "parentField": { "$ref": "#/$defs/camelName" }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "count",
+                  "childNounId",
+                  "childRefField",
+                  "childStatuses",
+                  "parentField"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "count": { "const": true },
+                  "childNounId": { "$ref": "#/$defs/snakeName" },
+                  "childRefField": { "$ref": "#/$defs/camelName" },
+                  "childStatuses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": { "$ref": "#/$defs/snakeName" }
+                  },
+                  "parentField": { "$ref": "#/$defs/camelName" }
+                }
+              }
+            ]
+          }
+        },
+        "derivedAmounts": {
+          "description": "Machine-computed amounts derived from stored money fields. Callers never supply target fields.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["field", "rounding", "rule", "sourceField"],
+            "additionalProperties": false,
+            "properties": {
+              "field": { "$ref": "#/$defs/camelName" },
+              "rounding": { "const": "floor" },
+              "rule": {
+                "type": "object",
+                "required": ["bps", "kind"],
+                "additionalProperties": false,
+                "properties": {
+                  "bps": { "type": "integer", "minimum": 1, "maximum": 9999 },
+                  "kind": { "const": "percentage_of" }
+                }
+              },
+              "sourceField": { "$ref": "#/$defs/camelName" }
+            }
+          }
+        },
         "fields": {
-          "description": "Every value an instance stores. `money` is a positive minor-unit integer; `date` is required, `date?` optional.",
+          "description": "Every value an instance stores. `money` is a positive minor-unit integer; `date` is required, `date?` optional; `beneficiary` is a payout beneficiary ID; `ref:<noun>` is a required noun-instance reference.",
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/camelName" },
           "additionalProperties": {
@@ -119,7 +213,24 @@
             "additionalProperties": false,
             "properties": {
               "desc": { "type": "string", "minLength": 1, "maxLength": 200 },
-              "type": { "enum": ["money", "date", "date?"] }
+              "type": {
+                "oneOf": [
+                  {
+                    "enum": [
+                      "money",
+                      "date",
+                      "date?",
+                      "text",
+                      "text?",
+                      "currency",
+                      "beneficiary",
+                      "count"
+                    ]
+                  },
+                  { "type": "string", "pattern": "^const:[1-9][0-9]*$" },
+                  { "type": "string", "pattern": "^ref:[a-z][a-z0-9_]*$" }
+                ]
+              }
             }
           }
         },
@@ -161,7 +272,7 @@
           "description": "States this verb may run in. Absent on `create`.",
           "type": "array",
           "minItems": 1,
-          "maxItems": 6,
+          "maxItems": 12,
           "items": { "$ref": "#/$defs/snakeName" }
         },
         "to": {
@@ -169,6 +280,10 @@
           "$ref": "#/$defs/snakeName"
         },
         "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "publicIntent": {
+          "description": "The stable action-first lowerCamelCase operation name exposed to callers. System due verbs omit it.",
+          "$ref": "#/$defs/camelName"
+        },
         "moneyEvent": {
           "description": "The Business Frame money event this verb's moves belong to.",
           "$ref": "#/$defs/snakeName"
@@ -179,6 +294,55 @@
           "minItems": 1,
           "maxItems": 12,
           "items": { "$ref": "#/$defs/move" }
+        },
+        "requires": {
+          "description": "Referenced noun instances whose status and stored values gate this verb before any movement runs.",
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": { "$ref": "#/$defs/camelName" },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": { "$ref": "#/$defs/snakeName" }
+              },
+              {
+                "type": "object",
+                "required": ["statuses"],
+                "additionalProperties": false,
+                "anyOf": [
+                  { "required": ["bind"] },
+                  { "required": ["match"] },
+                  { "required": ["unique"] }
+                ],
+                "properties": {
+                  "bind": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "maxProperties": 8,
+                    "propertyNames": { "$ref": "#/$defs/camelName" },
+                    "additionalProperties": { "$ref": "#/$defs/nounRefPath" }
+                  },
+                  "match": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "maxProperties": 8,
+                    "propertyNames": { "$ref": "#/$defs/nounRefPath" },
+                    "additionalProperties": { "$ref": "#/$defs/nounRefPath" }
+                  },
+                  "statuses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": { "$ref": "#/$defs/snakeName" }
+                  },
+                  "unique": { "const": true }
+                }
+              }
+            ]
+          }
         },
         "due": {
           "description": "The verb runs when the stored date in `field` (plus `offset`) arrives, under the named rule.",
@@ -202,12 +366,13 @@
           }
         },
         "setsAt": {
-          "description": "Running this verb stamps `field` with now plus `offset`, arming a later deadline.",
+          "description": "Running this verb stamps `field` with now plus `offset`. A marker records occurrence and cannot drive a due condition or deadline.",
           "type": "object",
           "required": ["field", "offset"],
           "additionalProperties": false,
           "properties": {
             "field": { "$ref": "#/$defs/camelName" },
+            "marker": { "const": true },
             "offset": { "$ref": "#/$defs/isoDuration" }
           }
         },
@@ -222,6 +387,219 @@
               "minItems": 1,
               "maxItems": 2,
               "items": { "$ref": "#/$defs/snakeName" }
+            },
+            "fields": {
+              "type": "object",
+              "maxProperties": 4,
+              "propertyNames": { "$ref": "#/$defs/camelName" },
+              "additionalProperties": { "enum": ["text"] }
+            }
+          }
+        },
+        "captureInput": {
+          "description": "Persist selected caller input fields under noun refs so the terminal receipt retains decision evidence.",
+          "type": "object",
+          "maxProperties": 4,
+          "propertyNames": { "$ref": "#/$defs/camelName" },
+          "additionalProperties": { "$ref": "#/$defs/camelName" }
+        },
+        "payout": {
+          "description": "Create one external payout instruction from stored noun values and capture its durable reference.",
+          "type": "object",
+          "required": [
+            "amount",
+            "beneficiaryField",
+            "beneficiaryPartyField",
+            "capture",
+            "currencyField",
+            "sourceAccountField",
+            "speed"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "amount": { "$ref": "#/$defs/instanceValuePath" },
+            "beneficiaryField": { "$ref": "#/$defs/camelName" },
+            "beneficiaryPartyField": { "$ref": "#/$defs/camelName" },
+            "capture": { "$ref": "#/$defs/camelName" },
+            "currencyField": { "$ref": "#/$defs/camelName" },
+            "sourceAccountField": { "$ref": "#/$defs/camelName" },
+            "speed": { "const": "standard" }
+          }
+        },
+        "requiresSettlement": {
+          "description": "Allow a system transition only after durable settlement evidence matches the captured payout.",
+          "type": "object",
+          "required": ["capture", "payoutRef"],
+          "additionalProperties": false,
+          "properties": {
+            "capture": { "$ref": "#/$defs/camelName" },
+            "payoutRef": { "$ref": "#/$defs/camelName" }
+          }
+        },
+        "signedSum": {
+          "description": "A machine-computed signed sum over frozen child rows. The caller cannot supply the result.",
+          "type": "object",
+          "required": ["amountRef", "onNegative", "onZero", "sources"],
+          "additionalProperties": false,
+          "properties": {
+            "amountRef": { "$ref": "#/$defs/camelName" },
+            "onNegative": { "const": "refuse" },
+            "onZero": { "enum": ["refuse", "skip_steps"] },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "required": [
+                  "amountField",
+                  "nounId",
+                  "refField",
+                  "sign",
+                  "statuses",
+                  "subtotalRef"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "amountField": { "$ref": "#/$defs/camelName" },
+                  "nounId": { "$ref": "#/$defs/snakeName" },
+                  "refField": { "$ref": "#/$defs/camelName" },
+                  "sign": { "enum": ["add", "subtract"] },
+                  "statuses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "items": { "$ref": "#/$defs/snakeName" }
+                  },
+                  "subtotalRef": { "$ref": "#/$defs/camelName" }
+                }
+              }
+            }
+          }
+        },
+        "distribute": {
+          "description": "A machine-computed deterministic largest-remainder share of a frozen parent pool.",
+          "type": "object",
+          "required": [
+            "amountRef",
+            "onZero",
+            "pool",
+            "refField",
+            "statuses",
+            "weightField"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "amountRef": { "$ref": "#/$defs/camelName" },
+            "onZero": { "enum": ["refuse", "skip_steps"] },
+            "pool": {
+              "type": "object",
+              "required": ["from", "path"],
+              "additionalProperties": false,
+              "properties": {
+                "from": { "const": "parent" },
+                "path": { "$ref": "#/$defs/nounRefPath" }
+              }
+            },
+            "refField": { "$ref": "#/$defs/camelName" },
+            "statuses": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": { "$ref": "#/$defs/snakeName" }
+            },
+            "weightField": { "$ref": "#/$defs/camelName" }
+          }
+        },
+        "requiresAggregate": {
+          "description": "Locked aggregate conditions over child or sibling rows that must hold before the verb runs.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["check", "over", "refField", "statuses"],
+            "additionalProperties": false,
+            "properties": {
+              "check": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["amountField", "kind", "targetField"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "amountField": { "$ref": "#/$defs/camelName" },
+                      "kind": {
+                        "enum": ["sum_at_least", "sum_below", "sum_exactly"]
+                      },
+                      "targetField": { "$ref": "#/$defs/camelName" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind"],
+                    "additionalProperties": false,
+                    "properties": { "kind": { "const": "all_in" } }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind", "targetField"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "count_at_least" },
+                      "targetField": { "$ref": "#/$defs/camelName" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["field", "kind"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "field": { "$ref": "#/$defs/camelName" },
+                      "kind": { "const": "count_equals_field" }
+                    }
+                  }
+                ]
+              },
+              "nounId": { "$ref": "#/$defs/snakeName" },
+              "over": { "enum": ["children", "siblings"] },
+              "refField": { "$ref": "#/$defs/camelName" },
+              "statuses": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": { "$ref": "#/$defs/snakeName" }
+              }
+            }
+          }
+        },
+        "requiresExposure": {
+          "description": "Atomic exposure caps over rows sharing one anchor. The current row contributes to the checked sum.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [
+              "amountField",
+              "anchorField",
+              "capField",
+              "childNounId",
+              "statuses"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "amountField": { "$ref": "#/$defs/camelName" },
+              "anchorField": { "$ref": "#/$defs/camelName" },
+              "capField": { "$ref": "#/$defs/camelName" },
+              "capOnAnchor": { "const": true },
+              "childNounId": { "$ref": "#/$defs/snakeName" },
+              "statuses": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": { "$ref": "#/$defs/snakeName" }
+              }
             }
           }
         },
@@ -247,7 +625,12 @@
           "properties": {
             "operation": { "const": "create" },
             "key": { "$ref": "#/$defs/snakeName" },
-            "amount": { "$ref": "#/$defs/camelName" },
+            "amount": {
+              "oneOf": [
+                { "$ref": "#/$defs/camelName" },
+                { "type": "string", "pattern": "^refs\\.[a-z][A-Za-z0-9]*$" }
+              ]
+            },
             "from": { "$ref": "#/$defs/endpoint" },
             "to": { "$ref": "#/$defs/endpoint" },
             "moneyEvent": { "$ref": "#/$defs/snakeName" },
@@ -265,6 +648,7 @@
             "operation": { "const": "reserve" },
             "key": { "$ref": "#/$defs/snakeName" },
             "amount": { "$ref": "#/$defs/camelName" },
+            "expiresAt": { "$ref": "#/$defs/camelName" },
             "from": { "$ref": "#/$defs/endpoint" },
             "to": { "$ref": "#/$defs/endpoint" },
             "moneyEvent": { "$ref": "#/$defs/snakeName" }
@@ -277,7 +661,15 @@
           "properties": {
             "operation": { "const": "post" },
             "key": { "$ref": "#/$defs/snakeName" },
-            "reservation": { "$ref": "#/$defs/snakeName" }
+            "reservation": { "$ref": "#/$defs/snakeName" },
+            "amount": { "$ref": "#/$defs/camelName" },
+            "partialOnly": { "const": true },
+            "capture": {
+              "type": "object",
+              "maxProperties": 4,
+              "propertyNames": { "$ref": "#/$defs/camelName" },
+              "additionalProperties": { "const": "postedAmount" }
+            }
           }
         },
         {
@@ -468,10 +860,16 @@
         "toActor": { "$ref": "#/$defs/endpoint" },
         "occurrence": { "enum": ["once", "repeatable"] },
         "timing": { "enum": ["external_schedule", "on_lifecycle"] },
-        "amountMode": { "const": "fixed" },
+        "amountMode": {
+          "enum": ["fixed", "runtime_bounded", "remaining_balance"]
+        },
         "distribution": { "const": "single" },
         "allocationTotalBps": { "const": 0 },
-        "amountDependencies": { "type": "array", "maxItems": 0 },
+        "amountDependencies": {
+          "type": "array",
+          "maxItems": 11,
+          "items": { "$ref": "#/$defs/snakeName" }
+        },
         "amountSchedule": { "type": "array", "maxItems": 0 }
       }
     },

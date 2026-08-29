@@ -1,0 +1,28 @@
+program captured_payment_program "Captured payment program"
+
+import { captured_payment } from "settlement"
+
+party payer: person
+party payee: business
+
+settlement captured_payment = captured_payment {
+  payer: payer
+  payee: payee
+  amount: total: money(SAR)
+  reserve_until: reserveUntil
+  correction: port correct_payment
+  external_reversal: port reverse_payment within P120D
+  capture_mode: partial_then_full
+  correction_mode: full_only
+  negative_position: reject
+  timeout: reject
+}
+
+port correct_payment {
+  allowed: [payee]
+}
+
+port reverse_payment {
+  allowed: [payee]
+  shape: { externalReference: text }
+}

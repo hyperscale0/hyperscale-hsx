@@ -165,8 +165,9 @@ The lowering also fixes semantics the source does not state:
 - Piece arithmetic is **integer minor units**: each piece is
   `floor(amount × bps / 10000)`, and the division remainder goes to the first
   piece unless a split names `remainder_to`.
-- A **schedule unrolls**: a literal anchor count becomes one due-driven verb
-  per anchor, each its own idempotent step.
+- A fixed transfer **schedule unrolls**: a literal anchor count becomes one
+  due-driven verb per anchor, each its own idempotent step. Obligation mode
+  stores the same anchors on the parent and emits one payment noun per anchor.
 - **Metered usage never accrues custody**: each usage charge is the ledger
   transfer, so emission and ledger cannot diverge.
 - A **deposit is a reservation**, not a transfer: placed as a hold, then
@@ -292,7 +293,7 @@ each name is `camelCase`, each type is one of
 
 ## The settlement standard library
 
-Nine archetypes ship in `"settlement"`, and all nine lower. The tables below
+Ten archetypes ship in `"settlement"`, and all ten lower. The tables below
 list each one's entries: **required** entries are bold.
 
 Shared value shapes:
@@ -341,6 +342,58 @@ The payer pays straight through to the payee. No custody.
 | **`payee`**  | party                     |                                                                    |
 | **`amount`** | money field               |                                                                    |
 | `fees`       | block of `party: percent` | Payee-side fees partition the amount; payer-side fees ride on top. |
+
+### captured_payment
+
+The payer reserves an amount for the payee. The payee captures strict partial
+slices before the stored deadline, settles the remainder in full, or voids the
+reservation before any capture. Expiry releases the uncaptured remainder.
+
+| Entry                   | Value                    | Notes                                                                                     |
+| ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------- |
+| **`payer`**             | party                    | Must differ from `payee`.                                                                 |
+| **`payee`**             | party                    | The correction port must allow only this party.                                           |
+| **`amount`**            | money field              | Maximum value reserved for all captures together.                                         |
+| **`reserve_until`**     | date field               | Capture closes at this stored date. Expiry releases the remainder.                        |
+| **`correction`**        | port                     | Returns the full captured amount after settlement.                                        |
+| **`external_reversal`** | port `within <duration>` | Returns the full captured amount after an external decision.                              |
+| **`capture_mode`**      | `partial_then_full`      | Capture calls must leave a remainder. Settle posts the final remainder.                   |
+| **`correction_mode`**   | `full_only`              | Repeated partial corrections are refused.                                                 |
+| **`negative_position`** | `reject`                 | A reversal fails when the payee cannot fund it.                                           |
+| **`timeout`**           | `reject`                 | Timeout records no movement. A confirmed port call is the only decision that moves money. |
+
+The external reversal port must declare
+`shape: { externalReference: text }`. `fees` are refused. Compose a separate
+settlement when the product needs fee movement.
+
+### settlement_batch
+
+The settlement account accrues capture lineage and explicit signed
+adjustments until a stored close date. Close freezes the child set. Calculate
+persists the gross, credit, debit, and net subtotals. Approve and instruct use
+that frozen net without recomputing it. Acknowledge records a tenant claim in
+the receipt. It does not claim provider confirmation or reconciliation.
+
+| Entry                           | Value      | Notes                                                                             |
+| ------------------------------- | ---------- | --------------------------------------------------------------------------------- |
+| **`settlement_account`**        | party      | Account that funds the one payout. Must differ from the destination.              |
+| **`source_capture_refs`**       | field name | Required lineage field on every gross entry and adjustment.                       |
+| **`fee_entries`**               | field name | Optional fee reference field on adjustment entries.                               |
+| **`external_reversal_offsets`** | field name | Optional externally decided reversal reference on adjustment entries.             |
+| **`close_trigger`**             | date field | The platform closes the batch at this date.                                       |
+| **`payout_destination`**        | party      | Receives the frozen net payable.                                                  |
+| **`negative_position`**         | `reject`   | Offsets beyond gross plus credit adjustments refuse calculation and post nothing. |
+| **`payout_acknowledgement`**    | port       | Must supply `shape: { acknowledgementReference: text }`.                          |
+| **`payout_beneficiary_ref`**    | field name | Required beneficiary-ID field used by the payout instruction.                     |
+
+Lowering emits one batch noun plus capture, credit-adjustment, and
+debit-adjustment nouns. Every child create and apply verb requires the batch
+to remain open. A correction after payout therefore points to the original
+capture on a subsequent open batch. It never changes the closed batch.
+Instruct captures `payoutId`. The system-only reconcile transition accepts no
+port or caller input. It records `settlementEvidenceId` only after the execution
+core matches the payout to durable settlement evidence. Acknowledgement remains
+a separate tenant claim and does not unlock reconciliation.
 
 ### swap
 
@@ -398,6 +451,34 @@ never be unbounded.
 | **`count`**     | literal integer | Between 2 and 12.                                                              |
 | **`every`**     | duration        | Ident or quoted string: `P30D`, `"P30D"`, `P2W`.                               |
 | **`first_due`** | date field      | Carries the first anchor's due date. Must differ from the amount's field name. |
+
+`scheduled` also has an obligation mode. It extends the same finite anchor
+mechanism instead of adding a second repayment archetype. `payer` is the
+repayment source. `payee` is the settlement recipient. The checked model names
+the person who owes the obligation separately as `debtor`.
+
+| Entry                    | Value                   | Notes                                                                 |
+| ------------------------ | ----------------------- | --------------------------------------------------------------------- |
+| **`mode`**               | `obligation`            | Selects obligation mode.                                              |
+| **`debtor`**             | party                   | Must differ from the settlement recipient.                            |
+| `advance_to`             | party                   | Optional recipient of one principal advance. Must differ from debtor. |
+| **`partial_payment`**    | `anchor_bound`          | Each payment operation fixes one stored anchor.                       |
+| **`repayment_matching`** | `obligation_and_anchor` | A payment names the obligation and the anchor-specific operation.     |
+| **`refund_policy`**      | `full_payment_only`     | A refund reverses one stored paid row whole.                          |
+| **`reschedule_policy`**  | `refuse`                | Forward carryover is not proven, so schedule mutation is refused.     |
+| **`delinquency_policy`** | `due_condition`         | Only the platform due sweep can mark an unmet anchor delinquent.      |
+
+Obligation mode accepts 2 through 7 anchors. The parent plus one generated
+payment noun per anchor must fit the eight-noun authored cap. Partial and early
+payments are allowed. The parent aggregate cap serializes paid rows and refuses
+an amount that would take one anchor above its stored amount. A refund has no
+caller amount. It reverses the stored payment amount and moves that row out of
+the paid aggregate. A later due sweep can therefore mark a refunded shortfall
+delinquent.
+
+The optional `advance_to` path creates one internal ledger transfer. It does
+not accept or record a caller claim of provider confirmation. With no
+`advance_to`, the lowerer emits no advance verb.
 
 ### metered
 
@@ -468,6 +549,41 @@ collecting from the advanced party to the funder is **required** (its absence
 is an error). If the hold has no cancellation, the uncovered path is only
 pre-funding abandonment, and its absence is a warning.
 
+### Aggregate and obligation-composed bricks
+
+`funding_round` reuses the catalog round and commitment mechanism. It caps the
+locked committed sum and contributor count, then collects or refunds each
+commitment whole. `weighted_distribution` freezes evidence-backed weights and
+uses deterministic largest-remainder payout. `credit_facility` owns draw
+capacity only. Its referenced `scheduled` obligation owns repayment and
+delinquency. `recurring_collection` adds mandate evidence to that obligation's
+existing repayment verbs and never retries implicitly.
+
+`premium_forward` accepts an optional policy extension with a stored external
+reference, one non-money endorsement port, a renewal due condition, and
+explicit-new-forward renewal. `conditional_disbursement` stores one externally
+approved amount under a parent cap. `rotating_pool` fixes its roster, exact
+contribution, due anchors, and payout order before activation.
+
+### Derived amounts
+
+Any settlement may declare one `derived_amount` block:
+
+```hsx
+derived_amount {
+  field: platformAmount
+  source: transferAmount
+  rule: 2.5%
+  bearer: payer
+}
+```
+
+The runtime computes `floor(source * bps / 10000)` from the stored source. The
+caller does not supply the derived field. Version 1 accepts percentage rules
+only. The checker refuses fixed and tiered rules until the runtime has a
+separate conservation proof for those shapes. The existing `advance.fee`
+surface remains unchanged.
+
 ## Reserved names
 
 `platform` and `escrow` name the platform and each settlement's own escrow.
@@ -491,7 +607,7 @@ source coordinates, for every archetype:
 | ------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source size              | 262,144 UTF-8 bytes       | Measured before the lexer runs, so an oversized file is refused without being parsed. The largest program in the corpus is 13,934 bytes.                  |
 | Nesting depth            | 64 parser steps           | Lists, blocks, calls, and bindings are parsed by recursion, and past roughly 9,000 levels that exhausts the call stack. The deepest real program nests 5. |
-| Money events per program | 14 (`MONEY_EVENT_BUDGET`) | The Business Frame carries at most this many. Every installment anchor, fee leg, cancellation leg, abandonment refund, and forward counts one.            |
+| Money events per program | 20 (`MONEY_EVENT_BUDGET`) | The Business Frame carries at most this many. Every installment anchor, fee leg, cancellation leg, abandonment refund, and forward counts one.            |
 | Schedule anchors         | 2 to 12                   | Keeps a schedule finite by construction.                                                                                                                  |
 | Percent precision        | 1 basis point             | Money that rounds at compile time disappears at runtime.                                                                                                  |
 | Durations                | days and weeks            | Calendar months drift.                                                                                                                                    |

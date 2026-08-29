@@ -1,0 +1,35 @@
+program facility_draws "Facility draws"
+import { credit_facility, scheduled } from "settlement"
+
+party lender: business
+party borrower: business
+party draw_destination: business
+party repayment_source: business
+
+settlement obligation = scheduled {
+  mode: obligation
+  payer: repayment_source
+  payee: lender
+  debtor: borrower
+  amount: principal: money(SAR)
+  count: 2
+  every: P30D
+  first_due: firstDueAt
+  partial_payment: anchor_bound
+  repayment_matching: obligation_and_anchor
+  refund_policy: full_payment_only
+  reschedule_policy: refuse
+  delinquency_policy: due_condition
+}
+
+settlement facility = credit_facility {
+  lender: lender
+  borrower: borrower
+  draw_destination: draw_destination
+  limit: facilityLimit: money(SAR)
+  expires_at: expiresAt
+  obligation: obligation.obligation
+  availability_policy: revolving
+  expiry_policy: freeze_draws
+  close_policy: no_open_draws
+}

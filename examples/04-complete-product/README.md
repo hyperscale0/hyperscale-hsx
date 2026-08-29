@@ -81,7 +81,7 @@ tutor_payout_payout_2
 The Business Frame's `mechanics` come back as `escrow` and `marketplace`,
 derived from the archetypes rather than declared.
 
-One program carries at most **14** money events (`MONEY_EVENT_BUDGET`). This
+One program carries at most **20** money events (`MONEY_EVENT_BUDGET`). This
 one uses nine. Every installment anchor, fee leg, cancellation leg, and
 abandonment refund counts one, so the budget is the real ceiling on how much
 company fits in a single file. Past it, split the product.

@@ -1,0 +1,24 @@
+program installment_obligation "Installment obligation"
+import { scheduled } from "settlement"
+
+party debtor: person
+party repayment_source: business
+party settlement_recipient: business
+party advance_recipient: business
+
+settlement obligation = scheduled {
+  mode: obligation
+  payer: repayment_source
+  payee: settlement_recipient
+  debtor: debtor
+  amount: principal: money(SAR)
+  count: 3
+  every: P30D
+  first_due: firstDueAt
+  advance_to: advance_recipient
+  partial_payment: anchor_bound
+  repayment_matching: obligation_and_anchor
+  refund_policy: full_payment_only
+  reschedule_policy: refuse
+  delinquency_policy: due_condition
+}

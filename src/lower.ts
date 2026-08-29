@@ -31,10 +31,16 @@
  */
 
 import type { Span } from "./ast.ts";
+import { ARCHETYPE_DEFINITIONS } from "./archetypes.ts";
 import type {
   CancelPolicy,
   CheckedAdvance,
+  CheckedCaptureReservation,
+  CheckedConditionalDisbursement,
+  CheckedCreditFacility,
   CheckedDeposit,
+  CheckedDerivedAmount,
+  CheckedFundingRound,
   CheckedHeldPayment,
   CheckedInstantTransfer,
   CheckedMetered,
@@ -42,9 +48,14 @@ import type {
   CheckedPort,
   CheckedPremiumForward,
   CheckedProgram,
+  CheckedRecurringCollection,
+  CheckedRotatingPool,
   CheckedScheduled,
+  CheckedScheduledObligation,
   CheckedSettlement,
+  CheckedSettlementBatch,
   CheckedSwap,
+  CheckedWeightedDistribution,
   MoneyField,
   ScheduleTerms,
 } from "./model.ts";
@@ -55,11 +66,13 @@ type Json = Record<string, unknown>;
 /**
  * The most money events one program may mint. The Business Frame contract caps
  * its moneyEvents array at the same number, and a runtime spec pins the two
- * against each other, so neither can drift alone. Every installment anchor,
- * fee leg, cancellation leg, abandonment refund, and forward counts one.
+ * against each other, so neither can drift alone. A repeatable schedule costs
+ * one event declaration. Fee legs, cancellation legs, refunds, and forwards
+ * each count when they emit their own event declaration.
  */
-export const MONEY_EVENT_BUDGET = 14;
+export const MONEY_EVENT_BUDGET = 20;
 
+const PUBLIC_INTENT_BUDGET = 48;
 const TOTAL_BPS = 10_000n;
 
 interface LoweredPiece {
@@ -82,7 +95,7 @@ interface LoweredSettlement {
   readonly serviceFee?: { readonly bps: number; readonly field: string };
 }
 
-interface LoweringIssue {
+export interface LoweringIssue {
   readonly message: string;
   readonly span: Span;
 }
@@ -132,12 +145,124 @@ interface LoweredNoun {
   readonly feeLines: readonly Json[];
   readonly moneyEvents: readonly Json[];
   readonly noun: Json;
+  readonly extraNouns?: readonly Json[];
+  readonly generatedPrefixNounIds?: readonly string[];
+  readonly repeatableCounterparty?: RepeatableCounterpartyRole;
   readonly rules: readonly Json[];
   readonly settlement: LoweredSettlement;
 }
 
-interface EventSpec {
+export type FrameActorRole =
+  | "beneficiary"
+  | "guardian"
+  | "holder"
+  | "payer"
+  | "provider";
+
+/** One role whose account endpoint repeats within one settlement. */
+export interface RepeatableCounterpartyRole {
+  readonly key: string;
+  readonly label: string;
+  readonly maxCount: number;
+  readonly minCount: number;
+  readonly origin: Span;
+  readonly role: FrameActorRole;
+}
+
+export type AmountDependencyExpression =
+  | {
+      readonly kind: "bounded_by_reference";
+      readonly reference: string;
+    }
+  | {
+      readonly kind: "net_of_offsets";
+      readonly offsets: readonly string[];
+      readonly source: string;
+    }
+  | {
+      readonly bps: number;
+      readonly kind: "percent_of_reference";
+      readonly reference: string;
+    }
+  | {
+      readonly consumed: readonly string[];
+      readonly kind: "remainder";
+      readonly source: string;
+    };
+
+interface EventAmountFields {
+  readonly amountDependencies: readonly string[];
+  readonly amountMode: "fixed" | "remaining_balance" | "runtime_bounded";
+}
+
+/** Lower one arithmetic dependency into the Business Frame's existing keys. */
+export function lowerAmountDependency(
+  expression?: AmountDependencyExpression,
+): EventAmountFields {
+  if (!expression) return { amountDependencies: [], amountMode: "fixed" };
+  switch (expression.kind) {
+    case "bounded_by_reference":
+      return {
+        amountDependencies: [frameKey(expression.reference)],
+        amountMode: "runtime_bounded",
+      };
+    case "net_of_offsets": {
+      if (expression.offsets.length === 0) {
+        throw new Error("net_of_offsets requires at least one offset event");
+      }
+      const dependencies = canonicalDependencies(
+        expression.source,
+        expression.offsets,
+      );
+      return {
+        amountDependencies: dependencies,
+        amountMode: "runtime_bounded",
+      };
+    }
+    case "percent_of_reference":
+      if (
+        !Number.isInteger(expression.bps) ||
+        expression.bps <= 0 ||
+        expression.bps > 10_000
+      ) {
+        throw new Error(
+          "percent_of_reference bps must be an integer between 1 and 10000",
+        );
+      }
+      return {
+        amountDependencies: [frameKey(expression.reference)],
+        amountMode: "runtime_bounded",
+      };
+    case "remainder": {
+      if (expression.consumed.length === 0) {
+        throw new Error("remainder requires at least one consumed event");
+      }
+      const dependencies = canonicalDependencies(
+        expression.source,
+        expression.consumed,
+      );
+      return {
+        amountDependencies: dependencies,
+        amountMode: "remaining_balance",
+      };
+    }
+  }
+}
+
+function canonicalDependencies(
+  source: string,
+  dependents: readonly string[],
+): readonly string[] {
+  const all = [source, ...dependents].map(frameKey);
+  if (new Set(all).size !== all.length) {
+    throw new Error("amount dependency event keys must be distinct");
+  }
+  return all;
+}
+
+export interface EventSpec {
   readonly amount: string;
+  readonly amountDependency?: AmountDependencyExpression;
   readonly fromActor: string;
   readonly key: string;
   readonly kind: string;
@@ -212,12 +337,26 @@ function frameKey(key: string): string {
   return `${key.slice(0, 33)}_${(hash >>> 0).toString(36).slice(0, 6)}`;
 }
 
-function mintEvent(spec: EventSpec): Json {
+function dependentAmountDescription(spec: EventSpec): string {
+  const expression = spec.amountDependency;
+  if (!expression) return spec.amount;
+  switch (expression.kind) {
+    case "bounded_by_reference":
+      return `Bounded by ${expression.reference}: ${spec.amount}`;
+    case "net_of_offsets":
+      return `Net of ${expression.source} after ${expression.offsets.join(", ")}: ${spec.amount}`;
+    case "percent_of_reference":
+      return `${formatBps(expression.bps)} of ${expression.reference}: ${spec.amount}`;
+    case "remainder":
+      return `Remainder of ${expression.source} after ${expression.consumed.join(", ")}: ${spec.amount}`;
+  }
+}
+
+export function mintEvent(spec: EventSpec): Json {
   return {
     allocationTotalBps: 0,
-    amount: spec.amount,
-    amountDependencies: [],
-    amountMode: "fixed",
+    amount: dependentAmountDescription(spec),
+    ...lowerAmountDependency(spec.amountDependency),
     amountSchedule: [],
     distribution: "single",
     fromActor: spec.fromActor,
@@ -285,6 +424,48 @@ function dateFieldSpec(desc: string): Json {
   return { desc, type: "date" };
 }
 
+function optionalDateFieldSpec(desc: string): Json {
+  return { desc, type: "date?" };
+}
+
+function derivedNounPrefix(noun: Json): string {
+  if (typeof noun.prefix === "string") return noun.prefix;
+  const id = noun.id as string;
+  const words = id.split("_");
+  const derived =
+    words.length > 1 ? words.map((word) => word[0]).join("") : id.slice(0, 4);
+  return derived.slice(0, 8).padEnd(2, "x");
+}
+
+function allocatedGeneratedPrefixes(
+  nouns: readonly Json[],
+  generatedIds: ReadonlySet<string>,
+): Json[] {
+  const used = new Set(
+    nouns
+      .filter((noun) => !generatedIds.has(noun.id as string))
+      .map(derivedNounPrefix),
+  );
+  let ordinal = 0;
+  const nextPrefix = (): string => {
+    while (true) {
+      const high = String.fromCharCode(97 + Math.floor(ordinal / 26));
+      const low = String.fromCharCode(97 + (ordinal % 26));
+      ordinal += 1;
+      const candidate = `zz${high}${low}`;
+      if (!used.has(candidate)) {
+        used.add(candidate);
+        return candidate;
+      }
+    }
+  };
+  return nouns.map((noun) =>
+    generatedIds.has(noun.id as string)
+      ? { ...noun, prefix: nextPrefix() }
+      : noun,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The whole-program lowering
 
@@ -296,6 +477,8 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
   const rules: Json[] = [];
   const design: string[] = [];
   const feeLines: Json[] = [];
+  const repeatableCounterparties: RepeatableCounterpartyRole[] = [];
+  const generatedPrefixNounIds = new Set<string>();
   const mintedKeys = new Map<string, string>();
   const portsByName = new Map(program.ports.map((port) => [port.name, port]));
 
@@ -325,6 +508,33 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
         : [],
     ),
   );
+  const recoursesByAdvance = new Map(
+    program.settlements.flatMap((settlement) => {
+      if (
+        settlement.archetype !== "advance" ||
+        settlement.source.kind !== "carve"
+      ) {
+        return [];
+      }
+      const recourses = program.settlements.filter(
+        (candidate): candidate is CheckedScheduled =>
+          candidate.archetype === "scheduled" &&
+          candidate.mode === "transfer" &&
+          candidate.payer === settlement.advanced &&
+          candidate.payee === settlement.funder &&
+          candidate.amount.name === settlement.amount.name &&
+          candidate.amount.currency === settlement.amount.currency,
+      );
+      return [[settlement.name, recourses] as const];
+    }),
+  );
+  const collectionByObligation = new Map(
+    program.settlements.flatMap((settlement) =>
+      settlement.archetype === "recurring_collection"
+        ? [[settlement.obligation.settlement, settlement] as const]
+        : [],
+    ),
+  );
 
   for (const settlement of program.settlements) {
     let lowered: LoweredNoun | undefined;
@@ -344,14 +554,85 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
         );
         break;
       }
+      case "captured_payment": {
+        const correction = portFor(
+          settlement,
+          settlement.correction.port,
+          settlement.correction.origin,
+        );
+        const externalReversal = portFor(
+          settlement,
+          settlement.externalReversal.port,
+          settlement.externalReversal.origin,
+        );
+        if (!correction || !externalReversal) continue;
+        lowered = lowerCaptureReservation(
+          settlement,
+          correction,
+          externalReversal,
+          issues,
+        );
+        break;
+      }
+      case "settlement_batch": {
+        const acknowledgement = portFor(
+          settlement,
+          settlement.payoutAcknowledgement.port,
+          settlement.payoutAcknowledgement.origin,
+        );
+        if (!acknowledgement) continue;
+        lowered = lowerSettlementBatch(settlement, acknowledgement, issues);
+        break;
+      }
+      case "funding_round":
+        lowered = lowerFundingRound(settlement);
+        break;
+      case "weighted_distribution": {
+        const snapshot = portFor(
+          settlement,
+          settlement.snapshot.port,
+          settlement.snapshot.origin,
+        );
+        if (!snapshot) continue;
+        lowered = lowerWeightedDistribution(settlement, snapshot);
+        break;
+      }
+      case "credit_facility":
+        lowered = lowerCreditFacility(settlement);
+        break;
+      case "recurring_collection":
+        // The referenced scheduled obligation owns the payment nouns, amount
+        // allocation, and delinquency. Its lowerer adds the explicit mandate
+        // evidence gate, so this declaration mints no second noun or event.
+        continue;
+      case "conditional_disbursement": {
+        const decision = portFor(
+          settlement,
+          settlement.decision.port,
+          settlement.decision.origin,
+        );
+        if (!decision) continue;
+        lowered = lowerConditionalDisbursement(settlement, decision);
+        break;
+      }
+      case "rotating_pool":
+        lowered = lowerRotatingPool(settlement);
+        break;
       case "premium_forward": {
         const port = portFor(
           settlement,
           settlement.bind.port,
           settlement.bind.origin,
         );
-        if (!port) continue;
-        lowered = lowerPremiumForward(settlement, port, issues);
+        const endorsement = settlement.endorsement
+          ? portFor(
+              settlement,
+              settlement.endorsement.port,
+              settlement.endorsement.origin,
+            )
+          : undefined;
+        if (!port || (settlement.endorsement && !endorsement)) continue;
+        lowered = lowerPremiumForward(settlement, port, endorsement, issues);
         break;
       }
       case "deposit": {
@@ -373,10 +654,27 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
         lowered = lowerInstantTransfer(settlement);
         break;
       case "scheduled":
-        lowered = lowerScheduled(settlement);
+        lowered =
+          settlement.mode === "obligation"
+            ? lowerScheduledObligation(
+                settlement,
+                collectionByObligation.get(settlement.name),
+                collectionByObligation.has(settlement.name)
+                  ? portFor(
+                      collectionByObligation.get(settlement.name)!,
+                      collectionByObligation.get(settlement.name)!.mandate.port,
+                      collectionByObligation.get(settlement.name)!.mandate
+                        .origin,
+                    )
+                  : undefined,
+              )
+            : lowerScheduled(settlement);
         break;
       case "advance":
-        lowered = lowerAdvance(settlement);
+        lowered = lowerAdvance(
+          settlement,
+          recoursesByAdvance.get(settlement.name) ?? [],
+        );
         break;
       case "metered":
         lowered = lowerMetered(settlement);
@@ -403,6 +701,23 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
       }
     }
     if (!lowered) continue;
+    const derivedAmounts = (program.derivedAmounts ?? []).filter(
+      (amount) => amount.settlement === settlement.name,
+    );
+    if (derivedAmounts.length > 0) {
+      lowered = addDerivedAmounts(lowered, settlement, derivedAmounts, issues);
+      if (!lowered) continue;
+    }
+    const localCap =
+      ARCHETYPE_DEFINITIONS[settlement.archetype].eventCap +
+      derivedAmounts.length;
+    if (lowered.moneyEvents.length > localCap) {
+      issues.push({
+        message: `settlement ${settlement.name} emits ${lowered.moneyEvents.length} money events, but ${settlement.archetype} carries a local cap of ${localCap}`,
+        span: settlement.origin,
+      });
+      continue;
+    }
     // Event and rule keys concatenate settlement names with generated stems,
     // so two settlements can mint the same key (a + b_service_fee vs a_b +
     // service_fee). The frame schema refuses duplicates wholesale, which
@@ -419,11 +734,38 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
       mintedKeys.set(key, settlement.name);
     }
     settlements.push(lowered.settlement);
-    nouns.push(lowered.noun);
+    const loweredNouns = [lowered.noun, ...(lowered.extraNouns ?? [])];
+    for (const noun of loweredNouns) {
+      const verbs = noun.verbs as Record<string, Json>;
+      for (const [verbName, verb] of Object.entries(verbs)) {
+        if (
+          Object.hasOwn(verb, "due") ||
+          Object.hasOwn(verb, "requiresSettlement")
+        ) {
+          continue;
+        }
+        const publicIntent = callerDrivenPublicIntent(
+          noun.id as string,
+          verbName,
+        );
+        if (publicIntent.length <= PUBLIC_INTENT_BUDGET) continue;
+        issues.push({
+          message: `settlement ${settlement.name} generates public intent "${publicIntent}" with ${publicIntent.length} characters; rename the settlement so each public intent fits the ${PUBLIC_INTENT_BUDGET}-character camelName limit`,
+          span: settlement.origin,
+        });
+      }
+    }
+    nouns.push(...loweredNouns);
+    for (const nounId of lowered.generatedPrefixNounIds ?? []) {
+      generatedPrefixNounIds.add(nounId);
+    }
     moneyEvents.push(...lowered.moneyEvents);
     rules.push(...lowered.rules);
     design.push(...lowered.design);
     feeLines.push(...lowered.feeLines);
+    if (lowered.repeatableCounterparty) {
+      repeatableCounterparties.push(lowered.repeatableCounterparty);
+    }
   }
 
   if (moneyEvents.length > MONEY_EVENT_BUDGET) {
@@ -432,7 +774,19 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
       span: program.settlements[0]?.origin ?? { end: 0, start: 0 },
     });
   }
+  issues.push(
+    ...validateAmountDependencyGraph(
+      moneyEvents,
+      program.settlements[0]?.origin ?? { end: 0, start: 0 },
+    ),
+  );
+  const actorLowering = lowerFrameActors(program, repeatableCounterparties);
+  issues.push(...actorLowering.issues);
   if (issues.length > 0) return { issues, ok: false };
+
+  const publishedNouns = publishCallerDrivenVerbs(
+    allocatedGeneratedPrefixes(nouns, generatedPrefixNounIds),
+  );
 
   const subjects = program.assets.map((asset) => ({
     kind: asset.name,
@@ -442,32 +796,14 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
 
   const document: Json = {
     hsx: HSX_IR_VERSION,
-    nouns,
+    nouns: publishedNouns,
     product: program.name,
     ...(subjects.length > 0 ? { subjects } : {}),
     title: program.title,
   };
 
-  const roles = partyRoles(program.settlements);
   const frame: Json = {
-    actors: [
-      ...program.parties
-        .filter((party) => roles.has(party.name))
-        .map((party) => ({
-          key: party.name,
-          label: titleize(party.name),
-          maxCount: 1,
-          minCount: 1,
-          role: roles.get(party.name),
-        })),
-      {
-        key: "platform",
-        label: "Platform",
-        maxCount: 1,
-        minCount: 1,
-        role: "platform",
-      },
-    ],
+    actors: actorLowering.actors,
     confidence: "high",
     conservationGroups: [],
     design,
@@ -497,6 +833,293 @@ export function lowerProgram(program: CheckedProgram): LowerResult {
   };
 }
 
+function publishCallerDrivenVerbs(nouns: readonly Json[]): Json[] {
+  return nouns.map((noun) => {
+    const verbs = noun.verbs as Record<string, Json>;
+    return {
+      ...noun,
+      verbs: Object.fromEntries(
+        Object.entries(verbs).map(([verbName, verb]) => [
+          verbName,
+          Object.hasOwn(verb, "due") ||
+          Object.hasOwn(verb, "requiresSettlement")
+            ? verb
+            : {
+                ...verb,
+                publicIntent: callerDrivenPublicIntent(
+                  noun.id as string,
+                  verbName,
+                ),
+              },
+        ]),
+      ),
+    };
+  });
+}
+
+function callerDrivenPublicIntent(nounId: string, verbName: string): string {
+  const nounName = camelize(nounId);
+  const domainName = nounName.charAt(0).toUpperCase() + nounName.slice(1);
+  return `${camelize(verbName)}${domainName}`;
+}
+
+/** Add generic on-top amounts after archetype lowering, so no brick owns fee syntax. */
+function addDerivedAmounts(
+  lowered: LoweredNoun,
+  settlement: CheckedSettlement,
+  amounts: readonly CheckedDerivedAmount[],
+  issues: LoweringIssue[],
+): LoweredNoun | undefined {
+  const noun = lowered.noun;
+  const fields = { ...((noun.fields as Json | undefined) ?? {}) };
+  const verbs = { ...((noun.verbs as Json | undefined) ?? {}) };
+  const create = { ...((verbs.create as Json | undefined) ?? {}) };
+  const moves = [...((create.moves as Json[] | undefined) ?? [])];
+  const actors = { ...((noun.actors as Json | undefined) ?? {}) };
+  const derived: Json[] = [];
+  const events = [...lowered.moneyEvents];
+  const lines = [...lowered.feeLines];
+  for (const amount of amounts) {
+    const sourceField = fields[amount.baseField] as Json | undefined;
+    if (sourceField === undefined || sourceField.type !== "money") {
+      issues.push({
+        message: `settlement ${settlement.name} derives ${amount.field} from ${sourceField === undefined ? "unknown " : "non-money "}field ${amount.baseField}; from must name a stored money field on the settlement owner`,
+        span: amount.origin,
+      });
+      return undefined;
+    }
+    if (fields[amount.field] !== undefined) {
+      issues.push({
+        message: `settlement ${settlement.name} derives into existing field ${amount.field}; choose a new derived amount field`,
+        span: amount.origin,
+      });
+      return undefined;
+    }
+    const eventKey = frameKey(`${settlement.name}_derived_amount`);
+    fields[amount.field] = moneyFieldSpec(
+      `Machine-computed ${formatBps(amount.bps)} of ${amount.baseField}; callers never supply it`,
+    );
+    if (actors[amount.bearer] === undefined) {
+      actors[amount.bearer] = "payer";
+    }
+    actors.platform = "beneficiary";
+    derived.push({
+      field: amount.field,
+      rounding: "floor",
+      rule: { bps: amount.bps, kind: "percentage_of" },
+      sourceField: amount.baseField,
+    });
+    moves.push({
+      amount: amount.field,
+      from: amount.bearer,
+      key: "derived_amount",
+      moneyEvent: eventKey,
+      operation: "create",
+      to: "platform",
+    });
+    events.push(
+      mintEvent({
+        amount: `The machine-computed ${amount.field}`,
+        fromActor: amount.bearer,
+        key: eventKey,
+        kind: "charge",
+        toActor: "platform",
+        trigger: `Collect ${amount.field} with settlement creation`,
+      }),
+    );
+    lines.push({
+      label: titleize(amount.field),
+      on: `each ${settlement.name.replaceAll("_", " ")}`,
+      structure: `${formatBps(amount.bps)} of stored ${amount.baseField}, computed by the runtime`,
+    });
+  }
+  create.moves = moves;
+  verbs.create = create;
+  return {
+    ...lowered,
+    design: [
+      ...lowered.design,
+      `${settlement.name}: derived amounts are machine-computed from stored source fields before create movements; fixed and tiered rules are refused`,
+    ],
+    feeLines: lines,
+    moneyEvents: events,
+    noun: {
+      ...noun,
+      actors,
+      derivedAmounts: derived,
+      fields,
+      verbs,
+    },
+  };
+}
+
+/** Lower fixed parties plus future settlement-declared repeating roles. */
+export interface FrameActorLoweringResult {
+  readonly actors: readonly Record<string, unknown>[];
+  readonly issues: readonly LoweringIssue[];
+}
+
+export function lowerFrameActors(
+  program: Pick<CheckedProgram, "parties" | "settlements">,
+  repeatableCounterparties: readonly RepeatableCounterpartyRole[] = [],
+): FrameActorLoweringResult {
+  const roles = partyRoles(program.settlements);
+  const parties = new Set(program.parties.map((party) => party.name));
+  const overrides = new Map<string, RepeatableCounterpartyRole>();
+  const issues: LoweringIssue[] = [];
+  for (const counterparty of repeatableCounterparties) {
+    if (!parties.has(counterparty.key)) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} is not a declared party`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    const fixedRole = roles.get(counterparty.key);
+    if (!fixedRole) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} is not used by any settlement`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    if (fixedRole !== counterparty.role) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} declares role ${counterparty.role}, but its settlement uses role ${fixedRole}`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    if (
+      counterparty.label.trim().length === 0 ||
+      counterparty.label.length > 160
+    ) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} label must contain 1 through 160 characters`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    if (
+      !Number.isInteger(counterparty.minCount) ||
+      !Number.isInteger(counterparty.maxCount) ||
+      counterparty.minCount < 1 ||
+      counterparty.maxCount > 10_000
+    ) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} counts must be integers from 1 through 10000`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    if (counterparty.minCount > counterparty.maxCount) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} has minCount ${counterparty.minCount} above maxCount ${counterparty.maxCount}`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    if (overrides.has(counterparty.key)) {
+      issues.push({
+        message: `repeatable counterparty ${counterparty.key} is declared twice`,
+        span: counterparty.origin,
+      });
+      continue;
+    }
+    overrides.set(counterparty.key, counterparty);
+  }
+  const actors = [
+    ...program.parties
+      .filter((party) => roles.has(party.name))
+      .map((party) => {
+        const override = overrides.get(party.name);
+        return override
+          ? {
+              key: override.key,
+              label: override.label,
+              maxCount: override.maxCount,
+              minCount: override.minCount,
+              role: override.role,
+            }
+          : {
+              key: party.name,
+              label: titleize(party.name),
+              maxCount: 1,
+              minCount: 1,
+              role: roles.get(party.name),
+            };
+      }),
+    {
+      key: "platform",
+      label: "Platform",
+      maxCount: 1,
+      minCount: 1,
+      role: "platform",
+    },
+  ];
+  return { actors, issues };
+}
+
+/** Validate the completed event graph before HSX returns a frame. */
+export function validateAmountDependencyGraph(
+  events: readonly Record<string, unknown>[],
+  origin: Span,
+): readonly LoweringIssue[] {
+  const issues: LoweringIssue[] = [];
+  const dependenciesByKey = new Map<string, readonly string[]>();
+  for (const event of events) {
+    if (typeof event.key !== "string") continue;
+    const dependencies = Array.isArray(event.amountDependencies)
+      ? event.amountDependencies.filter(
+          (dependency): dependency is string => typeof dependency === "string",
+        )
+      : [];
+    dependenciesByKey.set(event.key, dependencies);
+  }
+  for (const [key, dependencies] of dependenciesByKey) {
+    for (const dependency of dependencies) {
+      if (dependency === key) {
+        issues.push({
+          message: `money event ${key} cannot depend on itself`,
+          span: origin,
+        });
+        continue;
+      }
+      if (!dependenciesByKey.has(dependency)) {
+        issues.push({
+          message: `money event ${key} depends on missing money event ${dependency}`,
+          span: origin,
+        });
+      }
+    }
+  }
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const cyclic = new Set<string>();
+  const visit = (key: string): void => {
+    if (visited.has(key) || cyclic.has(key)) return;
+    if (visiting.has(key)) {
+      cyclic.add(key);
+      return;
+    }
+    visiting.add(key);
+    for (const dependency of dependenciesByKey.get(key) ?? []) {
+      if (dependenciesByKey.has(dependency)) visit(dependency);
+      if (cyclic.has(dependency)) cyclic.add(key);
+    }
+    visiting.delete(key);
+    visited.add(key);
+  };
+  for (const key of dependenciesByKey.keys()) visit(key);
+  if (cyclic.size > 0) {
+    issues.push({
+      message: `money event amount dependencies contain a cycle through ${[...cyclic].sort().join(", ")}`,
+      span: origin,
+    });
+  }
+  return issues;
+}
+
 /** Frame actor role per party, with a fixed precedence when roles overlap. */
 function partyRoles(
   settlements: readonly CheckedSettlement[],
@@ -508,11 +1131,19 @@ function partyRoles(
   for (const settlement of settlements) {
     switch (settlement.archetype) {
       case "held_payment":
+      case "captured_payment":
       case "instant_transfer":
-      case "scheduled":
       case "metered":
         payers.add(settlement.payer);
         beneficiaries.add(settlement.payee);
+        break;
+      case "scheduled":
+        payers.add(settlement.payer);
+        beneficiaries.add(settlement.payee);
+        if (settlement.mode === "obligation") {
+          payers.add(settlement.debtor);
+          if (settlement.advanceTo) beneficiaries.add(settlement.advanceTo);
+        }
         break;
       case "premium_forward":
         payers.add(settlement.payer);
@@ -529,6 +1160,36 @@ function partyRoles(
       case "pooled_split":
         payers.add(settlement.payer);
         for (const share of settlement.shares) beneficiaries.add(share.to);
+        break;
+      case "settlement_batch":
+        payers.add(settlement.settlementAccount);
+        beneficiaries.add(settlement.payoutDestination);
+        break;
+      case "funding_round":
+        payers.add(settlement.contributor);
+        beneficiaries.add(settlement.beneficiary);
+        break;
+      case "weighted_distribution":
+        payers.add(settlement.source);
+        beneficiaries.add(settlement.recipient);
+        break;
+      case "credit_facility":
+        payers.add(settlement.lender);
+        beneficiaries.add(settlement.borrower);
+        beneficiaries.add(settlement.drawDestination);
+        break;
+      case "recurring_collection":
+        break;
+      case "conditional_disbursement":
+        payers.add(settlement.source);
+        beneficiaries.add(settlement.destination);
+        break;
+      case "rotating_pool":
+        for (const member of settlement.members) {
+          payers.add(member);
+          beneficiaries.add(member);
+        }
+        if (settlement.guarantor) payers.add(settlement.guarantor);
         break;
       case "swap":
         payers.add(settlement.sides[0].party);
@@ -549,19 +1210,31 @@ function partyRoles(
 
 const ARCHETYPE_MECHANICS: Record<CheckedSettlement["archetype"], string> = {
   advance: "credit",
+  captured_payment: "escrow",
+  conditional_disbursement: "marketplace",
+  credit_facility: "credit",
   deposit: "escrow",
+  funding_round: "credit",
   held_payment: "escrow",
   instant_transfer: "marketplace",
   metered: "recurring_billing",
   pooled_split: "marketplace",
   premium_forward: "insurance",
+  recurring_collection: "recurring_billing",
+  rotating_pool: "recurring_billing",
   scheduled: "recurring_billing",
+  settlement_batch: "marketplace",
   swap: "escrow",
+  weighted_distribution: "marketplace",
 };
 
 function mechanicsOf(settlements: readonly CheckedSettlement[]): string[] {
   const mechanics = new Set(
-    settlements.map((settlement) => ARCHETYPE_MECHANICS[settlement.archetype]),
+    settlements.map((settlement) =>
+      settlement.archetype === "scheduled" && settlement.mode === "obligation"
+        ? "credit"
+        : ARCHETYPE_MECHANICS[settlement.archetype],
+    ),
   );
   return mechanics.size > 0 ? [...mechanics] : ["escrow"];
 }
@@ -1016,6 +1689,7 @@ function lowerHeldPayment(
 function lowerPremiumForward(
   settlement: CheckedPremiumForward,
   port: CheckedPort,
+  endorsement: CheckedPort | undefined,
   issues: LoweringIssue[],
 ): LoweredNoun | undefined {
   const held = lowerHeldFamily(
@@ -1042,10 +1716,64 @@ function lowerPremiumForward(
     issues,
   );
   if (!held) return undefined;
+  const baseNoun = held.noun;
+  const fields = { ...((baseNoun.fields as Json | undefined) ?? {}) };
+  const verbs = { ...((baseNoun.verbs as Json | undefined) ?? {}) };
+  const rules = [...held.rules];
+  if (
+    settlement.policyReferenceField &&
+    settlement.renewalDueField &&
+    settlement.endorsement &&
+    endorsement
+  ) {
+    fields[settlement.policyReferenceField] = {
+      desc: "Immutable external policy reference recorded with this forward",
+      type: "text",
+    };
+    fields[settlement.renewalDueField] = dateFieldSpec(
+      "Stored renewal due condition for the forwarded policy",
+    );
+    verbs[settlement.endorsement.port] = {
+      captureInput: { endorsementEvidenceReference: "evidenceReference" },
+      from: ["released"],
+      port: {
+        allowed: endorsement.allowed,
+        fields: { evidenceReference: "text" },
+      },
+      summary: "Record one non-money endorsement from external evidence",
+      to: "endorsed",
+    };
+    const lapseRule = frameKey(`${settlement.name}_renewal_due`);
+    verbs.lapse = {
+      due: { field: settlement.renewalDueField, rule: lapseRule },
+      from: ["released", "endorsed"],
+      requiresDrainedAccount: { path: "refs.escrowAccountId" },
+      summary:
+        "Mark the forwarded policy lapsed at its stored renewal due condition",
+      to: "lapsed",
+    };
+    rules.push({
+      allowedActors: [],
+      detail:
+        "The stored renewal due condition changes policy state without moving money",
+      dueDriven: true,
+      enforcement: "platform",
+      gatesEvent: null,
+      key: lapseRule,
+      kind: "deadline",
+      label: "Policy lapses at its stored renewal due condition",
+      tenantTunable: false,
+    });
+  }
   return {
     ...held,
     design: [
       `${settlement.name}: premium forwards to the ${settlement.carrier.replaceAll("_", " ")} exactly once on ${port.name}; ${formatBps(settlement.commissionBps)} commission retained by the platform`,
+      ...(settlement.policyReferenceField
+        ? [
+            `${settlement.name}: extends premium_forward with stored policy reference, non-money endorsement evidence, and a due-only lapse; renewal creates a new forward`,
+          ]
+        : []),
     ],
     feeLines:
       settlement.commissionBps > 0
@@ -1059,9 +1787,12 @@ function lowerPremiumForward(
         : [],
     noun: {
       ...held.noun,
+      fields,
+      verbs,
       desc: `Premium forward: the ${settlement.payer.replaceAll("_", " ")} funds the ${settlement.amount.name} into this settlement's own escrow; binding through ${port.name} forwards it to the ${settlement.carrier.replaceAll("_", " ")} exactly once, minus the platform commission`,
       summary: `Premium held for the ${settlement.carrier.replaceAll("_", " ")} until the policy binds`,
     },
+    rules,
   };
 }
 
@@ -1410,6 +2141,7 @@ function lowerHeldFamily(
   }
   verbs.abandon = {
     from: ["created"],
+    requiresDrainedAccount: { path: "refs.escrowAccountId" },
     summary: "Abandon the settlement before any money is held",
     to: "abandoned",
   };
@@ -1681,6 +2413,578 @@ function lowerInstantTransfer(settlement: CheckedInstantTransfer): LoweredNoun {
 // ---------------------------------------------------------------------------
 // deposit: a reservation placed, then claimed or returned
 
+function lowerCaptureReservation(
+  settlement: CheckedCaptureReservation,
+  correctionPort: CheckedPort,
+  reversalPort: CheckedPort,
+  issues: LoweringIssue[],
+): LoweredNoun | undefined {
+  const noun = settlement.name;
+  const amountName = settlement.amount.name;
+  const reserveRef = "authorize_reservation";
+  const capturedRef = "capturedAmount";
+  const reversalCutoffField = "reversalUntil";
+  const captureVerbs = ["capture", "capture_more"];
+  const verbNames = [
+    "authorize",
+    ...captureVerbs,
+    "settle",
+    "void",
+    "expire",
+    "settle_on_expiry",
+    settlement.correction.port,
+    settlement.externalReversal.port,
+  ];
+  if (!verbNameIssues(noun, verbNames, settlement.origin, issues)) {
+    return undefined;
+  }
+
+  const reserveEventKey = frameKey(`${noun}_reserve`);
+  const captureEventKey = frameKey(`${noun}_capture`);
+  const correctionEventKey = frameKey(`${noun}_correction`);
+  const reversalEventKey = frameKey(`${noun}_external_reversal`);
+  const expiryRuleKey = frameKey(`${noun}_reservation_expiry`);
+  const captureMove = (partialOnly: boolean): Json => ({
+    amount: "captureAmount",
+    capture: { [capturedRef]: "postedAmount" },
+    key: "post",
+    operation: "post",
+    ...(partialOnly ? { partialOnly: true } : {}),
+    reservation: reserveRef,
+  });
+  const reverseMove = (): Json => ({
+    amount: `refs.${capturedRef}`,
+    clawbackOf: reserveRef,
+    from: settlement.payee,
+    key: "transfer",
+    operation: "create",
+    to: settlement.payer,
+  });
+  const verbs: Json = {
+    create: {
+      summary: `Create a ${titleize(noun).toLowerCase()}`,
+      to: "created",
+    },
+    authorize: {
+      from: ["created"],
+      moneyEvent: reserveEventKey,
+      moves: [
+        {
+          amount: amountName,
+          from: settlement.payer,
+          key: "reservation",
+          operation: "reserve",
+          to: settlement.payee,
+        },
+      ],
+      summary: `Reserve the ${amountName} until ${settlement.reserveUntilField}`,
+      to: "authorized",
+    },
+    capture: {
+      deadline: { field: settlement.reserveUntilField },
+      from: ["authorized"],
+      moneyEvent: captureEventKey,
+      moves: [captureMove(true)],
+      summary: "Post one strict partial capture slice",
+      to: "partially_captured",
+    },
+    capture_more: {
+      deadline: { field: settlement.reserveUntilField },
+      from: ["partially_captured"],
+      moneyEvent: captureEventKey,
+      moves: [captureMove(true)],
+      summary: "Post another strict partial capture slice",
+      to: "partially_captured",
+    },
+    settle: {
+      deadline: { field: settlement.reserveUntilField },
+      from: ["authorized", "partially_captured"],
+      moneyEvent: captureEventKey,
+      moves: [
+        {
+          capture: { [capturedRef]: "postedAmount" },
+          key: "post",
+          operation: "post",
+          reservation: reserveRef,
+        },
+      ],
+      summary: "Post the full reserved remainder and settle",
+      setsAt: {
+        field: reversalCutoffField,
+        offset: settlement.externalReversal.window.raw,
+      },
+      to: "settled",
+    },
+    void: {
+      from: ["authorized"],
+      moves: [
+        {
+          key: "void",
+          operation: "void",
+          reason: "Reservation voided before any capture",
+          reservation: reserveRef,
+        },
+      ],
+      summary: "Release an entirely uncaptured reservation",
+      to: "voided",
+    },
+    expire: {
+      due: { field: settlement.reserveUntilField, rule: expiryRuleKey },
+      from: ["authorized"],
+      moves: [
+        {
+          key: "void",
+          operation: "void",
+          reason: "Uncaptured reservation expired",
+          reservation: reserveRef,
+        },
+      ],
+      summary: "Release an uncaptured reservation at expiry",
+      to: "expired",
+    },
+    settle_on_expiry: {
+      due: { field: settlement.reserveUntilField, rule: expiryRuleKey },
+      from: ["partially_captured"],
+      moves: [
+        {
+          key: "void",
+          operation: "void",
+          reason: "Uncaptured remainder released at expiry",
+          reservation: reserveRef,
+        },
+      ],
+      summary: "Release the uncaptured remainder and settle captured slices",
+      setsAt: {
+        field: reversalCutoffField,
+        offset: settlement.externalReversal.window.raw,
+      },
+      to: "settled",
+    },
+    [settlement.correction.port]: {
+      from: ["settled"],
+      moneyEvent: correctionEventKey,
+      moves: [reverseMove()],
+      port: { allowed: correctionPort.allowed },
+      summary: "Return the full captured amount on payee correction",
+      to: "corrected",
+    },
+    [settlement.externalReversal.port]: {
+      captureInput: { externalReference: "externalReference" },
+      deadline: { field: reversalCutoffField },
+      from: ["settled"],
+      moneyEvent: reversalEventKey,
+      moves: [reverseMove()],
+      port: {
+        allowed: reversalPort.allowed,
+        fields: { externalReference: "text" },
+      },
+      summary: "Return the full captured amount on an external reversal",
+      to: "reversed",
+    },
+  };
+
+  const events = [
+    mintEvent({
+      amount: `The full ${amountName}`,
+      fromActor: settlement.payer,
+      key: reserveEventKey,
+      kind: "hold",
+      toActor: settlement.payee,
+      trigger: `Reserve ${amountName} until ${settlement.reserveUntilField}`,
+    }),
+    mintEvent({
+      amount: `Each posted slice, never more than the remaining ${amountName}`,
+      amountDependency: {
+        kind: "bounded_by_reference",
+        reference: reserveEventKey,
+      },
+      fromActor: settlement.payer,
+      key: captureEventKey,
+      kind: "payout",
+      occurrence: "repeatable",
+      toActor: settlement.payee,
+      trigger: "Post a capture slice or the final remainder",
+    }),
+    mintEvent({
+      amount: "100% of the cumulative captured amount",
+      amountDependency: {
+        bps: 10_000,
+        kind: "percent_of_reference",
+        reference: captureEventKey,
+      },
+      fromActor: settlement.payee,
+      key: correctionEventKey,
+      kind: "refund",
+      toActor: settlement.payer,
+      trigger: "Apply one full payee correction",
+    }),
+    mintEvent({
+      amount: "100% of the cumulative captured amount",
+      amountDependency: {
+        bps: 10_000,
+        kind: "percent_of_reference",
+        reference: captureEventKey,
+      },
+      fromActor: settlement.payee,
+      key: reversalEventKey,
+      kind: "refund",
+      toActor: settlement.payer,
+      trigger: "Apply one full externally decided reversal",
+    }),
+  ];
+
+  return {
+    design: [
+      `${noun}: reserve ${amountName} until ${settlement.reserveUntilField}; capture in strict partial slices; post the remainder to settle; expiry releases only the uncaptured remainder`,
+      `${noun}: correction and external reversal each return the full captured amount once; insufficient payee funds reject the move instead of creating a negative position`,
+    ],
+    feeLines: [],
+    moneyEvents: events,
+    noun: {
+      actors: {
+        [settlement.payer]: "payer",
+        [settlement.payee]: "beneficiary",
+      },
+      desc: `Payer reservation captured by the payee in slices within a fixed window`,
+      fields: {
+        [amountName]: moneyFieldSpec(
+          `Maximum captured amount in ${settlement.amount.currency} minor units`,
+        ),
+        [settlement.reserveUntilField]: dateFieldSpec(
+          "Reservation expiry that releases any uncaptured remainder",
+        ),
+        [reversalCutoffField]: {
+          desc: "Machine-owned external reversal cutoff anchored when settlement completes",
+          type: "date?",
+        },
+      },
+      id: noun,
+      summary: `Capture reservation from ${settlement.payer.replaceAll("_", " ")} to ${settlement.payee.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs,
+    },
+    rules: [
+      {
+        allowedActors: [],
+        detail: `At ${settlement.reserveUntilField}, the platform releases the uncaptured remainder and preserves any posted slices`,
+        dueDriven: true,
+        enforcement: "platform",
+        gatesEvent: null,
+        key: expiryRuleKey,
+        kind: "deadline",
+        label: `Uncaptured remainder releases on ${settlement.reserveUntilField}`,
+        tenantTunable: false,
+      },
+      {
+        allowedActors: [...correctionPort.allowed],
+        detail: "The payee may return the full captured amount once",
+        dueDriven: false,
+        enforcement: "tenant_app",
+        gatesEvent: correctionEventKey,
+        key: frameKey(`${noun}_${settlement.correction.port}_gate`),
+        kind: "release_condition",
+        label: "Full correction confirmed through the tenant backend",
+        tenantTunable: false,
+      },
+      {
+        allowedActors: [...reversalPort.allowed],
+        detail: `A confirmed external decision may reverse the full captured amount within ${settlement.externalReversal.window.raw}; timeout moves nothing`,
+        dueDriven: false,
+        enforcement: "tenant_app",
+        gatesEvent: reversalEventKey,
+        key: frameKey(`${noun}_${settlement.externalReversal.port}_gate`),
+        kind: "release_condition",
+        label: "External reversal confirmed through the tenant backend",
+        tenantTunable: false,
+      },
+    ],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// settlement_batch: immutable close, signed lineage sum, one payout
+
+function lowerSettlementBatch(
+  settlement: CheckedSettlementBatch,
+  acknowledgementPort: CheckedPort,
+  issues: LoweringIssue[],
+): LoweredNoun | undefined {
+  const noun = settlement.name;
+  const captureEntry = `${noun}_capture_entry`;
+  const creditAdjustment = `${noun}_credit_adjustment`;
+  const debitAdjustment = `${noun}_debit_adjustment`;
+  const batchIdField = `${noun.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())}Id`;
+  const payoutEventKey = frameKey(`${noun}_payout`);
+  const closeRuleKey = frameKey(`${noun}_close`);
+  if (
+    !verbNameIssues(
+      noun,
+      [
+        "close",
+        "calculate",
+        "approve",
+        "instruct",
+        "reconcile",
+        settlement.payoutAcknowledgement.port,
+      ],
+      settlement.origin,
+      issues,
+    )
+  ) {
+    return undefined;
+  }
+
+  const parentRequirement: Json = {
+    [batchIdField]: {
+      match: { "fields.currency": "fields.currency" },
+      statuses: ["open"],
+    },
+  };
+  const captureNoun: Json = {
+    desc: "One gross capture entry linked to an open payout batch",
+    fields: {
+      amount: moneyFieldSpec("Gross captured amount in minor units"),
+      currency: {
+        desc: "ISO 4217 currency shared with the payout batch",
+        type: "currency",
+      },
+      [batchIdField]: {
+        desc: "Open batch this capture entry accrues into",
+        type: `ref:${noun}`,
+      },
+      [settlement.sourceCaptureReferenceField]: {
+        desc: "Immutable source capture reference",
+        type: "text",
+      },
+    },
+    id: captureEntry,
+    summary: "Gross capture lineage entry",
+    title: `${titleize(noun)} Capture Entry`,
+    verbs: {
+      create: {
+        requires: parentRequirement,
+        summary: "Create a capture lineage entry on an open batch",
+        to: "created",
+      },
+      accrue: {
+        from: ["created"],
+        requires: parentRequirement,
+        summary: "Accrue the capture entry into the open batch",
+        to: "accrued",
+      },
+    },
+  };
+
+  const adjustmentNoun = (id: string, direction: "credit" | "debit"): Json => ({
+    desc: `One ${direction} adjustment linked to an open payout batch; closed batches stay unchanged`,
+    fields: {
+      amount: moneyFieldSpec(
+        `${titleize(direction)} adjustment amount in minor units`,
+      ),
+      currency: {
+        desc: "ISO 4217 currency shared with the payout batch",
+        type: "currency",
+      },
+      adjustmentReference: {
+        desc: "Immutable explicit adjustment reference",
+        type: "text",
+      },
+      [batchIdField]: {
+        desc: "Open batch this adjustment applies to",
+        type: `ref:${noun}`,
+      },
+      [settlement.externalReversalReferenceField]: {
+        desc: "Optional externally decided reversal reference",
+        type: "text?",
+      },
+      [settlement.feeReferenceField]: {
+        desc: "Optional fee entry reference",
+        type: "text?",
+      },
+      [settlement.sourceCaptureReferenceField]: {
+        desc: "Original capture reference that this adjustment corrects",
+        type: "text",
+      },
+    },
+    id,
+    summary: `${titleize(direction)} adjustment with capture lineage`,
+    title: `${titleize(noun)} ${titleize(direction)} Adjustment`,
+    verbs: {
+      create: {
+        requires: parentRequirement,
+        summary: `Create a ${direction} adjustment on an open batch`,
+        to: "created",
+      },
+      adjust: {
+        from: ["created"],
+        requires: parentRequirement,
+        summary: `Apply the ${direction} adjustment to the open batch`,
+        to: "applied",
+      },
+      correct: {
+        from: ["created"],
+        requires: parentRequirement,
+        summary:
+          "Record a later correction on this open batch instead of changing the closed source batch",
+        to: "applied",
+      },
+    },
+  });
+
+  const verbs: Json = {
+    create: {
+      summary: `Open a ${titleize(noun).toLowerCase()}`,
+      to: "open",
+    },
+    close: {
+      due: { field: settlement.closeTriggerField, rule: closeRuleKey },
+      from: ["open"],
+      summary: "Freeze the batch and stop all new entries",
+      to: "closed",
+    },
+    calculate: {
+      from: ["closed"],
+      signedSum: {
+        amountRef: "netPayable",
+        onNegative: "refuse",
+        onZero: "refuse",
+        sources: [
+          {
+            amountField: "amount",
+            nounId: captureEntry,
+            refField: batchIdField,
+            sign: "add",
+            statuses: ["accrued"],
+            subtotalRef: "grossCaptureAmount",
+          },
+          {
+            amountField: "amount",
+            nounId: creditAdjustment,
+            refField: batchIdField,
+            sign: "add",
+            statuses: ["applied"],
+            subtotalRef: "creditAdjustmentAmount",
+          },
+          {
+            amountField: "amount",
+            nounId: debitAdjustment,
+            refField: batchIdField,
+            sign: "subtract",
+            statuses: ["applied"],
+            subtotalRef: "debitAdjustmentAmount",
+          },
+        ],
+      },
+      summary: "Prove and freeze the one signed net payable amount",
+      to: "calculated",
+    },
+    approve: {
+      from: ["calculated"],
+      summary: "Approve the frozen payable without recomputing it",
+      to: "approved",
+    },
+    instruct: {
+      from: ["approved"],
+      moneyEvent: payoutEventKey,
+      payout: {
+        amount: "refs.netPayable",
+        beneficiaryField: settlement.payoutBeneficiaryReferenceField,
+        beneficiaryPartyField: `${camelize(settlement.payoutDestination)}AccountId`,
+        capture: "payoutId",
+        currencyField: "currency",
+        sourceAccountField: `${camelize(settlement.settlementAccount)}AccountId`,
+        speed: "standard",
+      },
+      summary: "Create one idempotent payout from the frozen net payable",
+      to: "instructed",
+    },
+    [settlement.payoutAcknowledgement.port]: {
+      captureInput: {
+        acknowledgementReference: "acknowledgementReference",
+      },
+      from: ["instructed"],
+      port: {
+        allowed: acknowledgementPort.allowed,
+        fields: { acknowledgementReference: "text" },
+      },
+      summary: "Record the tenant's payout acknowledgement in the receipt",
+      to: "acknowledged",
+    },
+    reconcile: {
+      from: ["instructed", "acknowledged"],
+      requiresSettlement: {
+        capture: "settlementEvidenceId",
+        payoutRef: "payoutId",
+      },
+      summary: "Record durable evidence that the payout settled",
+      to: "reconciled",
+    },
+  };
+
+  return {
+    design: [
+      `${noun}: capture entries plus signed adjustments freeze at ${settlement.closeTriggerField}; calculate persists gross, credit, debit, and net refs; negative or zero net refuses`,
+      `${noun}: instruct creates one payout intent for the frozen refs.netPayable; only matched settlement evidence can reconcile it`,
+    ],
+    extraNouns: [
+      captureNoun,
+      adjustmentNoun(creditAdjustment, "credit"),
+      adjustmentNoun(debitAdjustment, "debit"),
+    ],
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount:
+          "The frozen signed sum of gross capture entries plus credit adjustments minus debit adjustments",
+        fromActor: settlement.settlementAccount,
+        key: payoutEventKey,
+        kind: "payout",
+        toActor: settlement.payoutDestination,
+        trigger: "Instruct the approved batch payout exactly once",
+      }),
+    ],
+    noun: {
+      actors: {
+        [settlement.payoutDestination]: "beneficiary",
+        [settlement.settlementAccount]: "payer",
+      },
+      desc: "Immutable batch of capture lineage and signed adjustments that creates one payout",
+      fields: {
+        [settlement.closeTriggerField]: dateFieldSpec(
+          "Date the open batch freezes against later entries",
+        ),
+        currency: {
+          desc: "ISO 4217 currency shared by the batch and payout instruction",
+          type: "currency",
+        },
+        [settlement.payoutBeneficiaryReferenceField]: {
+          desc: "Beneficiary ID for the payout instruction",
+          type: "beneficiary",
+        },
+      },
+      id: noun,
+      summary: `Payout batch from ${settlement.settlementAccount.replaceAll("_", " ")} to ${settlement.payoutDestination.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs,
+    },
+    rules: [
+      {
+        allowedActors: [],
+        detail: `At ${settlement.closeTriggerField}, the platform closes the batch and every child reference gate refuses later entries`,
+        dueDriven: true,
+        enforcement: "platform",
+        gatesEvent: null,
+        key: closeRuleKey,
+        kind: "deadline",
+        label: `Batch freezes on ${settlement.closeTriggerField}`,
+        tenantTunable: false,
+      },
+    ],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
 function lowerDeposit(
   settlement: CheckedDeposit,
   claim: CheckedPort,
@@ -1809,8 +3113,1439 @@ function evenPieceBps(count: number): number[] {
   return widths;
 }
 
+// ---------------------------------------------------------------------------
+// funding_round: aggregate commitments with threshold close and whole unwind
+
+function lowerFundingRound(settlement: CheckedFundingRound): LoweredNoun {
+  const noun = settlement.name;
+  const child = `${noun}_commitment`;
+  const parentRef = `${camelize(noun)}Id`;
+  const commitEvent = frameKey(`${noun}_commit`);
+  const cancelEvent = frameKey(`${noun}_cancel`);
+  const collectEvent = frameKey(`${noun}_collect`);
+  const refundEvent = frameKey(`${noun}_refund`);
+  const closeRule = frameKey(`${noun}_close`);
+  const aggregate = (kind: "sum_at_least" | "sum_below"): Json[] => [
+    {
+      check: {
+        amountField: "amount",
+        kind,
+        targetField: settlement.target.name,
+      },
+      nounId: child,
+      over: "children",
+      refField: parentRef,
+      statuses: ["committed"],
+    },
+  ];
+  const parentRequirement = (statuses: readonly string[]): Json => ({
+    [parentRef]: {
+      bind: {
+        currency: "fields.currency",
+        [`${camelize(settlement.beneficiary)}AccountId`]: `fields.${camelize(settlement.beneficiary)}AccountId`,
+      },
+      statuses,
+    },
+  });
+  const transitionRequirement = (statuses: readonly string[]): Json => ({
+    [parentRef]: {
+      match: {
+        "fields.currency": "fields.currency",
+        [`fields.${camelize(settlement.beneficiary)}AccountId`]: `fields.${camelize(settlement.beneficiary)}AccountId`,
+      },
+      statuses,
+    },
+  });
+
+  return {
+    design: [
+      `${noun}: reuses the catalog funding round and commitment mechanism; the parent lock caps committed rows by target and contributor count`,
+      `${noun}: the stored close anchor chooses threshold activation or failure; each commitment then moves whole from its own custody`,
+    ],
+    extraNouns: [
+      {
+        actors: {
+          [settlement.beneficiary]: "beneficiary",
+          [settlement.contributor]: "payer",
+        },
+        desc: `One whole commitment linked to ${noun}`,
+        escrow: true,
+        fields: {
+          amount: moneyFieldSpec("One whole commitment amount"),
+          currency: {
+            desc: "Currency derived from the funding round",
+            type: "currency",
+          },
+          [parentRef]: { desc: `The exact ${noun}`, type: `ref:${noun}` },
+        },
+        id: child,
+        summary: `Whole commitment to ${noun}`,
+        title: `${titleize(noun)} Commitment`,
+        verbs: {
+          create: {
+            moneyEvent: commitEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: settlement.contributor,
+                key: "commit",
+                operation: "create",
+                to: "escrow",
+              },
+            ],
+            requires: parentRequirement(["open"]),
+            requiresExposure: [
+              {
+                amountField: "amount",
+                anchorField: parentRef,
+                capField: settlement.target.name,
+                capOnAnchor: true,
+                childNounId: child,
+                statuses: ["committed"],
+              },
+            ],
+            summary:
+              "Store one whole commitment without exceeding the round target",
+            to: "committed",
+          },
+          cancel: {
+            from: ["committed"],
+            moneyEvent: cancelEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: "escrow",
+                key: "cancel",
+                operation: "create",
+                to: settlement.contributor,
+              },
+            ],
+            requires: transitionRequirement(["open"]),
+            summary: "Cancel one commitment while the round is open",
+            to: "cancelled",
+          },
+          collect: {
+            from: ["committed"],
+            moneyEvent: collectEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: "escrow",
+                key: "collect",
+                operation: "create",
+                to: settlement.beneficiary,
+              },
+            ],
+            requires: transitionRequirement(["active"]),
+            summary: "Collect one successful commitment whole",
+            to: "collected",
+          },
+          refund: {
+            from: ["committed"],
+            moneyEvent: refundEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: "escrow",
+                key: "refund",
+                operation: "create",
+                to: settlement.contributor,
+              },
+            ],
+            requires: transitionRequirement(["failed"]),
+            summary: "Refund one failed-round commitment whole",
+            to: "refunded",
+          },
+        },
+      },
+    ],
+    generatedPrefixNounIds: [child],
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount: "One stored commitment",
+        fromActor: settlement.contributor,
+        key: commitEvent,
+        kind: "charge",
+        occurrence: "repeatable",
+        toActor: "escrow",
+        trigger: "Create one target-capped commitment",
+      }),
+      mintEvent({
+        amount: "One stored commitment whole",
+        fromActor: "escrow",
+        key: cancelEvent,
+        kind: "refund",
+        occurrence: "repeatable",
+        toActor: settlement.contributor,
+        trigger: "Cancel before close",
+      }),
+      mintEvent({
+        amount: "One stored commitment whole",
+        fromActor: "escrow",
+        key: collectEvent,
+        kind: "payout",
+        occurrence: "repeatable",
+        toActor: settlement.beneficiary,
+        trigger: "Collect after threshold close",
+      }),
+      mintEvent({
+        amount: "One stored commitment whole",
+        fromActor: "escrow",
+        key: refundEvent,
+        kind: "refund",
+        occurrence: "repeatable",
+        toActor: settlement.contributor,
+        trigger: "Refund after failed close",
+      }),
+    ],
+    noun: {
+      actors: { [settlement.beneficiary]: "beneficiary" },
+      aggregateInvariants: [
+        {
+          childField: "amount",
+          childNounId: child,
+          childRefField: parentRef,
+          childStatuses: ["committed"],
+          parentField: settlement.target.name,
+        },
+        {
+          count: true,
+          childNounId: child,
+          childRefField: parentRef,
+          childStatuses: ["committed"],
+          parentField: "maxContributors",
+        },
+      ],
+      desc: "All-or-nothing aggregate funding threshold",
+      fields: {
+        currency: {
+          desc: `Currency fixed to ${settlement.target.currency}`,
+          type: "currency",
+        },
+        [settlement.target.name]: moneyFieldSpec(
+          `Funding target in ${settlement.target.currency} minor units`,
+        ),
+        [settlement.closeByField]: dateFieldSpec("Stored close anchor"),
+        maxContributors: {
+          desc: `Exactly ${settlement.maxContributors} admitted contributors`,
+          type: `const:${settlement.maxContributors}`,
+        },
+      },
+      id: noun,
+      summary: `Threshold funding round for ${settlement.beneficiary.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs: {
+        create: { summary: "Open the funding round", to: "open" },
+        activate: {
+          due: { field: settlement.closeByField, rule: closeRule },
+          from: ["open"],
+          requiresAggregate: aggregate("sum_at_least"),
+          summary: "Activate when commitments meet the target",
+          to: "active",
+        },
+        fail: {
+          due: { field: settlement.closeByField, rule: closeRule },
+          from: ["open"],
+          requiresAggregate: aggregate("sum_below"),
+          summary: "Fail when commitments remain below target",
+          to: "failed",
+        },
+        close: {
+          from: ["active"],
+          requiresAggregate: [
+            {
+              check: { kind: "all_in" },
+              nounId: child,
+              over: "children",
+              refField: parentRef,
+              statuses: ["cancelled", "collected"],
+            },
+          ],
+          summary:
+            "Settle after every admitted row is collected or was cancelled before activation",
+          to: "settled",
+        },
+      },
+    },
+    rules: [
+      {
+        allowedActors: [],
+        detail:
+          "The stored close anchor compares committed rows with the target",
+        dueDriven: true,
+        enforcement: "platform",
+        gatesEvent: null,
+        key: closeRule,
+        kind: "deadline",
+        label: "Round closes against its stored threshold",
+        tenantTunable: false,
+      },
+    ],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// weighted_distribution: frozen weights with deterministic largest remainder
+
+function lowerWeightedDistribution(
+  settlement: CheckedWeightedDistribution,
+  snapshot: CheckedPort,
+): LoweredNoun {
+  const noun = settlement.name;
+  const child = `${noun}_entitlement`;
+  const parentRef = `${camelize(noun)}Id`;
+  const payoutEvent = frameKey(`${noun}_payout`);
+  const parentRequirement = (statuses: readonly string[]): Json => ({
+    [parentRef]: {
+      bind: {
+        currency: "fields.currency",
+        [`${camelize(settlement.source)}AccountId`]: `fields.${camelize(settlement.source)}AccountId`,
+      },
+      statuses,
+    },
+  });
+  return {
+    design: [
+      `${noun}: reuses the catalog largest-remainder distribution; the evidence port freezes the claimant set before any payout`,
+    ],
+    extraNouns: [
+      {
+        actors: {
+          [settlement.recipient]: "beneficiary",
+          [settlement.source]: "payer",
+        },
+        desc: `One frozen weighted entitlement in ${noun}`,
+        fields: {
+          currency: {
+            desc: "Currency derived from the distribution",
+            type: "currency",
+          },
+          [parentRef]: { desc: `The exact ${noun}`, type: `ref:${noun}` },
+          [settlement.weight.name]: moneyFieldSpec(
+            "Stored non-negative entitlement weight",
+          ),
+        },
+        id: child,
+        summary: `Frozen entitlement in ${noun}`,
+        title: `${titleize(noun)} Entitlement`,
+        verbs: {
+          create: {
+            requires: parentRequirement(["open"]),
+            summary: "Record one entitlement before snapshot",
+            to: "recorded",
+          },
+          payout: {
+            distribute: {
+              amountRef: "payoutShare",
+              onZero: "skip_steps",
+              pool: {
+                from: "parent",
+                path: `fields.${settlement.amount.name}`,
+              },
+              refField: parentRef,
+              statuses: ["recorded", "paid"],
+              weightField: settlement.weight.name,
+            },
+            from: ["recorded"],
+            moneyEvent: payoutEvent,
+            moves: [
+              {
+                amount: "refs.payoutShare",
+                from: settlement.source,
+                key: "payout",
+                operation: "create",
+                to: settlement.recipient,
+              },
+            ],
+            requires: {
+              [parentRef]: {
+                match: {
+                  "fields.currency": "fields.currency",
+                  [`fields.${camelize(settlement.source)}AccountId`]: `fields.${camelize(settlement.source)}AccountId`,
+                },
+                statuses: ["snapshotted"],
+              },
+            },
+            summary: "Pay the deterministic largest-remainder share once",
+            to: "paid",
+          },
+        },
+      },
+    ],
+    generatedPrefixNounIds: [child],
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount: "A deterministic largest-remainder share of the stored pool",
+        fromActor: settlement.source,
+        key: payoutEvent,
+        kind: "payout",
+        occurrence: "repeatable",
+        toActor: settlement.recipient,
+        trigger: "Pay one frozen entitlement",
+      }),
+    ],
+    noun: {
+      actors: { [settlement.source]: "payer" },
+      aggregateInvariants: [
+        {
+          count: true,
+          childNounId: child,
+          childRefField: parentRef,
+          childStatuses: ["recorded", "paid"],
+          parentField: "maxRecipients",
+        },
+      ],
+      desc: "Evidence-frozen weighted distribution",
+      fields: {
+        currency: {
+          desc: `Currency fixed to ${settlement.amount.currency}`,
+          type: "currency",
+        },
+        [settlement.amount.name]: moneyFieldSpec(
+          `Distribution pool in ${settlement.amount.currency} minor units`,
+        ),
+        [settlement.recordAtField]: dateFieldSpec("Stored record date"),
+        maxRecipients: {
+          desc: `Exactly ${settlement.maxRecipients} frozen entitlement rows`,
+          type: `const:${settlement.maxRecipients}`,
+        },
+      },
+      id: noun,
+      summary: "Frozen largest-remainder distribution",
+      title: titleize(noun),
+      verbs: {
+        create: { summary: "Open entitlement recording", to: "open" },
+        [settlement.snapshot.port]: {
+          captureInput: { snapshotEvidenceReference: "evidenceReference" },
+          from: ["open"],
+          port: {
+            allowed: snapshot.allowed,
+            fields: { evidenceReference: "text" },
+          },
+          summary: "Freeze the entitlement set from stored evidence",
+          to: "snapshotted",
+        },
+      },
+    },
+    rules: [],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// credit_facility: draw capacity only, repayment remains on scheduled obligation
+
+function lowerCreditFacility(settlement: CheckedCreditFacility): LoweredNoun {
+  const noun = settlement.name;
+  const child = `${noun}_draw`;
+  const facilityRef = `${camelize(noun)}Id`;
+  const obligationRef = `${camelize(settlement.obligation.settlement)}Id`;
+  const drawEvent = frameKey(`${noun}_draw`);
+  const expiryRule = frameKey(`${noun}_expiry`);
+  const countedStatuses =
+    settlement.availabilityPolicy === "revolving"
+      ? ["drawn"]
+      : ["drawn", "resolved"];
+  return {
+    design: [
+      `${noun}: owns reusable draw capacity only; ${settlement.obligation.settlement} remains the sole repayment and delinquency owner`,
+    ],
+    extraNouns: [
+      {
+        actors: {
+          [settlement.drawDestination]: "beneficiary",
+          [settlement.lender]: "payer",
+        },
+        desc: `One capacity-capped draw linked to ${settlement.obligation.settlement}`,
+        fields: {
+          amount: moneyFieldSpec("One draw amount"),
+          currency: {
+            desc: "Currency derived from the facility",
+            type: "currency",
+          },
+          [facilityRef]: { desc: `The exact ${noun}`, type: `ref:${noun}` },
+          [obligationRef]: {
+            desc: "The sole repayment obligation",
+            type: `ref:${settlement.obligation.settlement}`,
+          },
+        },
+        id: child,
+        summary: `Draw from ${noun}`,
+        title: `${titleize(noun)} Draw`,
+        verbs: {
+          create: {
+            moneyEvent: drawEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: settlement.lender,
+                key: "draw",
+                operation: "create",
+                to: settlement.drawDestination,
+              },
+            ],
+            requires: {
+              [facilityRef]: {
+                bind: {
+                  currency: "fields.currency",
+                  [`${camelize(settlement.drawDestination)}AccountId`]: `fields.${camelize(settlement.drawDestination)}AccountId`,
+                  [`${camelize(settlement.lender)}AccountId`]: `fields.${camelize(settlement.lender)}AccountId`,
+                },
+                statuses: ["active"],
+              },
+              [obligationRef]: { statuses: ["active"], unique: true },
+            },
+            requiresExposure: [
+              {
+                amountField: "amount",
+                anchorField: facilityRef,
+                capField: settlement.limit.name,
+                capOnAnchor: true,
+                childNounId: child,
+                statuses: countedStatuses,
+              },
+            ],
+            summary: "Create one draw under the locked facility capacity",
+            to: "drawn",
+          },
+          resolve: {
+            from: ["drawn"],
+            requires: {
+              [obligationRef]: ["repaid", "written_off"],
+            },
+            summary:
+              "Release revolving capacity only after the linked obligation resolves",
+            to: "resolved",
+          },
+        },
+      },
+    ],
+    generatedPrefixNounIds: [child],
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount: "One draw under the stored facility limit",
+        fromActor: settlement.lender,
+        key: drawEvent,
+        kind: "payout",
+        occurrence: "repeatable",
+        toActor: settlement.drawDestination,
+        trigger: "Admit one linked draw",
+      }),
+    ],
+    noun: {
+      actors: {
+        [settlement.borrower]: "party",
+        [settlement.drawDestination]: "beneficiary",
+        [settlement.lender]: "payer",
+      },
+      desc: "Reusable capacity with repayment delegated to one scheduled obligation",
+      fields: {
+        currency: {
+          desc: `Currency fixed to ${settlement.limit.currency}`,
+          type: "currency",
+        },
+        [settlement.limit.name]: moneyFieldSpec(
+          `Facility limit in ${settlement.limit.currency} minor units`,
+        ),
+        [settlement.expiresAtField]: dateFieldSpec("Stored draw expiry"),
+      },
+      id: noun,
+      summary: `Draw capacity for ${settlement.borrower.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs: {
+        create: { summary: "Open the facility", to: "active" },
+        freeze: {
+          due: { field: settlement.expiresAtField, rule: expiryRule },
+          from: ["active"],
+          summary: "Freeze new draws at expiry",
+          to: "frozen",
+        },
+        close: {
+          from: ["active", "frozen"],
+          requiresAggregate: [
+            {
+              check: { kind: "all_in" },
+              nounId: child,
+              over: "children",
+              refField: facilityRef,
+              statuses: ["resolved"],
+            },
+          ],
+          summary: "Close only when every admitted draw resolved",
+          to: "closed",
+        },
+      },
+    },
+    rules: [
+      {
+        allowedActors: [],
+        detail:
+          "The stored expiry freezes new draws without changing repayment state",
+        dueDriven: true,
+        enforcement: "platform",
+        gatesEvent: null,
+        key: expiryRule,
+        kind: "deadline",
+        label: "Facility freezes at expiry",
+        tenantTunable: false,
+      },
+    ],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// conditional_disbursement: one evidence-gated amount under a stored cap
+
+function lowerConditionalDisbursement(
+  settlement: CheckedConditionalDisbursement,
+  decision: CheckedPort,
+): LoweredNoun {
+  const noun = settlement.name;
+  const child = `${noun}_approved_amount`;
+  const parentRef = `${camelize(noun)}Id`;
+  const payoutEvent = frameKey(`${noun}_payout`);
+  const sourceAccountField = `${camelize(settlement.source)}AccountId`;
+  const destinationAccountField = `${camelize(settlement.destination)}AccountId`;
+  const parentTransitionRequirement = {
+    [parentRef]: {
+      match: {
+        "fields.currency": "fields.currency",
+        [`fields.${destinationAccountField}`]: `fields.${destinationAccountField}`,
+        [`fields.${sourceAccountField}`]: `fields.${sourceAccountField}`,
+      },
+      statuses: ["submitted"],
+    },
+  };
+  return {
+    design: [
+      `${noun}: a stored external decision may approve one amount under the cap; recovery requires a separate transfer`,
+    ],
+    extraNouns: [
+      {
+        actors: {
+          [settlement.destination]: "beneficiary",
+          [settlement.source]: "payer",
+        },
+        desc: `One evidence-gated amount under ${noun}`,
+        fields: {
+          amount: moneyFieldSpec("Approved amount under the parent cap"),
+          currency: {
+            desc: "Currency derived from the parent cap",
+            type: "currency",
+          },
+          [parentRef]: { desc: `The exact ${noun}`, type: `ref:${noun}` },
+        },
+        id: child,
+        summary: `Approved amount under ${noun}`,
+        title: `${titleize(noun)} Approved Amount`,
+        verbs: {
+          create: {
+            requires: {
+              [parentRef]: {
+                bind: {
+                  currency: "fields.currency",
+                  [destinationAccountField]: `fields.${destinationAccountField}`,
+                  [sourceAccountField]: `fields.${sourceAccountField}`,
+                },
+                statuses: ["submitted"],
+                unique: true,
+              },
+            },
+            summary: "Create one candidate amount under the parent",
+            to: "created",
+          },
+          approve: {
+            captureInput: { decisionEvidenceReference: "evidenceReference" },
+            from: ["created"],
+            port: {
+              allowed: decision.allowed,
+              fields: { evidenceReference: "text" },
+            },
+            requires: parentTransitionRequirement,
+            requiresExposure: [
+              {
+                amountField: "amount",
+                anchorField: parentRef,
+                capField: settlement.cap.name,
+                capOnAnchor: true,
+                childNounId: child,
+                statuses: ["approved", "paid"],
+              },
+            ],
+            summary: "Store one externally approved amount under the cap",
+            to: "approved",
+          },
+          pay: {
+            from: ["approved"],
+            moneyEvent: payoutEvent,
+            moves: [
+              {
+                amount: "amount",
+                from: settlement.source,
+                key: "payout",
+                operation: "create",
+                to: settlement.destination,
+              },
+            ],
+            requires: parentTransitionRequirement,
+            summary: "Pay the stored approved amount once",
+            to: "paid",
+          },
+        },
+      },
+    ],
+    generatedPrefixNounIds: [child],
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount: "The stored approved amount under the cap",
+        fromActor: settlement.source,
+        key: payoutEvent,
+        kind: "payout",
+        occurrence: "repeatable",
+        toActor: settlement.destination,
+        trigger: "Pay one approved amount",
+      }),
+    ],
+    noun: {
+      actors: {
+        [settlement.destination]: "beneficiary",
+        [settlement.source]: "payer",
+      },
+      desc: "Capped disbursement controlled by stored external evidence",
+      fields: {
+        currency: {
+          desc: `Currency fixed to ${settlement.cap.currency}`,
+          type: "currency",
+        },
+        [settlement.cap.name]: moneyFieldSpec(
+          `Disbursement cap in ${settlement.cap.currency} minor units`,
+        ),
+      },
+      id: noun,
+      summary: `Capped disbursement to ${settlement.destination.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs: {
+        create: { summary: "Submit the capped disbursement", to: "submitted" },
+        deny: {
+          captureInput: { decisionEvidenceReference: "evidenceReference" },
+          from: ["submitted"],
+          port: {
+            allowed: decision.allowed,
+            fields: { evidenceReference: "text" },
+          },
+          requiresAggregate: [
+            {
+              check: { kind: "all_in" },
+              nounId: child,
+              over: "children",
+              refField: parentRef,
+              statuses: ["created"],
+            },
+          ],
+          summary: "Record a denial without moving money",
+          to: "denied",
+        },
+      },
+    },
+    rules: [],
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// rotating_pool: fixed roster, one contribution per member and cycle
+
+function lowerRotatingPool(settlement: CheckedRotatingPool): LoweredNoun {
+  const noun = settlement.name;
+  const parentRef = `${camelize(noun)}Id`;
+  const contributionEvent = frameKey(`${noun}_contribution`);
+  const guaranteeEvent = frameKey(`${noun}_guarantee_contribution`);
+  const payoutEvent = frameKey(`${noun}_payout`);
+  const fixedActors = [
+    ...new Set([
+      ...settlement.members,
+      ...settlement.payoutOrder,
+      ...(settlement.guarantor ? [settlement.guarantor] : []),
+    ]),
+  ];
+  const fixedActorBindings = Object.fromEntries(
+    fixedActors.map((actor) => {
+      const accountField = `${camelize(actor)}AccountId`;
+      return [accountField, `fields.${accountField}`];
+    }),
+  );
+  const childIds = settlement.members.map(
+    (member) => `${noun}_${member}_contribution`,
+  );
+  const childNouns = settlement.members.map((member, memberIndex): Json => {
+    const id = childIds[memberIndex] as string;
+    const verbs: Json = {
+      create: {
+        requires: {
+          [parentRef]: {
+            bind: {
+              currency: "fields.currency",
+              ...fixedActorBindings,
+              [settlement.schedule.firstDueField]:
+                `fields.${settlement.schedule.firstDueField}`,
+              [settlement.contribution.name]:
+                `fields.${settlement.contribution.name}`,
+            },
+            statuses: ["forming"],
+            unique: true,
+          },
+        },
+        summary: `Create the fixed contribution row for ${member.replaceAll("_", " ")}`,
+        to: "cycle_1_due",
+      },
+    };
+    for (let index = 0; index < settlement.schedule.count; index += 1) {
+      const cycle = index + 1;
+      const dueState = `cycle_${cycle}_due`;
+      const defaultState = `cycle_${cycle}_defaulted`;
+      const fundedState = `cycle_${cycle}_funded`;
+      const guaranteedState = `cycle_${cycle}_guaranteed`;
+      const nextState =
+        cycle === settlement.schedule.count
+          ? "final_paid"
+          : `cycle_${cycle + 1}_due`;
+      const dueRule = frameKey(`${noun}_cycle_${cycle}_due`);
+      const cycleAmount = settlement.contribution.name;
+      const guaranteeAmount = settlement.contribution.name;
+      const due = {
+        field: settlement.schedule.firstDueField,
+        rule: dueRule,
+        ...anchorOffset(settlement.schedule, index),
+      };
+      verbs[`contribute_cycle_${cycle}`] = {
+        due,
+        from: [dueState],
+        moneyEvent: contributionEvent,
+        moves: [
+          {
+            amount: cycleAmount,
+            from: member,
+            key: "contribution",
+            operation: "create",
+            to: "escrow",
+          },
+        ],
+        requires: { [parentRef]: [`active_cycle_${cycle}`] },
+        summary: `Fund ${member.replaceAll("_", " ")}'s cycle ${cycle} contribution`,
+        to: fundedState,
+      };
+      verbs[`mark_default_cycle_${cycle}`] = {
+        due,
+        from: [dueState],
+        requires: { [parentRef]: [`active_cycle_${cycle}`] },
+        summary: `Mark the stored cycle ${cycle} due condition`,
+        to: defaultState,
+      };
+      if (settlement.guarantor) {
+        verbs[`guarantee_cycle_${cycle}`] = {
+          from: [defaultState],
+          moneyEvent: guaranteeEvent,
+          moves: [
+            {
+              amount: guaranteeAmount,
+              from: settlement.guarantor,
+              key: "guarantee",
+              operation: "create",
+              to: "escrow",
+            },
+          ],
+          requires: { [parentRef]: [`active_cycle_${cycle}`] },
+          summary: `Fund the defaulted cycle ${cycle} amount before payout`,
+          to: guaranteedState,
+        };
+      }
+      verbs[`pay_cycle_${cycle}`] = {
+        from: [fundedState],
+        moneyEvent: payoutEvent,
+        moves: [
+          {
+            amount: cycleAmount,
+            from: "escrow",
+            key: "payout",
+            operation: "create",
+            to: settlement.payoutOrder[index],
+          },
+        ],
+        requires: { [parentRef]: [`cycle_${cycle}_ready`] },
+        summary: `Pay this member's stored contribution into cycle ${cycle}'s shared pot recipient`,
+        to: nextState,
+      };
+      if (settlement.guarantor) {
+        verbs[`pay_guaranteed_cycle_${cycle}`] = {
+          from: [guaranteedState],
+          moneyEvent: payoutEvent,
+          moves: [
+            {
+              amount: guaranteeAmount,
+              from: "escrow",
+              key: "payout",
+              operation: "create",
+              to: settlement.payoutOrder[index],
+            },
+          ],
+          requires: { [parentRef]: [`cycle_${cycle}_ready`] },
+          summary: `Pay the funded default into cycle ${cycle}'s stored recipient`,
+          to: nextState,
+        };
+      }
+    }
+    verbs.close = {
+      from: ["final_paid"],
+      requiresDrainedAccount: { path: "refs.escrowAccountId" },
+      summary: "Complete after the final payout drains this member custody",
+      to: "completed",
+    };
+    return {
+      actors: Object.fromEntries([
+        [member, "payer"],
+        ...(settlement.guarantor ? [[settlement.guarantor, "payer"]] : []),
+        ...settlement.payoutOrder.map((recipient) => [
+          recipient,
+          "beneficiary",
+        ]),
+      ]),
+      desc: `Fixed contribution row for ${member.replaceAll("_", " ")}`,
+      escrow: true,
+      fields: {
+        [settlement.contribution.name]: moneyFieldSpec(
+          "Exact contribution amount shared by every cycle",
+        ),
+        currency: { desc: "Currency derived from the pool", type: "currency" },
+        [settlement.schedule.firstDueField]: dateFieldSpec(
+          "First due anchor derived from the pool",
+        ),
+        [parentRef]: { desc: `The exact ${noun}`, type: `ref:${noun}` },
+      },
+      id,
+      summary: `${member.replaceAll("_", " ")} contribution row`,
+      title: `${titleize(noun)} ${titleize(member)} Contribution`,
+      verbs,
+    };
+  });
+  const parentVerbs: Json = {
+    create: {
+      summary: "Create the fixed roster before activation",
+      to: "forming",
+    },
+    cancel: {
+      from: ["forming"],
+      summary: "Cancel before activation without moving money",
+      to: "cancelled",
+    },
+    activate: {
+      from: ["forming"],
+      requiresAggregate: childIds.map((childId) => ({
+        check: { kind: "count_equals_field", field: "one" },
+        nounId: childId,
+        over: "children",
+        refField: parentRef,
+        statuses: ["cycle_1_due"],
+      })),
+      summary: "Activate only after every fixed member row exists once",
+      to: "active_cycle_1",
+    },
+  };
+  for (let index = 0; index < settlement.schedule.count; index += 1) {
+    const cycle = index + 1;
+    parentVerbs[`ready_cycle_${cycle}`] = {
+      from: [`active_cycle_${cycle}`],
+      requiresAggregate: childIds.map((childId) => ({
+        check: { kind: "all_in" },
+        nounId: childId,
+        over: "children",
+        refField: parentRef,
+        statuses: [
+          `cycle_${cycle}_funded`,
+          ...(settlement.guarantor ? [`cycle_${cycle}_guaranteed`] : []),
+        ],
+      })),
+      summary: `Lock cycle ${cycle} only after every member row is funded or guaranteed`,
+      to: `cycle_${cycle}_ready`,
+    };
+    parentVerbs[`advance_cycle_${cycle}`] = {
+      from: [`cycle_${cycle}_ready`],
+      requiresAggregate: childIds.map((childId) => ({
+        check: { kind: "all_in" },
+        nounId: childId,
+        over: "children",
+        refField: parentRef,
+        statuses: [
+          cycle === settlement.schedule.count
+            ? "completed"
+            : `cycle_${cycle + 1}_due`,
+        ],
+      })),
+      summary:
+        cycle === settlement.schedule.count
+          ? "Complete after the final shared pot pays"
+          : `Advance after every cycle ${cycle} contribution pays`,
+      to:
+        cycle === settlement.schedule.count
+          ? "completed"
+          : `active_cycle_${cycle + 1}`,
+    };
+  }
+  return {
+    design: [
+      `${noun}: fixed roster and stored payout order; one member-specific row per member avoids tuple identity and keeps each cycle idempotent`,
+    ],
+    extraNouns: childNouns,
+    generatedPrefixNounIds: childIds,
+    feeLines: [],
+    moneyEvents: [
+      mintEvent({
+        amount: "One exact member contribution",
+        fromActor: settlement.members[0] as string,
+        key: contributionEvent,
+        kind: "charge",
+        occurrence: "repeatable",
+        toActor: "escrow",
+        trigger: "Fund one member and cycle",
+      }),
+      ...(settlement.guarantor
+        ? [
+            mintEvent({
+              amount: "One exact defaulted contribution",
+              fromActor: settlement.guarantor,
+              key: guaranteeEvent,
+              kind: "charge",
+              occurrence: "repeatable",
+              toActor: "escrow",
+              trigger: "Fund one defaulted member and cycle",
+            }),
+          ]
+        : []),
+      mintEvent({
+        amount: "One exact member contribution from the cycle pot",
+        fromActor: "escrow",
+        key: payoutEvent,
+        kind: "payout",
+        occurrence: "repeatable",
+        toActor: settlement.payoutOrder[0] as string,
+        trigger: "Pay the stored cycle recipient",
+      }),
+    ],
+    noun: {
+      actors: Object.fromEntries([
+        ...settlement.members.map((member) => [member, "party"]),
+        ...(settlement.guarantor ? [[settlement.guarantor, "payer"]] : []),
+      ]),
+      desc: "Fixed rotating contribution and payout order",
+      fields: {
+        currency: {
+          desc: `Currency fixed to ${settlement.contribution.currency}`,
+          type: "currency",
+        },
+        [settlement.contribution.name]: moneyFieldSpec(
+          `Exact contribution in ${settlement.contribution.currency} minor units`,
+        ),
+        [settlement.schedule.firstDueField]: dateFieldSpec(
+          "Stored first contribution due date",
+        ),
+        one: { desc: "Exact fixed member-row count", type: "const:1" },
+      },
+      id: noun,
+      summary: `${settlement.members.length}-member rotating pool`,
+      title: titleize(noun),
+      verbs: parentVerbs,
+    },
+    rules: Array.from({ length: settlement.schedule.count }, (_, index) => ({
+      allowedActors: [],
+      detail: `Cycle ${index + 1} default follows its stored due condition`,
+      dueDriven: true,
+      enforcement: "platform",
+      gatesEvent: null,
+      key: frameKey(`${noun}_cycle_${index + 1}_due`),
+      kind: "deadline",
+      label: `Cycle ${index + 1} due condition`,
+      tenantTunable: false,
+    })),
+    settlement: { name: noun, pieces: [] },
+  };
+}
+
 function anchorOffset(schedule: ScheduleTerms, index: number): Json {
   return index === 0 ? {} : { offset: `P${schedule.every.days * index}D` };
+}
+
+/**
+ * Obligation mode extends the existing schedule instead of minting a second
+ * repayment archetype. The parent stores every anchor amount and date. One
+ * generated payment noun per anchor makes matching exact at the operation
+ * boundary and lets the generic aggregate lock cap concurrent partial pays.
+ */
+function lowerScheduledObligation(
+  settlement: CheckedScheduledObligation,
+  collection?: CheckedRecurringCollection,
+  collectionMandate?: CheckedPort,
+): LoweredNoun {
+  const noun = settlement.name;
+  const amountName = settlement.amount.name;
+  const obligationIdField = `${noun.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())}Id`;
+  const widths = evenPieceBps(settlement.schedule.count);
+  const installmentFields = widths.map(
+    (_, index) => `installment${index + 1}Amount`,
+  );
+  const paymentNouns = widths.map(
+    (_, index) => `${noun}_installment_${index + 1}_payment`,
+  );
+  const activeState = "active";
+  const delinquentState = (index: number) =>
+    `installment_${index + 1}_delinquent`;
+  const delinquentStates = widths.map((_, index) => delinquentState(index));
+  const liveStates = [activeState, ...delinquentStates];
+  const repaymentEvent = frameKey(`${noun}_repayment`);
+  const refundEvent = frameKey(`${noun}_refund`);
+  const advanceEvent = frameKey(`${noun}_advance`);
+
+  const fields: Json = {
+    currency: {
+      desc: `Currency fixed to ${settlement.amount.currency}`,
+      type: "currency",
+    },
+    [amountName]: moneyFieldSpec(
+      `The principal in ${settlement.amount.currency} minor units; the stored installment anchors partition it exactly`,
+    ),
+    [settlement.schedule.firstDueField]: dateFieldSpec(
+      `Due date of the first installment; later anchors use fixed offsets of ${settlement.schedule.every.raw}`,
+    ),
+  };
+  for (const [index, field] of installmentFields.entries()) {
+    fields[field] = moneyFieldSpec(
+      `Stored amount for installment ${index + 1} of ${settlement.schedule.count}${index === 0 ? " (carries the integer-division remainder)" : ""}`,
+    );
+    fields[`installment${index + 1}DelinquentAfter`] = optionalDateFieldSpec(
+      `Machine-set marker proving installment ${index + 1} reached its stored due date while unpaid`,
+    );
+  }
+
+  const aggregateInvariants = paymentNouns.map((paymentNoun, index) => ({
+    childField: "amount",
+    childNounId: paymentNoun,
+    childRefField: obligationIdField,
+    childStatuses: ["paid"],
+    parentField: installmentFields[index],
+  }));
+
+  const verbs: Json = {
+    create: {
+      summary: `Create a ${titleize(noun).toLowerCase()} obligation`,
+      to: "draft",
+    },
+    approve: {
+      from: ["draft"],
+      summary: "Approve the immutable principal partition and stored anchors",
+      to: settlement.advanceTo ? "approved" : activeState,
+    },
+    ...(settlement.advanceTo
+      ? {
+          advance: {
+            from: ["approved"],
+            moneyEvent: advanceEvent,
+            moves: [
+              {
+                amount: amountName,
+                from: settlement.payee,
+                key: "advance",
+                operation: "create",
+                to: settlement.advanceTo,
+              },
+            ],
+            summary: `Advance the principal to the ${settlement.advanceTo.replaceAll("_", " ")}; the internal ledger receipt is the confirmation`,
+            to: activeState,
+          },
+        }
+      : {}),
+    write_off: {
+      from: [
+        "draft",
+        ...(settlement.advanceTo ? ["approved"] : []),
+        ...liveStates,
+      ],
+      summary: "Write off the remaining exposure without moving money",
+      to: "written_off",
+    },
+  };
+
+  const rules: Json[] = [];
+  for (const [index, paymentNoun] of paymentNouns.entries()) {
+    const anchor = index + 1;
+    const ruleKey = frameKey(`${noun}_installment_${anchor}_due`);
+    const due = {
+      field: settlement.schedule.firstDueField,
+      rule: ruleKey,
+      ...anchorOffset(settlement.schedule, index),
+    };
+    const aggregate = (kind: "sum_below" | "sum_exactly"): Json[] => [
+      {
+        check: {
+          amountField: "amount",
+          kind,
+          targetField: installmentFields[index],
+        },
+        nounId: paymentNoun,
+        over: "children",
+        refField: obligationIdField,
+        statuses: ["paid"],
+      },
+    ];
+    verbs[`mark_installment_${anchor}_delinquent`] = {
+      due,
+      from: liveStates.filter((state) => state !== delinquentState(index)),
+      requiresAggregate: aggregate("sum_below"),
+      setsAt: {
+        field: `installment${anchor}DelinquentAfter`,
+        marker: true,
+        offset: "PT1S",
+      },
+      summary: `Mark installment ${anchor} delinquent only when its due anchor is unmet`,
+      to: delinquentState(index),
+    };
+    verbs[`collect_installment_${anchor}`] = {
+      due,
+      from: delinquentStates,
+      requiresAggregate: aggregate("sum_exactly"),
+      summary: `Close delinquent installment ${anchor} after linked payments reach its stored amount`,
+      to: activeState,
+    };
+    rules.push({
+      allowedActors: [],
+      detail: `At stored anchor ${anchor}, the platform compares paid child rows with ${installmentFields[index]} and chooses paid or delinquent`,
+      dueDriven: true,
+      enforcement: "platform",
+      gatesEvent: null,
+      key: ruleKey,
+      kind: "deadline",
+      label: `Installment ${anchor} resolves from its stored due condition`,
+      tenantTunable: false,
+    });
+  }
+
+  const completionRuleKey = frameKey(`${noun}_completion_due`);
+  verbs.complete = {
+    due: {
+      field: settlement.schedule.firstDueField,
+      rule: completionRuleKey,
+      ...anchorOffset(settlement.schedule, widths.length - 1),
+    },
+    from: liveStates,
+    requiresAggregate: paymentNouns.map((paymentNoun, index) => ({
+      check: {
+        amountField: "amount",
+        kind: "sum_exactly",
+        targetField: installmentFields[index],
+      },
+      nounId: paymentNoun,
+      over: "children",
+      refField: obligationIdField,
+      statuses: ["paid"],
+    })),
+    summary:
+      "Close the obligation only after every stored anchor is paid exactly",
+    to: "repaid",
+  };
+  rules.push({
+    allowedActors: [],
+    detail:
+      "After the final stored anchor, the platform closes only when every anchor is paid exactly",
+    dueDriven: true,
+    enforcement: "platform",
+    gatesEvent: null,
+    key: completionRuleKey,
+    kind: "deadline",
+    label: "Obligation completion follows exact aggregate repayment",
+    tenantTunable: false,
+  });
+
+  const paymentNoun = (index: number): Json => {
+    const anchor = index + 1;
+    const id = paymentNouns[index] as string;
+    const permittedParentStates = liveStates;
+    const payerAccountField = `${settlement.payer.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())}AccountId`;
+    const payeeAccountField = `${settlement.payee.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())}AccountId`;
+    const createRequirement = {
+      [obligationIdField]: {
+        bind: {
+          currency: "fields.currency",
+          [payerAccountField]: `fields.${payerAccountField}`,
+          [payeeAccountField]: `fields.${payeeAccountField}`,
+        },
+        statuses: permittedParentStates,
+      },
+    };
+    const transitionRequirement = {
+      [obligationIdField]: {
+        match: {
+          "fields.currency": "fields.currency",
+          [`fields.${payerAccountField}`]: `fields.${payerAccountField}`,
+          [`fields.${payeeAccountField}`]: `fields.${payeeAccountField}`,
+        },
+        statuses: permittedParentStates,
+      },
+    };
+    return {
+      actors: {
+        [settlement.payee]: "beneficiary",
+        [settlement.payer]: "payer",
+      },
+      desc: `One partial or full payment bound to installment ${anchor} of ${noun}; the operation name fixes the anchor and ${obligationIdField} fixes the obligation`,
+      fields: {
+        amount: moneyFieldSpec(
+          `Positive payment amount capped with its paid siblings at ${installmentFields[index]}`,
+        ),
+        currency: {
+          desc: "ISO 4217 currency derived from the obligation",
+          type: "currency",
+        },
+        [obligationIdField]: {
+          desc: `The exact ${noun.replaceAll("_", " ")} this payment belongs to`,
+          type: `ref:${noun}`,
+        },
+      },
+      id,
+      summary: `Anchor-bound payment for installment ${anchor}`,
+      title: `${titleize(noun)} Installment ${anchor} Payment`,
+      verbs: {
+        create: {
+          requires: createRequirement,
+          summary: `Create a payment record for installment ${anchor}`,
+          to: "created",
+        },
+        repay: {
+          ...(collection && collectionMandate
+            ? {
+                captureInput: {
+                  mandateEvidenceReference: "evidenceReference",
+                },
+                port: {
+                  allowed: collectionMandate.allowed,
+                  fields: { evidenceReference: "text" },
+                },
+              }
+            : {}),
+          from: ["created"],
+          moneyEvent: repaymentEvent,
+          moves: [
+            {
+              amount: "amount",
+              from: settlement.payer,
+              key: "repayment",
+              operation: "create",
+              to: settlement.payee,
+            },
+          ],
+          requires: transitionRequirement,
+          requiresExposure: [
+            {
+              amountField: "amount",
+              anchorField: obligationIdField,
+              capField: installmentFields[index],
+              capOnAnchor: true,
+              childNounId: id,
+              statuses: ["paid"],
+            },
+          ],
+          summary: `Pay a partial or full amount against installment ${anchor}`,
+          to: "paid",
+        },
+        refund: {
+          from: ["paid"],
+          moneyEvent: refundEvent,
+          moves: [
+            {
+              amount: "amount",
+              from: settlement.payee,
+              key: "refund",
+              operation: "create",
+              to: settlement.payer,
+            },
+          ],
+          requires: transitionRequirement,
+          summary: `Refund this one stored installment ${anchor} payment whole`,
+          to: "refunded",
+        },
+      },
+    };
+  };
+
+  return {
+    design: [
+      `${noun}: existing scheduled mechanism in obligation mode; principal partitions into ${settlement.schedule.count} stored anchors; each payment operation names one anchor and one obligation`,
+      `${noun}: partial and early payments serialize under per-anchor aggregate caps; each refund reverses one paid row whole; rescheduling is refused by the checker`,
+      `${noun}: due-only delinquency and write-off change state without money; ${settlement.advanceTo ? "advance is an internal ledger movement with no provider claim" : "no advance is emitted"}`,
+      ...(collection
+        ? [
+            `${collection.name}: explicit collection attempts reuse ${noun}'s anchor-bound repayment verbs; mandate evidence is captured per attempt; failures remain receipted failures and delinquency stays on ${noun}`,
+          ]
+        : []),
+    ],
+    extraNouns: paymentNouns.map((_, index) => paymentNoun(index)),
+    generatedPrefixNounIds: paymentNouns,
+    feeLines: [],
+    moneyEvents: [
+      ...(settlement.advanceTo
+        ? [
+            mintEvent({
+              amount: `The full ${amountName}`,
+              fromActor: settlement.payee,
+              key: advanceEvent,
+              kind: "payout",
+              toActor: settlement.advanceTo,
+              trigger: "Advance the approved principal once",
+            }),
+          ]
+        : []),
+      mintEvent({
+        amount: "A positive amount capped by its stored installment anchor",
+        fromActor: settlement.payer,
+        key: repaymentEvent,
+        kind: "installment",
+        occurrence: "repeatable",
+        toActor: settlement.payee,
+        trigger: "Pay one anchor-bound partial or full installment amount",
+      }),
+      mintEvent({
+        amount: "Exactly one stored paid installment payment",
+        fromActor: settlement.payee,
+        key: refundEvent,
+        kind: "refund",
+        occurrence: "repeatable",
+        toActor: settlement.payer,
+        trigger: "Refund one linked paid installment payment whole",
+      }),
+    ],
+    noun: {
+      actors: {
+        ...(settlement.advanceTo
+          ? { [settlement.advanceTo]: "beneficiary" }
+          : {}),
+        [settlement.payee]: "beneficiary",
+        [settlement.payer]: "payer",
+        [settlement.debtor]: "party",
+      },
+      aggregateInvariants,
+      desc: `Installment obligation for ${settlement.debtor.replaceAll("_", " ")}; ${settlement.payer.replaceAll("_", " ")} pays ${settlement.payee.replaceAll("_", " ")} against exact stored anchors`,
+      fields,
+      id: noun,
+      ...partitionsSpread(partitionClause(amountName, installmentFields)),
+      summary: `${settlement.schedule.count}-anchor obligation for ${settlement.debtor.replaceAll("_", " ")}`,
+      title: titleize(noun),
+      verbs,
+    },
+    rules,
+    settlement: { name: noun, pieces: [] },
+  };
 }
 
 function lowerScheduled(settlement: CheckedScheduled): LoweredNoun {
@@ -1921,9 +4656,12 @@ function lowerScheduled(settlement: CheckedScheduled): LoweredNoun {
   };
 }
 
-function lowerAdvance(settlement: CheckedAdvance): LoweredNoun {
+function lowerAdvance(
+  settlement: CheckedAdvance,
+  recourses: readonly CheckedScheduled[],
+): LoweredNoun {
   return settlement.source.kind === "carve"
-    ? lowerCarvedAdvance(settlement, settlement.source.settlement)
+    ? lowerCarvedAdvance(settlement, settlement.source.settlement, recourses)
     : lowerScheduledAdvance(settlement, settlement.source.schedule);
 }
 
@@ -1937,6 +4675,7 @@ function lowerAdvance(settlement: CheckedAdvance): LoweredNoun {
 function lowerCarvedAdvance(
   settlement: CheckedAdvance,
   hold: string,
+  recourses: readonly CheckedScheduled[],
 ): LoweredNoun {
   const noun = settlement.name;
   const amountName = settlement.amount.name;
@@ -1944,10 +4683,28 @@ function lowerCarvedAdvance(
   const advancedWords = settlement.advanced.replaceAll("_", " ");
   const funderWords = settlement.funder.replaceAll("_", " ");
   const holdWords = hold.replaceAll("_", " ");
+  const holdRefField = "carveHoldId";
+  const referenceBindings = [
+    { field: holdRefField, statuses: ["funded"], target: hold },
+    ...recourses.map((recourse, index) => ({
+      field: `carveRecourse${index + 1}Id`,
+      statuses: ["active"],
+      target: recourse.name,
+    })),
+  ];
 
   const fields: Json = {
     [amountName]: moneyFieldSpec(
       `The advanced amount in ${settlement.amount.currency} minor units, disbursed to the ${advancedWords} up front`,
+    ),
+    ...Object.fromEntries(
+      referenceBindings.map((binding) => [
+        binding.field,
+        {
+          desc: `The ${binding.target.replaceAll("_", " ")} bound to this advance`,
+          type: `ref:${binding.target}`,
+        },
+      ]),
     ),
     ...(hasFee
       ? {
@@ -2016,6 +4773,18 @@ function lowerCarvedAdvance(
               to: settlement.advanced,
             },
           ],
+          requires: Object.fromEntries(
+            referenceBindings.map((binding) => [
+              binding.field,
+              {
+                match: {
+                  [`fields.${amountName}`]: `fields.${amountName}`,
+                  "fields.currency": "fields.currency",
+                },
+                statuses: binding.statuses,
+              },
+            ]),
+          ),
           summary: `Disburse the ${amountName} to the ${advancedWords}`,
           to: "advanced",
         },
@@ -2582,6 +5351,8 @@ function summarize(program: CheckedProgram): string {
           : `the ${settlement.payee.replaceAll("_", " ")} is paid on confirmed release`;
         return `The ${settlement.payer.replaceAll("_", " ")} funds ${settlement.amount.name} into escrow and ${paid}${cancel}`;
       }
+      case "captured_payment":
+        return `The ${settlement.payer.replaceAll("_", " ")}'s ${settlement.amount.name} is reserved until ${settlement.reserveUntilField}, captured by the ${settlement.payee.replaceAll("_", " ")} in strict partial slices, then settled or released`;
       case "instant_transfer":
         return `The ${settlement.payer.replaceAll("_", " ")} pays ${settlement.amount.name} straight through to the ${settlement.payee.replaceAll("_", " ")}`;
       case "premium_forward":
@@ -2589,7 +5360,9 @@ function summarize(program: CheckedProgram): string {
       case "deposit":
         return `The ${settlement.payer.replaceAll("_", " ")}'s ${settlement.amount.name} is reserved for the ${settlement.holder.replaceAll("_", " ")} until claimed or returned`;
       case "scheduled":
-        return `The ${settlement.payer.replaceAll("_", " ")} pays ${settlement.amount.name} to the ${settlement.payee.replaceAll("_", " ")} over ${settlement.schedule.count} scheduled installments`;
+        return settlement.mode === "obligation"
+          ? `The ${settlement.debtor.replaceAll("_", " ")} owes ${settlement.amount.name}; ${settlement.advanceTo ? `the ${settlement.payee.replaceAll("_", " ")} advances it to the ${settlement.advanceTo.replaceAll("_", " ")}, then ` : ""}the ${settlement.payer.replaceAll("_", " ")} repays the ${settlement.payee.replaceAll("_", " ")} over ${settlement.schedule.count} anchor-bound installments`
+          : `The ${settlement.payer.replaceAll("_", " ")} pays ${settlement.amount.name} to the ${settlement.payee.replaceAll("_", " ")} over ${settlement.schedule.count} scheduled installments`;
       case "advance":
         return settlement.source.kind === "carve"
           ? `The ${settlement.funder.replaceAll("_", " ")} advances ${settlement.amount.name} to the ${settlement.advanced.replaceAll("_", " ")}, repaid out of the ${settlement.source.settlement.replaceAll("_", " ")} release`
@@ -2598,6 +5371,20 @@ function summarize(program: CheckedProgram): string {
         return `The ${settlement.payer.replaceAll("_", " ")} is charged per metered unit at a committed rate card until the period closes`;
       case "pooled_split":
         return `The ${settlement.payer.replaceAll("_", " ")} pools ${settlement.amount.name} and it distributes ${settlement.shares.length} ways on the payout date`;
+      case "settlement_batch":
+        return `The ${settlement.settlementAccount.replaceAll("_", " ")} freezes capture lineage and pays one signed net amount to the ${settlement.payoutDestination.replaceAll("_", " ")}`;
+      case "funding_round":
+        return `The ${settlement.contributor.replaceAll("_", " ")} commits under ${settlement.target.name} until the stored close anchor activates or fails the round`;
+      case "weighted_distribution":
+        return `The ${settlement.source.replaceAll("_", " ")} pays a frozen claimant set by deterministic largest remainder`;
+      case "credit_facility":
+        return `The ${settlement.lender.replaceAll("_", " ")} admits draws under ${settlement.limit.name}; ${settlement.obligation.settlement.replaceAll("_", " ")} owns repayment`;
+      case "recurring_collection":
+        return `${settlement.name.replaceAll("_", " ")} adds explicit mandate evidence to ${settlement.obligation.settlement.replaceAll("_", " ")} repayment attempts`;
+      case "conditional_disbursement":
+        return `The ${settlement.source.replaceAll("_", " ")} pays one evidence-approved amount under ${settlement.cap.name} to the ${settlement.destination.replaceAll("_", " ")}`;
+      case "rotating_pool":
+        return `${settlement.members.length} fixed members contribute one exact amount per cycle in a stored payout order`;
       case "swap":
         return `The ${settlement.sides[0].party.replaceAll("_", " ")} and ${settlement.sides[1].party.replaceAll("_", " ")} fund one shared escrow and the entire two-sided trade releases or reverses together`;
     }

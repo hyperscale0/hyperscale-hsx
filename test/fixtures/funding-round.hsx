@@ -1,0 +1,18 @@
+program capital_pool "Capital pool"
+import { funding_round } from "settlement"
+
+party contributor: person
+party beneficiary: business
+
+settlement capital_pool = funding_round {
+  contributor: contributor
+  beneficiary: beneficiary
+  target: targetAmount: money(SAR)
+  commitment: amount: money(SAR)
+  max_contributors: 3
+  close_by: closeBy
+  close_policy: threshold
+  overfund_policy: reject
+  cancel_policy: before_close
+  fail_policy: whole_commitment_refund
+}

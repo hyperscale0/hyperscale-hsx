@@ -1,0 +1,46 @@
+program policy_disbursement "Policy and disbursement"
+import { conditional_disbursement, premium_forward } from "settlement"
+
+party payer: person
+party carrier: business
+party source: business
+party destination: person
+
+settlement premium = premium_forward {
+  payer: payer
+  carrier: carrier
+  amount: premiumAmount: money(SAR)
+  bind: port bind_policy
+  commission: 2%
+  policy_ref: policyReference
+  renewal_due: renewalDueAt
+  renewal_policy: explicit_new_forward
+  endorsement: port endorsement_evidence
+  endorsement_policy: non_money_only
+  lapse_policy: due_condition
+}
+
+settlement disbursement = conditional_disbursement {
+  source: source
+  destination: destination
+  cap: disbursementCap: money(SAR)
+  amount: approvedAmount: money(SAR)
+  decision: port disbursement_decision
+  reopen_policy: refuse
+  recovery_policy: separate_transfer
+}
+
+port bind_policy {
+  allowed: [payer, carrier]
+  shape: { evidenceReference: text }
+}
+
+port endorsement_evidence {
+  allowed: [carrier]
+  shape: { evidenceReference: text }
+}
+
+port disbursement_decision {
+  allowed: [source]
+  shape: { evidenceReference: text }
+}

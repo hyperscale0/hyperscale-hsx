@@ -1,0 +1,36 @@
+program explicit_collection "Explicit collection"
+import { recurring_collection, scheduled } from "settlement"
+
+party debtor: person
+party repayment_source: business
+party recipient: business
+
+settlement obligation = scheduled {
+  mode: obligation
+  payer: repayment_source
+  payee: recipient
+  debtor: debtor
+  amount: principal: money(SAR)
+  count: 2
+  every: P30D
+  first_due: firstDueAt
+  partial_payment: anchor_bound
+  repayment_matching: obligation_and_anchor
+  refund_policy: full_payment_only
+  reschedule_policy: refuse
+  delinquency_policy: due_condition
+}
+
+settlement collection = recurring_collection {
+  obligation: obligation.obligation
+  mandate: port mandate_evidence
+  attempt_policy: explicit
+  period_idempotency: obligation_and_anchor
+  retry_policy: explicit_attempt
+  failure_policy: parent_delinquency
+}
+
+port mandate_evidence {
+  allowed: [repayment_source]
+  shape: { evidenceReference: text }
+}

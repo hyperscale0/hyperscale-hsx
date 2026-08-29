@@ -3,8 +3,8 @@
 // long, so a financier advances against the retention and is paid out of the
 // very release the retention was withholding. The carve mints nothing: the
 // contractor still funds one retained amount, the platform still takes its
-// fee out of it, and the financier simply stands where the subcontractor
-// stood when the release arrives. Exercises a fee-bearing, date-anchored,
+// amount, and the financier simply stands where the subcontractor stood when
+// the release arrives. Exercises a fee-free, date-anchored,
 // cancellable hold whose release is carved.
 
 program financed_retention "Financed construction retention"
@@ -19,7 +19,6 @@ settlement retention = held_payment {
   payer:  contractor
   payee:  subcontractor
   amount: retainedAmount: money(SAR)
-  fees { subcontractor: 1.5% }
   release: port approve_release | at(defectsPeriodEnd)
   on_cancel(funded) { contractor: 100% }
 }
@@ -27,8 +26,7 @@ settlement retention = held_payment {
 settlement financing = advance {
   funder:  financier
   to:      subcontractor
-  amount:  advanceAmount: money(SAR)
-  fee:     4%
+  amount:  retainedAmount: money(SAR)
   against: retention.release
 }
 
@@ -39,7 +37,7 @@ settlement financing = advance {
 settlement recourse = scheduled {
   payer:     subcontractor
   payee:     financier
-  amount:    recourseAmount: money(SAR)
+  amount:    retainedAmount: money(SAR)
   count:     3
   every:     P30D
   first_due: recourseFirstDueAt

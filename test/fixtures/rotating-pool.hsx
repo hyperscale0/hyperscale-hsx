@@ -1,0 +1,20 @@
+program rotating_pool "Rotating pool"
+import { rotating_pool } from "settlement"
+
+party member_a: person
+party member_b: person
+party member_c: person
+party guarantee_source: business
+
+settlement pool = rotating_pool {
+  members: [member_a, member_b, member_c]
+  contribution: contributionAmount: money(SAR)
+  count: 3
+  every: P30D
+  first_due: firstContributionAt
+  payout_order: [member_b, member_c, member_a]
+  default_policy: due_condition
+  guarantee_policy: funded_only
+  guarantor: guarantee_source
+  exit_policy: before_activation_only
+}

@@ -6,6 +6,7 @@
  */
 
 import type { Span } from "./ast.ts";
+import type { ArchetypeName } from "./archetypes.ts";
 
 export const PARTY_KINDS = ["business", "person"] as const;
 export type PartyKind = (typeof PARTY_KINDS)[number];
@@ -76,6 +77,14 @@ export interface ScheduleTerms {
   readonly origin: Span;
 }
 
+/** One checked reference to an exit that the target archetype exposes. */
+export interface CheckedSettlementReference {
+  readonly exit: string;
+  readonly origin: Span;
+  readonly settlement: string;
+  readonly targetArchetype: ArchetypeName;
+}
+
 /**
  * The checked `held_payment` instantiation: payer funds `amount` into the
  * settlement's own custody; a decision port releases it to the payee; fees
@@ -103,6 +112,136 @@ export interface CheckedHeldPayment {
 interface FixedWindow {
   readonly days: number;
   readonly raw: string;
+}
+
+/**
+ * A payer reservation that the payee captures in strict partial slices before
+ * posting the remainder. A full payee correction and a full externally decided
+ * reversal are separate post-settlement exits. The checked policies refuse
+ * partial corrections, negative positions, and timeout-driven movement.
+ */
+export interface CheckedCaptureReservation {
+  readonly amount: MoneyField;
+  readonly archetype: "captured_payment";
+  readonly correction: PortRelease;
+  readonly externalReversal: PortRelease & { readonly window: FixedWindow };
+  readonly name: string;
+  readonly origin: Span;
+  readonly payee: string;
+  readonly payer: string;
+  /** Camel-case date field passed to the reservation as its expiry. */
+  readonly reserveUntilField: string;
+}
+
+/**
+ * A payout batch whose capture entries and signed adjustments freeze at close.
+ * The checked field names become lineage columns on generated child nouns.
+ */
+export interface CheckedSettlementBatch {
+  readonly archetype: "settlement_batch";
+  readonly closeTriggerField: string;
+  readonly externalReversalReferenceField: string;
+  readonly feeReferenceField: string;
+  readonly name: string;
+  readonly origin: Span;
+  readonly payoutDestination: string;
+  readonly payoutAcknowledgement: PortRelease;
+  /** Camel-case field carrying the external payout beneficiary reference. */
+  readonly payoutBeneficiaryReferenceField: string;
+  readonly settlementAccount: string;
+  readonly sourceCaptureReferenceField: string;
+}
+
+/** HSX authoring for the existing all-or-nothing round and commitment pair. */
+export interface CheckedFundingRound {
+  readonly archetype: "funding_round";
+  readonly beneficiary: string;
+  readonly cancelPolicy: "before_close";
+  readonly closeByField: string;
+  readonly closePolicy: "threshold";
+  readonly commitment: MoneyField;
+  readonly contributor: string;
+  readonly failPolicy: "whole_commitment_refund";
+  readonly maxContributors: number;
+  readonly name: string;
+  readonly origin: Span;
+  readonly overfundPolicy: "reject";
+  readonly target: MoneyField;
+}
+
+/** A frozen claimant set distributed by deterministic largest remainder. */
+export interface CheckedWeightedDistribution {
+  readonly amount: MoneyField;
+  readonly archetype: "weighted_distribution";
+  readonly correctionPolicy: "new_distribution";
+  readonly maxRecipients: number;
+  readonly name: string;
+  readonly origin: Span;
+  readonly recipient: string;
+  readonly recordAtField: string;
+  readonly roundingPolicy: "largest_remainder";
+  readonly snapshot: PortRelease;
+  readonly source: string;
+  readonly weight: MoneyField;
+  readonly withholdingPolicy: "refuse";
+}
+
+/** A reusable draw cap whose linked scheduled obligation owns repayment. */
+export interface CheckedCreditFacility {
+  readonly archetype: "credit_facility";
+  readonly availabilityPolicy: "revolving" | "non_revolving";
+  readonly borrower: string;
+  readonly closePolicy: "no_open_draws";
+  readonly drawDestination: string;
+  readonly expiresAtField: string;
+  readonly expiryPolicy: "freeze_draws";
+  readonly lender: string;
+  readonly limit: MoneyField;
+  readonly name: string;
+  readonly obligation: CheckedSettlementReference;
+  readonly origin: Span;
+}
+
+/** A mandate and explicit-attempt policy layered onto scheduled obligation payments. */
+export interface CheckedRecurringCollection {
+  readonly archetype: "recurring_collection";
+  readonly attemptPolicy: "explicit";
+  readonly failurePolicy: "parent_delinquency";
+  readonly mandate: PortRelease;
+  readonly name: string;
+  readonly obligation: CheckedSettlementReference;
+  readonly origin: Span;
+  readonly periodIdempotency: "obligation_and_anchor";
+  readonly retryPolicy: "explicit_attempt";
+}
+
+/** A capped payout decided through stored evidence, with no premium inflow. */
+export interface CheckedConditionalDisbursement {
+  readonly amount: MoneyField;
+  readonly archetype: "conditional_disbursement";
+  readonly cap: MoneyField;
+  readonly decision: PortRelease;
+  readonly destination: string;
+  readonly name: string;
+  readonly origin: Span;
+  readonly recoveryPolicy: "separate_transfer";
+  readonly reopenPolicy: "refuse";
+  readonly source: string;
+}
+
+/** A fixed roster whose stored order rotates one exact shared pot per cycle. */
+export interface CheckedRotatingPool {
+  readonly archetype: "rotating_pool";
+  readonly contribution: MoneyField;
+  readonly defaultPolicy: "due_condition";
+  readonly exitPolicy: "before_activation_only";
+  readonly guaranteePolicy: "funded_only";
+  readonly guarantor?: string;
+  readonly members: readonly string[];
+  readonly name: string;
+  readonly origin: Span;
+  readonly payoutOrder: readonly string[];
+  readonly schedule: ScheduleTerms;
 }
 
 /** An exact on-top service fee declared as money, never a caller-computed rate. */
@@ -161,10 +300,16 @@ export interface CheckedPremiumForward {
   readonly carrier: string;
   /** Platform commission carved from the premium at forwarding, in bps. */
   readonly commissionBps: number;
+  readonly endorsement?: PortRelease;
+  readonly endorsementPolicy?: "non_money_only";
+  readonly lapsePolicy?: "due_condition";
   readonly name: string;
   readonly onCancel?: CancelPolicy;
   readonly origin: Span;
   readonly payer: string;
+  readonly policyReferenceField?: string;
+  readonly renewalDueField?: string;
+  readonly renewalPolicy?: "explicit_new_forward";
 }
 
 /**
@@ -191,7 +336,7 @@ export interface CheckedDeposit {
  * each collected on its own stored-date anchor. The schedule is finite by
  * construction and every anchor is its own idempotent verb.
  */
-export interface CheckedScheduled {
+interface CheckedScheduledBase {
   readonly amount: MoneyField;
   readonly archetype: "scheduled";
   readonly name: string;
@@ -201,6 +346,26 @@ export interface CheckedScheduled {
   readonly schedule: ScheduleTerms;
 }
 
+/** The original fixed transfer schedule. */
+export interface CheckedScheduledTransfer extends CheckedScheduledBase {
+  readonly mode: "transfer";
+}
+
+/**
+ * The obligation mode of `scheduled`. Each payment names one generated anchor.
+ * Refunds reverse one stored payment whole. The checker refuses rescheduling
+ * until the runtime can prove an outstanding-balance carry into a new version.
+ */
+export interface CheckedScheduledObligation extends CheckedScheduledBase {
+  readonly advanceTo?: string;
+  readonly debtor: string;
+  readonly mode: "obligation";
+}
+
+export type CheckedScheduled =
+  | CheckedScheduledObligation
+  | CheckedScheduledTransfer;
+
 /**
  * Where an advance's repayment comes from. `schedule` collects it from the
  * advanced party over finite anchors; `carve` takes it out of the release of a
@@ -209,12 +374,7 @@ export interface CheckedScheduled {
  */
 export type AdvanceSource =
   | { readonly kind: "schedule"; readonly schedule: ScheduleTerms }
-  | {
-      readonly kind: "carve";
-      readonly origin: Span;
-      /** The held_payment settlement whose release repays this advance. */
-      readonly settlement: string;
-    };
+  | ({ readonly kind: "carve" } & CheckedSettlementReference);
 
 /**
  * The checked `advance`: the funder disburses the advance to the advanced
@@ -285,14 +445,22 @@ interface PortRelease {
 
 export type CheckedSettlement =
   | CheckedAdvance
+  | CheckedCaptureReservation
+  | CheckedConditionalDisbursement
+  | CheckedCreditFacility
   | CheckedDeposit
+  | CheckedFundingRound
   | CheckedHeldPayment
   | CheckedInstantTransfer
   | CheckedMetered
   | CheckedPooledSplit
   | CheckedPremiumForward
+  | CheckedRecurringCollection
+  | CheckedRotatingPool
   | CheckedScheduled
-  | CheckedSwap;
+  | CheckedSettlementBatch
+  | CheckedSwap
+  | CheckedWeightedDistribution;
 
 export type PortFieldType =
   | { readonly asset: string; readonly kind: "asset_id" }
@@ -315,12 +483,23 @@ export interface CheckedPort {
 }
 
 export interface CheckedProgram {
+  readonly derivedAmounts: readonly CheckedDerivedAmount[];
   readonly assets: readonly CheckedAsset[];
   readonly name: string;
   readonly parties: readonly CheckedParty[];
   readonly ports: readonly CheckedPort[];
   readonly settlements: readonly CheckedSettlement[];
   readonly title: string;
+}
+
+/** One machine-computed percentage of a stored money field. */
+export interface CheckedDerivedAmount {
+  readonly baseField: string;
+  readonly bearer: string;
+  readonly bps: number;
+  readonly field: string;
+  readonly origin: Span;
+  readonly settlement: string;
 }
 
 /**
