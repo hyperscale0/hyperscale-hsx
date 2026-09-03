@@ -9,7 +9,7 @@
 
 program financed_retention "Financed construction retention"
 
-import { advance, held_payment, scheduled } from "settlement"
+import { advance, held_payment, scheduled } from "std/settlements"
 
 party contractor:    business
 party subcontractor: business
@@ -20,6 +20,7 @@ settlement retention = held_payment {
   payee:  subcontractor
   amount: retainedAmount: money(SAR)
   release: port approve_release | at(defectsPeriodEnd)
+  release_to: financier
   on_cancel(funded) { contractor: 100% }
 }
 

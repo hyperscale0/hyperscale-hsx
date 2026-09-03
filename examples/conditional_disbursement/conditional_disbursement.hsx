@@ -1,0 +1,17 @@
+program conditional_disbursement_example "Conditional disbursement example"
+import { conditional_disbursement } from "std/settlements"
+party source: business
+party claimant: person
+settlement claim_payment = conditional_disbursement {
+  source: source
+  destination: claimant
+  cap: policyLimit: money(SAR)
+  amount: approvedAmount: money(SAR)
+  decision: port approve_claim
+  reopen_policy: refuse
+  recovery_policy: separate_transfer
+}
+port approve_claim {
+  allowed: [source]
+  shape: { evidenceReference: text }
+}

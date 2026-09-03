@@ -1,0 +1,19 @@
+program swap_example "Swap example"
+import { swap } from "std/settlements"
+party buyer: business
+party seller: business
+settlement exchange = swap {
+  between: [buyer, seller]
+  amounts {
+    buyer: buyerAmount: money(SAR)
+    seller: sellerAmount: money(SAR)
+  }
+  fees {
+    buyer: buyerFee: money(SAR)
+    seller: sellerFee: money(SAR)
+  }
+  release: port release_exchange
+  dispute: port dispute_exchange within P7D
+}
+port release_exchange { allowed: [buyer, seller] }
+port dispute_exchange { allowed: [buyer, seller] }

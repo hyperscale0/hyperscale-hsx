@@ -1,0 +1,144 @@
+module std.settlements.captured_payment
+
+export instrument captured_payment<C>(payer: party, payee: party, amount: money<C>, reserve_until: date, correction: condition, external_reversal: condition, capture_mode: text, correction_mode: text, negative_position: text, timeout: text, derived_amount: optional<block>) {
+  let(correction_name): correction;
+  let(reversal_name): external_reversal;
+  let(reversal_window): external_reversal_within;
+  let(instrument_words): words(instrument);
+  when(derived_amount) {
+    let(derived_field): get(derived_amount, "field");
+    let(derived_source): get(derived_amount, "source");
+    let(derived_rule): get(derived_amount, "rule");
+    let(derived_bearer): get(derived_amount, "bearer");
+  }
+  agent_description: "Reach for captured payment when the {payee} reserves against the {payer} first and then takes the money in slices before {reserve_until}. Pick instant transfer when the whole amount moves at once, and deposit when the reservation is claimed or returned whole.";
+  summary: "Capture reservation from {payer} to {payee}";
+  title: sentence(instrument);
+  description: "Payer reservation captured by the payee in slices within a fixed window";
+  fields {
+    when(derived_amount) {
+      let(fee_collection_key): "x-hyperscale-fee-collection-port";
+      let(reference_filter_key): "x-hyperscale-reference-filter";
+      platformAccountId {
+        type: account<C>;
+        description: "The product fee collection account";
+        pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+        [fee_collection_key]: true;
+        [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+      }
+    }
+    amount { type: money<C>; description: "Maximum captured amount in {C} minor units"; }
+    reserve_until { type: date; description: "Reservation expiry that releases any uncaptured remainder"; }
+    reversalUntil { type: date; description: "Machine-owned external reversal cutoff anchored when settlement completes"; optional: true; }
+    when(derived_amount) {
+      [derived_field] { type: money<C>; description: "Machine-computed {derived_rule} of {derived_source}; callers never supply it"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+    }
+  }
+  lifecycle {
+    states created authorized partially_captured settled voided expired corrected reversed;
+    initial created;
+    on authorize: created -> authorized;
+    on capture: authorized -> partially_captured;
+    on capture_more: partially_captured -> partially_captured;
+    on settle: authorized | partially_captured -> settled;
+    on void: authorized -> voided;
+    on expire: authorized -> expired;
+    on settle_on_expiry: partially_captured -> settled;
+    on [correction_name]: settled -> corrected;
+    on [reversal_name]: settled -> reversed;
+  }
+  parties {
+    payer: payer;
+    beneficiary: payee;
+  }
+  when(derived_amount) {
+    computes derived: { field: derived_field; source_field: derived_source; rounding: floor; rule: { kind: percentage_of; bps: derived_rule; }; };
+  }
+  action create {
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    agent_description: "Open the payment row before anything is reserved. The caller supplies the {amount}, the currency, and both party accounts. This reserves nothing, call authorize next.";
+    summary: "Create a {instrument_words}";
+    when(derived_amount) {
+      moves: [{ key: "derived_amount"; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", derived_field); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: create; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", camel(derived_bearer), "AccountId"); }; }; capture: { createDerivedAmountTransferId: transferId; }; }];
+    }
+    steps: [];
+  }
+  action authorize {
+    agent_description: "Reserve the {amount} against the {payer} in the {payee}'s favor until {reserve_until}. The payment must be created. The money is held, not paid: capture and settle post it, void and expiry release it.";
+    summary: "Reserve the {amount} until {reserve_until}";
+    moves: [{ key: reservation; amount: amount; from: payer; to: beneficiary; operation: reserve; }];
+    steps: [];
+  }
+  action capture {
+    agent_description: "Post the first capture slice out of the live reservation. The payment must be authorized and the caller passes captureAmount in minor units. The slice settles for good and void can no longer release the reservation. Call before {reserve_until}.";
+    summary: "Post one strict partial capture slice";
+    deadline { field: reserve_until; };
+    input { type: object; additional_properties: false; properties: { captureAmount: { description: "Positive partial capture amount in minor units"; pattern: "^[1-9][0-9]{0,17}$"; type: string; }; }; required: [captureAmount]; }
+    moves: [{ key: post; operation: internal_transfer.post; bind: { amount: { from: input; path: captureAmount; }; currency: { from: instance; path: fields.currency; }; postMode: { from: const; value: partial_only; }; transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; capture: { capturedAmount: postedAmount; }; }];
+    steps: [];
+  }
+  action capture_more {
+    agent_description: "Post another capture slice out of a partly captured reservation. Call this only after capture took the first slice. Each slice settles for good, and the uncaptured remainder still releases at {reserve_until}.";
+    summary: "Post another strict partial capture slice";
+    deadline { field: reserve_until; };
+    input { type: object; additional_properties: false; properties: { captureAmount: { description: "Positive partial capture amount in minor units"; pattern: "^[1-9][0-9]{0,17}$"; type: string; }; }; required: [captureAmount]; }
+    moves: [{ key: post; operation: internal_transfer.post; bind: { amount: { from: input; path: captureAmount; }; currency: { from: instance; path: fields.currency; }; postMode: { from: const; value: partial_only; }; transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; capture: { capturedAmount: postedAmount; }; }];
+    steps: [];
+  }
+  action settle {
+    agent_description: "Post the whole reserved remainder and finish the payment. The payment must be authorized or partly captured. The money settles and the external reversal window opens on reversalUntil.";
+    summary: "Post the full reserved remainder and settle";
+    deadline { field: reserve_until; };
+    sets(at) { field: reversalUntil; offset: reversal_window; };
+    moves: [{ key: post; operation: internal_transfer.post; bind: { transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; capture: { capturedAmount: postedAmount; }; }];
+    steps: [];
+  }
+  action void {
+    agent_description: "Release the reservation whole and cancel the payment. Only an authorized reservation with nothing captured can void. Once any slice is captured, settle it or let it expire instead.";
+    summary: "Release an entirely uncaptured reservation";
+    moves: [{ key: void; operation: internal_transfer.void; bind: { reason: { from: const; value: "Reservation voided before any capture"; }; transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; }];
+    steps: [];
+  }
+  action expire {
+    summary: "Release an uncaptured reservation at expiry";
+    due { field: reserve_until; };
+    moves: [{ key: void; operation: internal_transfer.void; bind: { reason: { from: const; value: "Uncaptured reservation expired"; }; transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; }];
+    steps: [];
+  }
+  action settle_on_expiry {
+    summary: "Release the uncaptured remainder and settle captured slices";
+    due { field: reserve_until; };
+    sets(at) { field: reversalUntil; offset: reversal_window; };
+    moves: [{ key: void; operation: internal_transfer.void; bind: { reason: { from: const; value: "Uncaptured remainder released at expiry"; }; transferId: { from: instance; path: refs.authorizeReservationTransferId; }; }; }];
+    steps: [];
+  }
+  action [correction_name] {
+    let(metadata_clawback): "metadata.clawbackOfTransferId";
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    let(correction_capture): camel(concat(correction_name, "_transfer_transfer_id"));
+    agent_description: "Return the whole captured amount to the {payer} after the payment settled. Only a settled payment corrects, and only the party the product authorized may call it. The money moves back and there is no undo.";
+    summary: "Return the full captured amount on payee correction";
+    port { allowed_parties: [if_eq(at(correction_allowed, 1), payee, "beneficiary", "payer")]; };
+    moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.capturedAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer, "AccountId"); }; [metadata_clawback]: { from: instance; path: refs.authorizeReservationTransferId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: correction_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payee, "AccountId"); }; }; capture: { [correction_capture]: transferId; }; }];
+    steps: [];
+  }
+  action [reversal_name] {
+    let(metadata_clawback): "metadata.clawbackOfTransferId";
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    let(reversal_capture): camel(concat(reversal_name, "_transfer_transfer_id"));
+    agent_description: "Return the whole captured amount to the {payer} on an external reversal. The payment must be settled and the call must land before reversalUntil. The caller passes externalReference, which stays in the receipt. There is no undo.";
+    summary: "Return the full captured amount on an external reversal";
+    capture(input) { externalReference: externalReference; };
+    deadline { field: reversalUntil; };
+    input { type: object; additional_properties: false; properties: { externalReference: { description: "Required decision reference retained in the operation receipt"; max_length: 180; min_length: 1; type: string; }; }; required: [externalReference]; }
+    port { allowed_parties: [if_eq(at(external_reversal_allowed, 1), payee, "beneficiary", "payer")]; };
+    moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.capturedAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer, "AccountId"); }; [metadata_clawback]: { from: instance; path: refs.authorizeReservationTransferId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: reversal_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payee, "AccountId"); }; }; capture: { [reversal_capture]: transferId; }; }];
+    steps: [];
+  }
+}

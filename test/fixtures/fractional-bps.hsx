@@ -1,0 +1,16 @@
+program fractional_bps "Fractional basis-point fee"
+import { held_payment } from "std/settlements"
+
+party investor: person
+party gallery: business
+
+settlement subscription = held_payment {
+  payer: investor
+  payee: gallery
+  amount: subscriptionAmount: money(SAR)
+  release: port confirm_transfer
+  fees { investor: 1%, gallery: 1.5% }
+  on_cancel(funded) { investor: 50%, gallery: 50% }
+}
+
+port confirm_transfer { allowed: [gallery] }

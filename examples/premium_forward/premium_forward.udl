@@ -1,0 +1,594 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "fund_piece_2",
+        "bind_policy",
+        "forward_piece_2",
+        "unfund_piece_1",
+        "abandon",
+        "record_endorsement",
+        "lapse"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a premium that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here.",
+          "moves": [],
+          "publicAction": "abandonPremium",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "bind_policy": {
+          "agentDescription": "Bind the policy through bind_policy and forward the carrier's share out of escrow. The premium must be fully funded first, and the call carries the decision reference the product asks for. Money leaves escrow here and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.carrierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "premium"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "bind_policy"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "bindPolicyTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer",
+              "beneficiary"
+            ]
+          },
+          "publicAction": "bindPolicyPremium",
+          "steps": [],
+          "summary": "Confirm through bind_policy and start the forward payout"
+        },
+        "create": {
+          "agentDescription": "Open the premium and provision the escrow account that holds the funds. This is the first call on the settlement, and funding refuses until it lands. It moves no money.",
+          "moves": [],
+          "publicAction": "createPremium",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a premium settlement"
+        },
+        "forward_piece_2": {
+          "agentDescription": "Pay the platform commission out of escrow to the fee collection account, which closes the forward. bind_policy must have run first. Money leaves escrow here and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "premium"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "forward_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "forwardPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "forwardPiece2Premium",
+          "steps": [],
+          "summary": "Forward piece 2 of the held amount"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the carrier's share of the premium from the policyholder into escrow. The settlement must exist and be unfunded. It debits the policyholder for real, and piece 2 still has to fund before the policy can bind.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "premium"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.policyholderAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Premium",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move the platform commission piece from the policyholder into escrow, which completes funding. Piece 1 must be in escrow first. It debits the policyholder for real, and the premium is then held whole.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "premium"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.policyholderAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Premium",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "lapse": {
+          "due": {
+            "field": "renewalDueAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Mark the forwarded policy lapsed at its stored renewal due condition"
+        },
+        "record_endorsement": {
+          "agentDescription": "Record one endorsement against a policy that already forwarded, from evidence the caller supplies. The forward must be released first, and only the carrier may call it. It moves no money and it does not change the premium.",
+          "captureInput": {
+            "endorsementEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "recordEndorsementPremium",
+          "steps": [],
+          "summary": "Record one non-money endorsement from external evidence"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return the carrier's share from escrow to the policyholder and abandon the forward. It runs only while funding stopped after piece 1, before the policy binds. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.policyholderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "premium"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Premium",
+          "steps": [],
+          "summary": "Return piece 1 to the policyholder on abandonment"
+        }
+      },
+      "agentDescription": "Reach for premium when the policyholder pays an insurance premium ahead of cover and the carrier must not be paid until the policy binds. The premiumAmount sits in this settlement's own escrow until bind_policy fires. Binding then forwards 98% to the carrier and 2% to the platform.",
+      "description": "Premium forward: the policyholder funds the premiumAmount into this settlement's own escrow; binding through bind_policy forwards it to the carrier exactly once, minus the platform commission",
+      "fields": {
+        "carrierAccountId": {
+          "description": "The carrier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "piece1Amount": {
+          "description": "98% of premiumAmount (carries the integer-division remainder): released to the carrier. Computed as floor(premiumAmount * 9800 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "2% of premiumAmount: released to the platform. Computed as floor(premiumAmount * 200 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "policyReference": {
+          "description": "Immutable external policy reference recorded with this forward",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "policyholderAccountId": {
+          "description": "The policyholder account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "premiumAmount": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "renewalDueAt": {
+          "description": "Stored renewal due condition for the forwarded policy",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "premium",
+      "idPrefix": "prem",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funded",
+          "releasing_1",
+          "released",
+          "abandoned",
+          "endorsed",
+          "lapsed"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "bind_policy": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "forward_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "released"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funded"
+          },
+          "lapse": {
+            "from": [
+              "released",
+              "endorsed"
+            ],
+            "to": "lapsed"
+          },
+          "record_endorsement": {
+            "from": [
+              "released"
+            ],
+            "to": "endorsed"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "abandoned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "carrierAccountId",
+        "payer": "policyholderAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "premiumAmount"
+        }
+      ],
+      "required": [
+        "policyholderAccountId",
+        "carrierAccountId",
+        "platformAccountId",
+        "premiumAmount",
+        "piece1Amount",
+        "piece2Amount",
+        "policyReference",
+        "renewalDueAt",
+        "currency"
+      ],
+      "summary": "Premium held for the carrier until the policy binds",
+      "title": "Premium"
+    }
+  ],
+  "product": "premium_forward_example",
+  "subjects": [],
+  "title": "Premium forward example",
+  "udl": 1,
+  "version": 1
+}

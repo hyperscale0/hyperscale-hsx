@@ -1,0 +1,508 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund",
+        "approve",
+        "release_on_deadline",
+        "cancel",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a custody hold that was opened and never funded. No money has moved and the escrow must be empty, so this is a lifecycle transition only. A funded hold refuses. Release it to the merchant or cancel it back to the customer instead.",
+          "moves": [],
+          "publicAction": "abandonCustodyHold",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the hold before it is funded"
+        },
+        "approve": {
+          "agentDescription": "Pay the merchant the whole heldAmount out of escrow ahead of releaseDueAt. This moves money and does not reverse. Only a funded hold releases, the caller must act as the customer, and the call is refused once releaseDueAt passes. The custody fee stays posted.",
+          "deadline": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.heldAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "custody_hold"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "approve"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseTransferId": "transferId"
+              },
+              "key": "approve",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "approveCustodyHold",
+          "sandboxFailurePoint": "release",
+          "steps": [],
+          "summary": "Release the hold to the merchant early"
+        },
+        "cancel": {
+          "agentDescription": "Return the whole heldAmount from escrow to the customer and end the hold. This moves money and does not reverse. Only a funded hold cancels, and only before releaseDueAt passes. The custody fee stays posted because the custody it paid for was already provided.",
+          "deadline": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "eventName": "custody_hold.cancelled",
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.heldAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "custody_hold"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel_refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelCustodyHold",
+          "steps": [],
+          "summary": "Cancel the hold and return the held amount"
+        },
+        "create": {
+          "agentDescription": "Open the custody hold and provision the escrow account that holds the money. No money moves on this call. releaseDueAt is fixed here and never moves again, so one date governs the early release, the cancellation, and the automatic payout.",
+          "moves": [],
+          "publicAction": "createCustodyHold",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a custody hold settlement"
+        },
+        "fund": {
+          "agentDescription": "Move heldAmount from the customer into escrow and charge custodyFee on top to the platform account, as one linked batch. This moves money and the customer pays both. Only a created hold funds. The fee never enters escrow, so it is non-refundable however the hold ends.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.heldAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "custody_hold"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "fundingTransferId": "transferId"
+              },
+              "key": "principal",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.custodyFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "custody_hold"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "service_fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "serviceFeeTransferId": "transferId"
+              },
+              "key": "service_fee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundCustodyHold",
+          "sandboxFailurePoint": "funding",
+          "steps": [],
+          "summary": "Fund the hold and collect the custody fee"
+        },
+        "release_on_deadline": {
+          "due": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "eventName": "custody_hold.released_on_deadline",
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.heldAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "custody_hold"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "deadline_release"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "deadlineReleaseTransferId": "transferId"
+              },
+              "key": "approve",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Release the hold to the merchant on its release date"
+        }
+      },
+      "agentDescription": "Reach for custody hold when the customer must commit money up front and nobody is paid until approve_release fires. Funding moves heldAmount into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "callerParkedStates": {
+        "created": "The tenant either funds the hold or abandons it before any money moves."
+      },
+      "description": "Held payment: the customer funds heldAmount into this settlement's own escrow; customer confirms through approve_release to release",
+      "distinctParties": true,
+      "fields": {
+        "currency": {
+          "const": "SAR",
+          "description": "One currency for the hold and its fee",
+          "type": "string"
+        },
+        "custodyFee": {
+          "description": "Custody fee charged on top at funding and never placed in escrow",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "customerAccountId": {
+          "description": "Party whose money is held until the hold resolves",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "heldAmount": {
+          "description": "Amount held in custody, in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "merchantAccountId": {
+          "description": "Party the hold protects and pays on release",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "orderReference": {
+          "description": "The tenant's own identifier for what is held: invoice number, project code, contract reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "Product revenue or customer balance account collecting the custody fee",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "releaseDueAt": {
+          "description": "Date the hold releases to the payee on its own; fixed at creation and the cutoff for both the release port and cancellation",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "custody_hold",
+      "idPrefix": "custody",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funded",
+          "released",
+          "cancelled",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "approve": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelled"
+          },
+          "fund": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          },
+          "release_on_deadline": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "merchantAccountId",
+        "payer": "customerAccountId"
+      },
+      "required": [
+        "customerAccountId",
+        "merchantAccountId",
+        "platformAccountId",
+        "heldAmount",
+        "custodyFee",
+        "currency",
+        "releaseDueAt"
+      ],
+      "summary": "Escrow-held payment from customer to merchant",
+      "title": "Custody hold"
+    }
+  ],
+  "product": "whole_held_payment",
+  "subjects": [],
+  "title": "Whole held payment",
+  "udl": 1,
+  "version": 1
+}

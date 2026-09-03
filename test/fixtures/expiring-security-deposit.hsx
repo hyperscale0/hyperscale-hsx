@@ -1,0 +1,34 @@
+program expiring_security_deposit "Expiring security deposit"
+
+import { security_deposit } from "std/settlements"
+
+party tenant: person
+party landlord: business
+
+settlement tenancy_hold = security_deposit {
+  payer: tenant
+  holder: landlord
+  amount: depositAmount: money(SAR)
+  deadline: expiresAt: date
+  claim_to: landlord
+  return_to: tenant
+  memo: memo: text
+  claim_amount: {
+    field: claimAmount
+    bound: depositAmount
+    remainder: return
+  }
+  claim_input: {
+    additionalProperties: false
+    properties: {
+      claimAmount: {
+        description: "Positive minor-unit integer amount serialized as a string (at most 18 digits)"
+        pattern: "^[1-9][0-9]{0,17}$"
+        type: string
+      }
+    }
+    required: [claimAmount]
+    type: object
+  }
+  claim_capture: { claimedAmount: claimAmount }
+}

@@ -1,0 +1,2524 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_piece_1",
+        "pay_piece_2",
+        "collect_service_fee"
+      ],
+      "actions": {
+        "collect_service_fee": {
+          "agentDescription": "Finish the payment and collect the service fee the member owes on top of the amount. Both pieces must already be paid. When the product charges no payer fee this only closes the payment out.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.checkoutFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "purchase"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_service_fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "collectServiceFeeTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectServiceFeePurchase",
+          "steps": [],
+          "summary": "Collect the payer-side service fee"
+        },
+        "create": {
+          "agentDescription": "Open the payment row before anything moves. The caller supplies the purchasePrice, the currency, and both party accounts. Fee and derived pieces are computed from the purchasePrice, callers never supply them. Call pay piece 1 to move the money.",
+          "moves": [],
+          "publicAction": "createPurchase",
+          "steps": [],
+          "summary": "Create a purchase payment"
+        },
+        "pay_piece_1": {
+          "agentDescription": "Move the first piece from the member to the seller. The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.netOfCarvedFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "purchase"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "payPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece1Purchase",
+          "steps": [],
+          "summary": "Pay piece 1 of the amount through"
+        },
+        "pay_piece_2": {
+          "agentDescription": "Move the carved platform fee out of the amount. Call this after pay piece 1. When the product carves no seller fee this only steps the payment forward and moves nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.carvedFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "purchase"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "payPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece2Purchase",
+          "steps": [],
+          "summary": "Pay piece 2 of the amount through"
+        }
+      },
+      "agentDescription": "Reach for instant transfer when the member pays the seller straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.",
+      "description": "Instant transfer: the member pays purchasePrice straight through to the seller, no custody",
+      "feeRules": [
+        {
+          "amountField": "checkoutFee",
+          "baseField": "purchasePrice",
+          "bearerField": "memberAccountId",
+          "position": "on_top",
+          "rule": {
+            "currencyField": "currency",
+            "field": "checkoutFee",
+            "kind": "exact"
+          }
+        },
+        {
+          "amountField": "carvedFeeAmount",
+          "baseField": "purchasePrice",
+          "bearerField": "sellerAccountId",
+          "position": "carved",
+          "rule": {
+            "kind": "tiered",
+            "tiers": [
+              {
+                "fromInclusive": "0",
+                "rule": {
+                  "bps": 100,
+                  "kind": "bps"
+                },
+                "toExclusive": "10000"
+              },
+              {
+                "fromInclusive": "10000",
+                "rule": {
+                  "currencyField": "currency",
+                  "field": "highValueFee",
+                  "kind": "exact"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "fields": {
+        "carvedFeeAmount": {
+          "description": "The carved platform fee selected from purchasePrice",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "checkoutFee": {
+          "description": "Immutable exact member fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "highValueFee": {
+          "description": "Immutable exact seller fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "netOfCarvedFeeAmount": {
+          "description": "The remainder of purchasePrice after the carved platform fee",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "purchasePrice": {
+          "description": "The gross amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "purchase",
+      "idPrefix": "purc",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paying_1",
+          "paying_2",
+          "paid"
+        ],
+        "transitions": {
+          "collect_service_fee": {
+            "from": [
+              "paying_2"
+            ],
+            "to": "paid"
+          },
+          "pay_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "paying_1"
+          },
+          "pay_piece_2": {
+            "from": [
+              "paying_1"
+            ],
+            "to": "paying_2"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "memberAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "netOfCarvedFeeAmount",
+            "carvedFeeAmount"
+          ],
+          "totalField": "purchasePrice"
+        }
+      ],
+      "required": [
+        "memberAccountId",
+        "sellerAccountId",
+        "platformAccountId",
+        "purchasePrice",
+        "netOfCarvedFeeAmount",
+        "checkoutFee",
+        "highValueFee",
+        "currency"
+      ],
+      "summary": "Instant payment from member to seller",
+      "title": "Purchase"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "place_deposit",
+        "assess_watch",
+        "return_deposit"
+      ],
+      "actions": {
+        "assess_watch": {
+          "agentDescription": "Claim the held deposit for the seller. The deposit must be in held. The reservation settles here, whole or up to the decided amount with the exact remainder released back to the member. There is no return afterwards.",
+          "decidedAmount": {
+            "boundField": "depositAmount",
+            "field": "damageAmount",
+            "remainderAction": "return_deposit"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "damageAmount": {
+                "description": "Caller-decided amount in minor units",
+                "pattern": "^(0|[1-9][0-9]{0,17})$",
+                "type": "string"
+              },
+              "evidence": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "damageAmount",
+              "evidence"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "input",
+                  "path": "damageAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "postMode": {
+                  "from": "const",
+                  "value": "partial_only"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            },
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Return the unclaimed deposit remainder"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "remainder",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "assessWatchInspectionDeposit",
+          "steps": [],
+          "summary": "Claim the deposit for the seller through assess_watch"
+        },
+        "create": {
+          "agentDescription": "Open the deposit row before anything is reserved. The caller supplies the depositAmount, the currency, and the member and seller accounts. Nothing is reserved yet, call place deposit next.",
+          "moves": [],
+          "publicAction": "createInspectionDeposit",
+          "steps": [],
+          "summary": "Create a inspection deposit"
+        },
+        "place_deposit": {
+          "agentDescription": "Reserve the depositAmount against the member's account in the seller's favor. The deposit must be created. The money is held, not paid: the claim posts it to the seller and the return releases it back.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.depositAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "inspection_deposit"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "place_deposit"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "placeDepositReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "placeDepositInspectionDeposit",
+          "steps": [],
+          "summary": "Reserve the depositAmount against the member's account"
+        },
+        "return_deposit": {
+          "agentDescription": "Return the held deposit to the member. The deposit must be in held and unclaimed. This releases the reservation whole and the seller receives nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "returnDepositInspectionDeposit",
+          "steps": [],
+          "summary": "Return the deposit to the member through return_deposit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the member in the seller's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "description": "Deposit: the depositAmount is reserved against the member's account in the seller's favor, then damageAmount is claimed and the exact remainder returned, or the deposit is returned in full",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "depositAmount": {
+          "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "inspection_deposit",
+      "idPrefix": "id",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned"
+        ],
+        "transitions": {
+          "assess_watch": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "place_deposit": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "return_deposit": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "memberAccountId",
+        "sellerAccountId",
+        "depositAmount",
+        "currency"
+      ],
+      "summary": "Refundable deposit from member held for seller",
+      "title": "Inspection deposit"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "open_period",
+        "collect_period",
+        "cancel_membership"
+      ],
+      "actions": {
+        "cancel_membership": {
+          "agentDescription": "Cancel the open schedule for good and drain any period liability still standing. Only the payer may call it, and the reference fields the port declares are required. No further period opens and there is no reactivation.",
+          "captureInput": {
+            "reason": "reason"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "cancelMembershipMembership",
+          "steps": [],
+          "summary": "Cancel the open schedule and drain any period liability"
+        },
+        "collect_period": {
+          "agentDescription": "Collect one open period charge from the payer, with the mandate evidence reference kept in the receipt. A period must be open. Only the payer may call it. This moves the period amount and does not reverse.",
+          "captureInput": {
+            "mandateEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.monthlyFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.clubAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "membership"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_period"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "collectPeriodPeriodCollectionTransferId": "transferId"
+              },
+              "key": "period_collection",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "collectPeriodMembership",
+          "steps": [],
+          "summary": "Collect one authored period charge with mandate evidence"
+        },
+        "create": {
+          "agentDescription": "Create the open obligation before its first period anchor. No money moves. The charge for one period and the first anchor are fixed here, and periods then open on their own.",
+          "moves": [],
+          "publicAction": "createMembership",
+          "steps": [],
+          "summary": "Create the open obligation before its first anchor"
+        },
+        "open_period": {
+          "due": {
+            "every": {
+              "delinquency": "parent_policy",
+              "drainAction": "cancel_membership",
+              "liability": "one_open",
+              "period": {
+                "calendar": "gregorian",
+                "monthEnd": "clamp_to_last_day",
+                "months": 1
+              },
+              "untilAction": "cancel_membership"
+            },
+            "field": "firstPeriodAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Open exactly one period liability without moving money"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "description": "Open monthly obligation for member; one period liability at a time",
+      "fields": {
+        "clubAccountId": {
+          "description": "The club account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "const": "SAR",
+          "description": "ISO 4217 currency code",
+          "type": "string"
+        },
+        "firstPeriodAt": {
+          "description": "First period anchor; missing Gregorian month days clamp to the target month's final day",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "monthlyFee": {
+          "description": "Exact charge for one P1M period in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "membership",
+      "idPrefix": "memb",
+      "lifecycle": {
+        "initial": "active",
+        "states": [
+          "active",
+          "period_open",
+          "canceled"
+        ],
+        "transitions": {
+          "cancel_membership": {
+            "from": [
+              "active",
+              "period_open"
+            ],
+            "to": "canceled"
+          },
+          "collect_period": {
+            "from": [
+              "period_open"
+            ],
+            "to": "active"
+          },
+          "open_period": {
+            "from": [
+              "active"
+            ],
+            "to": "period_open"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "clubAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "memberAccountId",
+        "clubAccountId",
+        "monthlyFee",
+        "currency",
+        "firstPeriodAt"
+      ],
+      "summary": "Open P1M obligation for member",
+      "title": "Membership"
+    },
+    {
+      "actionOrder": [
+        "abandon",
+        "cancel",
+        "create",
+        "dispute",
+        "fund",
+        "post",
+        "release"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Walk away from a trade that never funded. Only a created trade abandons, and its escrow account must hold nothing, so there is nothing to refund. No money moves.",
+          "moves": [],
+          "publicAction": "abandonMemberTrade",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the trade before its atomic funding batch"
+        },
+        "cancel": {
+          "agentDescription": "Unwind a funded trade before release. Both principals return from escrow to their own sides in one batch. The trade must be funded and not yet released. The service fees taken at funding stay with the platform.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.memberPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelSideARefundTransferId": "transferId"
+              },
+              "key": "side_a_refund",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sellerPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelSideBRefundTransferId": "transferId"
+              },
+              "key": "side_b_refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelMemberTrade",
+          "steps": [],
+          "summary": "Cancel and return both trade principals atomically"
+        },
+        "create": {
+          "agentDescription": "Open a trade and provision its escrow account. No money moves. Both principals and both exact service fees are fixed here and cannot change afterwards.",
+          "moves": [],
+          "publicAction": "createMemberTrade",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a member trade atomic trade"
+        },
+        "dispute": {
+          "agentDescription": "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. Either trading party may call it.",
+          "deadline": {
+            "field": "clawbackAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[2]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[3]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Whole trade disputed inside the clawback window"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideATransferId"
+                }
+              },
+              "key": "side_a_void",
+              "operation": "internal_transfer.void"
+            },
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Whole trade disputed inside the clawback window"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideBTransferId"
+                }
+              },
+              "key": "side_b_void",
+              "operation": "internal_transfer.void"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.memberPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideATransferId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "dispute"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "disputeSideARefundTransferId": "transferId"
+              },
+              "key": "side_a_refund",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sellerPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideBTransferId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "dispute"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "disputeSideBRefundTransferId": "transferId"
+              },
+              "key": "side_b_refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer",
+              "beneficiary"
+            ]
+          },
+          "publicAction": "disputeMemberTrade",
+          "steps": [],
+          "summary": "Void both reservations, then refund both principals atomically"
+        },
+        "fund": {
+          "agentDescription": "Fund both sides at once. Each side pays its principal into escrow and its service fee to the platform account, four transfers in one batch. The trade must be created and unfunded. This moves real money from both parties.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[1]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[2]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[3]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.memberPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "fundSideAPrincipalTransferId": "transferId"
+              },
+              "key": "side_a_principal",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sellerPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                }
+              },
+              "capture": {
+                "fundSideBPrincipalTransferId": "transferId"
+              },
+              "key": "side_b_principal",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.memberTradeFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "fundSideAServiceFeeTransferId": "transferId"
+              },
+              "key": "side_a_service_fee",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sellerTradeFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                }
+              },
+              "capture": {
+                "fundSideBServiceFeeTransferId": "transferId"
+              },
+              "key": "side_b_service_fee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundMemberTrade",
+          "steps": [],
+          "summary": "Fund both trade sides and collect on-top fees atomically"
+        },
+        "post": {
+          "due": {
+            "field": "clawbackAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideATransferId"
+                }
+              },
+              "key": "side_a",
+              "operation": "internal_transfer.post"
+            },
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.releaseSideBTransferId"
+                }
+              },
+              "key": "side_b",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "steps": [],
+          "summary": "Post both trade reservations when the clawback window matures"
+        },
+        "release": {
+          "agentDescription": "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. Either trading party may call it.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "holds.reserve",
+                "source": "moves[1]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.memberPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.clawbackAt": {
+                  "from": "instance",
+                  "path": "fields.clawbackAt"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseSideATransferId": "transferId"
+              },
+              "key": "side_a",
+              "operation": "internal_transfer.reserve"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sellerPays"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                },
+                "metadata.clawbackAt": {
+                  "from": "instance",
+                  "path": "fields.clawbackAt"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "member_trade"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseSideBTransferId": "transferId"
+              },
+              "key": "side_b",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer",
+              "beneficiary"
+            ]
+          },
+          "publicAction": "releaseMemberTrade",
+          "setsAt": {
+            "field": "clawbackAt",
+            "offset": "P14D"
+          },
+          "steps": [],
+          "summary": "Reserve both cross-payments for the whole-trade clawback window"
+        }
+      },
+      "agentDescription": "Reach for swap when two named parties pay each other in one atomic trade and neither leg may settle alone. Both principals fund one escrow together, both cross-payments reserve together, and one dispute unwinds both. A single payer paying a single payee is instant transfer instead.",
+      "description": "Atomic swap between member and seller; half-funded and half-released states do not exist",
+      "distinctParties": true,
+      "feeRules": [
+        {
+          "amountField": "memberTradeFee",
+          "baseField": "memberPays",
+          "bearerField": "memberAccountId",
+          "position": "on_top",
+          "rule": {
+            "currencyField": "currency",
+            "field": "memberTradeFee",
+            "kind": "exact"
+          }
+        },
+        {
+          "amountField": "sellerTradeFee",
+          "baseField": "sellerPays",
+          "bearerField": "sellerAccountId",
+          "position": "on_top",
+          "rule": {
+            "currencyField": "currency",
+            "field": "sellerTradeFee",
+            "kind": "exact"
+          }
+        }
+      ],
+      "fields": {
+        "clawbackAt": {
+          "description": "Machine-owned end of the P14D whole-trade dispute window",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberPays": {
+          "description": "Side A amount in SAR minor units, held against the whole trade",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "memberTradeFee": {
+          "description": "Immutable exact member service fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "sellerPays": {
+          "description": "Side B amount in SAR minor units, held against the whole trade",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "sellerTradeFee": {
+          "description": "Immutable exact seller service fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "member_trade",
+      "idPrefix": "mt",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "abandoned",
+          "funded",
+          "cancelled",
+          "released",
+          "settled",
+          "clawed_back"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelled"
+          },
+          "dispute": {
+            "from": [
+              "released"
+            ],
+            "to": "clawed_back"
+          },
+          "fund": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          },
+          "post": {
+            "from": [
+              "released"
+            ],
+            "to": "settled"
+          },
+          "release": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "memberAccountId",
+        "sellerAccountId",
+        "platformAccountId",
+        "memberPays",
+        "sellerPays",
+        "memberTradeFee",
+        "sellerTradeFee",
+        "currency"
+      ],
+      "summary": "Two-party atomic trade between member and seller",
+      "title": "Member trade"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "close",
+        "calculate",
+        "approve",
+        "instruct",
+        "acknowledge_payout",
+        "reconcile"
+      ],
+      "actions": {
+        "acknowledge_payout": {
+          "agentDescription": "Record the beneficiary confirmation that the payout landed, with the reference kept in the receipt. The batch must already be instructed. Only the payout destination may call it. No money moves.",
+          "captureInput": {
+            "acknowledgementReference": "acknowledgementReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "acknowledgementReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "acknowledgementReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "acknowledgePayoutSellerPayout",
+          "steps": [],
+          "summary": "Record the tenant's payout acknowledgement in the receipt"
+        },
+        "approve": {
+          "agentDescription": "Sign off on the frozen net payable. The batch must already be calculated. Nothing is recomputed and no money moves. This is the gate instruct waits on.",
+          "moves": [],
+          "publicAction": "approveSellerPayout",
+          "steps": [],
+          "summary": "Approve the frozen payable without recomputing it"
+        },
+        "calculate": {
+          "agentDescription": "Prove and freeze the one net payable from gross captures plus credit adjustments minus debit adjustments. The batch must be closed first. A zero or negative net is refused, so a batch in deficit never reaches a payout. No money moves.",
+          "moves": [],
+          "publicAction": "calculateSellerPayout",
+          "signedSum": {
+            "amountRef": "netPayable",
+            "onNegative": "refuse",
+            "onZero": "refuse",
+            "sources": [
+              {
+                "amountField": "amount",
+                "instrumentId": "seller_payout_capture_entry",
+                "refField": "sellerPayoutId",
+                "sign": "add",
+                "statuses": [
+                  "accrued"
+                ],
+                "subtotalRef": "grossCaptureAmount"
+              },
+              {
+                "amountField": "amount",
+                "instrumentId": "seller_payout_credit_adjustment",
+                "refField": "sellerPayoutId",
+                "sign": "add",
+                "statuses": [
+                  "applied"
+                ],
+                "subtotalRef": "creditAdjustmentAmount"
+              },
+              {
+                "amountField": "amount",
+                "instrumentId": "seller_payout_debit_adjustment",
+                "refField": "sellerPayoutId",
+                "sign": "subtract",
+                "statuses": [
+                  "applied"
+                ],
+                "subtotalRef": "debitAdjustmentAmount"
+              }
+            ]
+          },
+          "steps": [],
+          "summary": "Prove and freeze the one signed net payable amount"
+        },
+        "close": {
+          "due": {
+            "field": "closeAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Freeze the batch and stop all new entries"
+        },
+        "create": {
+          "agentDescription": "Open a batch that capture entries and adjustments can accrue into. No money moves. The batch keeps taking entries until its close date freezes it.",
+          "moves": [],
+          "publicAction": "createSellerPayout",
+          "steps": [],
+          "summary": "Open a seller payout"
+        },
+        "instruct": {
+          "agentDescription": "Create one external payout for the frozen net payable, drawn on the settlement account and sent to the stored beneficiary. The batch must be approved. This moves money off the platform and is idempotent, so a retry never pays twice.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.payout.external",
+                "source": "payout"
+              }
+            ]
+          },
+          "moves": [],
+          "payout": {
+            "amount": "refs.netPayable",
+            "beneficiaryField": "payoutBeneficiaryId",
+            "beneficiaryPartyField": "payoutDestinationAccountId",
+            "capture": "payoutId",
+            "currencyField": "currency",
+            "sourceAccountField": "clubAccountId",
+            "speed": "standard"
+          },
+          "publicAction": "instructSellerPayout",
+          "steps": [],
+          "summary": "Create one idempotent payout from the frozen net payable"
+        },
+        "reconcile": {
+          "due": {
+            "field": "closeAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.reconcile",
+                "source": "reconcile[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "reconcile": [
+            {
+              "amount": "refs.netPayable",
+              "capture": "settlementEvidenceId",
+              "counterpartyRef": "payoutId",
+              "currencyField": "currency",
+              "direction": "debit",
+              "evidence": "statement_line",
+              "exception": {
+                "amountField": "amount",
+                "childInstrumentId": "seller_payout_debit_adjustment",
+                "maxOpen": 1,
+                "reasonField": "adjustmentReference",
+                "refField": "sellerPayoutId"
+              },
+              "match": {
+                "law": "exact"
+              },
+              "within": {
+                "offset": "P30D"
+              }
+            }
+          ],
+          "steps": [],
+          "summary": "Match durable evidence that the payout settled"
+        }
+      },
+      "agentDescription": "Reach for settlement batch when many charges over a period roll up into one payout. Capture entries and adjustments accrue against an open batch, the batch freezes on its close date, calculate proves one signed net payable, and instruct sends a single external payout. Weighted distribution goes the other way, one amount out to many recipients.",
+      "description": "Immutable batch of capture lineage and signed adjustments that creates one payout",
+      "fields": {
+        "closeAt": {
+          "description": "Date the open batch freezes against later entries",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "clubAccountId": {
+          "description": "The club account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "payoutBeneficiaryId": {
+          "description": "Beneficiary ID for the payout instruction",
+          "pattern": "^ben_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "payoutDestinationAccountId": {
+          "description": "The payout destination account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "seller_payout",
+      "idPrefix": "sp",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "closed",
+          "calculated",
+          "approved",
+          "instructed",
+          "acknowledged",
+          "reconciled"
+        ],
+        "transitions": {
+          "acknowledge_payout": {
+            "from": [
+              "instructed"
+            ],
+            "to": "acknowledged"
+          },
+          "approve": {
+            "from": [
+              "calculated"
+            ],
+            "to": "approved"
+          },
+          "calculate": {
+            "from": [
+              "closed"
+            ],
+            "to": "calculated"
+          },
+          "close": {
+            "from": [
+              "open"
+            ],
+            "to": "closed"
+          },
+          "instruct": {
+            "from": [
+              "approved"
+            ],
+            "to": "instructed"
+          },
+          "reconcile": {
+            "from": [
+              "instructed",
+              "acknowledged"
+            ],
+            "to": "reconciled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "payoutDestinationAccountId",
+        "payer": "clubAccountId"
+      },
+      "required": [
+        "payoutDestinationAccountId",
+        "clubAccountId",
+        "closeAt",
+        "currency",
+        "payoutBeneficiaryId"
+      ],
+      "summary": "Payout batch from club to payout destination",
+      "title": "Seller payout"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "accrue"
+      ],
+      "actions": {
+        "accrue": {
+          "agentDescription": "Count this capture toward the batch gross total. The entry must be created and its batch still open, because a closed batch admits nothing new. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "accrueSellerPayoutCaptureEntry",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Accrue the capture entry into the open batch"
+        },
+        "create": {
+          "agentDescription": "Record one capture with its source reference against an open batch. The batch must be open and share the currency. No money moves, and the entry counts toward the net payable only once it accrues.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createSellerPayoutCaptureEntry",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a capture lineage entry on an open batch"
+        }
+      },
+      "agentDescription": "One gross capture that belongs to an open batch. Record one per source capture so the net payable keeps its lineage back to the original charge.",
+      "description": "One gross capture entry linked to an open payout batch",
+      "fields": {
+        "amount": {
+          "description": "Gross captured amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Immutable source capture reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "sellerPayoutId": {
+          "description": "Open batch this capture entry accrues into",
+          "pattern": "^sp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "seller_payout_capture_entry",
+      "idPrefix": "spce",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "accrued"
+        ],
+        "transitions": {
+          "accrue": {
+            "from": [
+              "created"
+            ],
+            "to": "accrued"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "sellerPayoutId",
+        "captureReference"
+      ],
+      "summary": "Gross capture lineage entry",
+      "title": "Seller payout Capture Entry"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "adjust",
+        "correct"
+      ],
+      "actions": {
+        "adjust": {
+          "agentDescription": "Apply the credit adjustment so calculate counts it. The adjustment must be created and its batch still open. No money moves. The effect shows up in the batch net payable.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "adjustSellerPayoutCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Apply the credit adjustment to the open batch"
+        },
+        "correct": {
+          "agentDescription": "Apply this adjustment as a correction on the open batch it names. Use it when the batch carrying the original entry has already closed, because a closed batch never changes. The adjustment must be created and no money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "correctSellerPayoutCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record a later correction on this open batch instead of changing the closed source batch"
+        },
+        "create": {
+          "agentDescription": "Record a credit adjustment on an open batch, naming the capture reference it corrects. The batch must be open and share the currency. No money moves, and the adjustment counts only once it is applied.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createSellerPayoutCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a credit adjustment on an open batch"
+        }
+      },
+      "agentDescription": "One credit adjustment against an open batch, carrying the capture reference it corrects. Credit adjustments add to the net payable and debit adjustments subtract from it, so a late correction lands on the current open batch instead of reopening a closed one.",
+      "description": "One credit adjustment linked to an open payout batch; closed batches stay unchanged",
+      "fields": {
+        "adjustmentReference": {
+          "description": "Immutable explicit adjustment reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "amount": {
+          "description": "Credit adjustment amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Original capture reference that this adjustment corrects",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "externalReversalReference": {
+          "description": "Optional externally decided reversal reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "feeReference": {
+          "description": "Optional fee entry reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sellerPayoutId": {
+          "description": "Open batch this adjustment applies to",
+          "pattern": "^sp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "seller_payout_credit_adjustment",
+      "idPrefix": "spca",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "applied"
+        ],
+        "transitions": {
+          "adjust": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          },
+          "correct": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "adjustmentReference",
+        "sellerPayoutId",
+        "captureReference"
+      ],
+      "summary": "Credit adjustment with capture lineage",
+      "title": "Seller payout Credit Adjustment"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "adjust",
+        "correct"
+      ],
+      "actions": {
+        "adjust": {
+          "agentDescription": "Apply the debit adjustment so calculate counts it. The adjustment must be created and its batch still open. No money moves. The effect shows up in the batch net payable.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "adjustSellerPayoutDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Apply the debit adjustment to the open batch"
+        },
+        "correct": {
+          "agentDescription": "Apply this adjustment as a correction on the open batch it names. Use it when the batch carrying the original entry has already closed, because a closed batch never changes. The adjustment must be created and no money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "correctSellerPayoutDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record a later correction on this open batch instead of changing the closed source batch"
+        },
+        "create": {
+          "agentDescription": "Record a debit adjustment on an open batch, naming the capture reference it corrects. The batch must be open and share the currency. No money moves, and the adjustment counts only once it is applied.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createSellerPayoutDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "sellerPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a debit adjustment on an open batch"
+        }
+      },
+      "agentDescription": "One debit adjustment against an open batch, carrying the capture reference it corrects. Credit adjustments add to the net payable and debit adjustments subtract from it, so a late correction lands on the current open batch instead of reopening a closed one.",
+      "description": "One debit adjustment linked to an open payout batch; closed batches stay unchanged",
+      "fields": {
+        "adjustmentReference": {
+          "description": "Immutable explicit adjustment reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "amount": {
+          "description": "Debit adjustment amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Original capture reference that this adjustment corrects",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "externalReversalReference": {
+          "description": "Optional externally decided reversal reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "feeReference": {
+          "description": "Optional fee entry reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sellerPayoutId": {
+          "description": "Open batch this adjustment applies to",
+          "pattern": "^sp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "seller_payout_debit_adjustment",
+      "idPrefix": "spda",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "applied"
+        ],
+        "transitions": {
+          "adjust": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          },
+          "correct": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "adjustmentReference",
+        "sellerPayoutId",
+        "captureReference"
+      ],
+      "summary": "Debit adjustment with capture lineage",
+      "title": "Seller payout Debit Adjustment"
+    }
+  ],
+  "product": "watch_club",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "watch",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Watch",
+      "version": 1
+    }
+  ],
+  "title": "Watch club",
+  "udl": 1,
+  "version": 1
+}

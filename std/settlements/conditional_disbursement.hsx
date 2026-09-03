@@ -1,0 +1,185 @@
+module std.settlements.conditional_disbursement
+
+export instrument conditional_disbursement<C>(
+  source: party,
+  destination: party,
+  cap: money<C>,
+  amount: money<C>,
+  decision: condition,
+  reopen_policy: text,
+  recovery_policy: text,
+) {
+  let(child_id): concat(instrument, "_approved_amount");
+  let(child_amount): "amount";
+  let(parent_field): camel(concat(instrument, "_id"));
+  let(source_field): camel(concat(source, "_account_id"));
+  let(destination_field): camel(concat(destination, "_account_id"));
+  let(currency_path): "fields.currency";
+  let(source_path): concat("fields.", source_field);
+  let(destination_path): concat("fields.", destination_field);
+
+  title: sentence(instrument);
+  agent_description: "Reach for conditional disbursement when the {source} pays the {destination} only against stored external evidence and the payouts must stay under {cap}. Each approved amount is its own child row. Pick instant transfer when no evidence gates the payment.";
+  summary: "Capped disbursement to {destination}";
+  description: "Capped disbursement controlled by stored external evidence";
+  id_prefix: prefix(instrument);
+  fields {
+    cap {
+      type: money<C>;
+      description: "Disbursement cap in {C} minor units";
+    }
+  }
+  required: [destination_field, source_field, currency, cap];
+  lifecycle {
+    states submitted denied;
+    initial submitted;
+    on deny: submitted -> denied;
+  }
+  parties {
+    beneficiary: destination;
+    payer: source;
+  }
+  action create {
+    agent_description: "Open the capped disbursement before any amount is approved. The caller supplies the {cap}, the currency, and the {source} and {destination} accounts. No money moves and nothing is approved yet.";
+    summary: "Submit the capped disbursement";
+    steps: [];
+    moves: [];
+  }
+  action deny {
+    agent_description: "Refuse the whole disbursement without moving money. Every child amount under it must still be unapproved, so call this before any approval lands. The caller passes evidenceReference, which stays in the receipt. Denial is final.";
+    summary: "Record a denial without moving money";
+    input: {
+      additional_properties: false;
+      properties: {
+        evidence_reference: {
+          description: "Required decision reference retained in the operation receipt";
+          max_length: 180;
+          min_length: 1;
+          type: "string";
+        };
+      };
+      required: [evidenceReference];
+      type: "object";
+    };
+    capture_input: { decision_evidence_reference: evidenceReference; };
+    port: { allowed_parties: [payer]; };
+    requires aggregate: {
+      check: { kind: all_in; };
+      instrument_id: child_id;
+      over: children;
+      ref_field: parent_field;
+      statuses: [created];
+    };
+    steps: [];
+    moves: [];
+  }
+
+  instruments {
+    instrument {
+      id: child_id;
+      generatedPrefix: true;
+      title: concat(sentence(instrument), " Approved Amount");
+      agent_description: concat("Reach for this child row to hold one evidence-gated amount under a ", words(instrument), ". The parent carries the {cap}, this row carries one approved amount and pays it once.");
+      summary: "Approved amount under {instrument}";
+      description: "One evidence-gated amount under {instrument}";
+      fields {
+        [child_amount] {
+          type: money<C>;
+          description: "Approved amount under the parent cap";
+        }
+        currency {
+          type: text;
+          description: "ISO 4217 currency code";
+          max_length: 3;
+          min_length: 3;
+          pattern: "^[A-Z]{3}$";
+        }
+        [parent_field] {
+          type: ref<instrument>;
+          description: "The exact {instrument}";
+          pattern: concat("^", prefix(instrument), "_(sandbox|live)_[a-z0-9]{8,64}$");
+        }
+      }
+      required: [destination_field, source_field, child_amount, currency, parent_field];
+      lifecycle {
+        states created approved paid;
+        initial created;
+        on approve: created -> approved;
+        on pay: approved -> paid;
+      }
+      parties {
+        beneficiary: destination;
+        payer: source;
+      }
+      action create {
+        agent_description: concat("Create one candidate amount under the parent ", words(instrument), ". The parent must still be submitted and the currency and both accounts must match it. No money moves and the amount is not approved yet.");
+        summary: "Create one candidate amount under the parent";
+        requires refs: {
+          bind: {
+            currency: currency_path;
+            [destination_field]: destination_path;
+            [source_field]: source_path;
+          };
+          field: parent_field;
+          statuses: [submitted];
+          unique: true;
+        };
+        steps: [];
+        moves: [];
+      }
+      action approve {
+        agent_description: "Store one externally approved amount under the parent cap. The row must be created, the parent still submitted, and the already approved and paid amounts plus this one must stay within {cap}. The caller passes evidenceReference. No money moves yet.";
+        summary: "Store one externally approved amount under the cap";
+        input: {
+          additional_properties: false;
+          properties: {
+            evidence_reference: {
+              description: "Required decision reference retained in the operation receipt";
+              max_length: 180;
+              min_length: 1;
+              type: "string";
+            };
+          };
+          required: [evidenceReference];
+          type: "object";
+        };
+        capture_input: { decision_evidence_reference: evidenceReference; };
+        port: { allowed_parties: [payer]; };
+        requires exposure: {
+          amount_field: child_amount;
+          anchor_field: parent_field;
+          cap_field: cap;
+          cap_on_anchor: true;
+          child_instrument_id: child_id;
+          statuses: [approved, paid];
+        };
+        requires refs: {
+          field: parent_field;
+          match: {
+            [currency_path]: currency_path;
+            [destination_path]: destination_path;
+            [source_path]: source_path;
+          };
+          statuses: [submitted];
+        };
+        steps: [];
+        moves: [];
+      }
+      action pay {
+        agent_description: "Pay the stored approved amount to the {destination} once. The row must be approved and the parent still submitted. The transfer posts straight out of the {source} and does not unwind.";
+        summary: "Pay the stored approved amount once";
+        requires refs: {
+          field: parent_field;
+          match: {
+            [currency_path]: currency_path;
+            [destination_path]: destination_path;
+            [source_path]: source_path;
+          };
+          statuses: [submitted];
+        };
+        moves: [{ amount: child_amount; from: payer; to: beneficiary; key: payout; operation: create; }];
+        steps: [];
+      }
+    }
+  }
+}

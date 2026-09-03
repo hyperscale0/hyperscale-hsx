@@ -1,5 +1,5 @@
 program rotating_pool "Rotating pool"
-import { rotating_pool } from "settlement"
+import { rotating_pool } from "std/settlements"
 
 party member_a: person
 party member_b: person

@@ -1,0 +1,303 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "instruct",
+        "settle"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the payout row with the treasury and supplier accounts, the amount, the beneficiary reference, and the settle date. No money moves and no instruction goes out yet. Call instruct next.",
+          "moves": [],
+          "publicAction": "createSupplierPayout",
+          "steps": [],
+          "summary": "Create a supplier payout"
+        },
+        "instruct": {
+          "agentDescription": "Send the payout instruction and start the expectation clock. This commits the amount to the supplier and the payout is not reversible from here. The bank debit is matched later by settle, which runs on its own at the settle date.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.payout.external",
+                "source": "payout"
+              }
+            ]
+          },
+          "moves": [],
+          "payout": {
+            "amount": "fields.netPayable",
+            "beneficiaryField": "supplierBeneficiaryId",
+            "beneficiaryPartyField": "supplierAccountId",
+            "capture": "payoutId",
+            "currencyField": "currency",
+            "sourceAccountField": "treasuryAccountId",
+            "speed": "standard"
+          },
+          "publicAction": "instructSupplierPayout",
+          "steps": [],
+          "summary": "Instruct the payout to the supplier"
+        },
+        "settle": {
+          "due": {
+            "field": "settleBy"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.reconcile",
+                "source": "reconcile[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "reconcile": [
+            {
+              "amount": "fields.netPayable",
+              "capture": "settlementEvidenceId",
+              "counterpartyRef": "payoutId",
+              "currencyField": "currency",
+              "direction": "debit",
+              "evidence": "statement_line",
+              "exception": {
+                "amountField": "unmatchedAmount",
+                "childInstrumentId": "supplier_payout_break",
+                "maxOpen": 1,
+                "reasonField": "breakReason",
+                "refField": "supplierPayoutId"
+              },
+              "match": {
+                "dial": "settlement_tolerance",
+                "law": "tolerance",
+                "minorUnits": 100
+              },
+              "within": {
+                "field": "settleBy"
+              }
+            }
+          ],
+          "steps": [],
+          "summary": "Match the bank's debit against what the instruction promised"
+        }
+      },
+      "agentDescription": "Reach for reconciled payout when a payment to the supplier is not finished until the bank confirms the debit. The instruction goes out, the expectation waits for a matching statement line, and anything still unmatched at the settle date becomes a break row instead of disappearing. Pick instant transfer when no bank confirmation is involved.",
+      "description": "A payout the instrument owns end to end: one instruction, one expectation about the debit it will produce, and one break when the debit never matches",
+      "dials": [
+        {
+          "key": "settlement_tolerance",
+          "kind": "reconcile_tolerance",
+          "maxMinorUnits": 500,
+          "summary": "Largest difference between the instructed amount and the settled debit that still counts as matched.",
+          "title": "Settlement tolerance"
+        }
+      ],
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "netPayable": {
+          "description": "Amount instructed to the supplier in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "settleBy": {
+          "description": "Instant the expectation stops waiting and the unmatched amount becomes a break",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "supplierAccountId": {
+          "description": "The supplier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "supplierBeneficiaryId": {
+          "description": "Beneficiary ID for the payout instruction",
+          "pattern": "^ben_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "treasuryAccountId": {
+          "description": "The treasury account the payout leaves",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "supplier_payout",
+      "idPrefix": "sp",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "instructed",
+          "settled"
+        ],
+        "transitions": {
+          "instruct": {
+            "from": [
+              "created"
+            ],
+            "to": "instructed"
+          },
+          "settle": {
+            "from": [
+              "instructed"
+            ],
+            "to": "settled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "supplierAccountId",
+        "payer": "treasuryAccountId"
+      },
+      "required": [
+        "netPayable",
+        "supplierAccountId",
+        "supplierBeneficiaryId",
+        "currency",
+        "treasuryAccountId",
+        "settleBy"
+      ],
+      "summary": "Payout from treasury to supplier that is not done until the bank agrees",
+      "title": "Supplier payout"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "carry"
+      ],
+      "actions": {
+        "carry": {
+          "agentDescription": "Hand the break to whoever owns resolving it. No money moves. The payout must still be instructed. This is the only exit from a raised break, so a break is never closed by dropping it.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "carrySupplierPayoutBreak",
+          "requiresRefs": [
+            {
+              "field": "supplierPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "instructed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Carry the break to whoever owns it"
+        },
+        "create": {
+          "agentDescription": "Raise a break against an instructed payout, recording the unmatched amount and why the expectation went unmatched. No money moves. The payout must still be instructed, and only one open break exists per payout.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createSupplierPayoutBreak",
+          "requiresRefs": [
+            {
+              "field": "supplierPayoutId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "instructed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Raise a break against an instructed payout"
+        }
+      },
+      "agentDescription": "Reach for this child row when a supplier payout expectation reached its window with no matching bank debit. The break carries the unmatched amount and the reason so the difference is owned by someone rather than silently dropped.",
+      "description": "One break raised when a payout expectation reached its window with no matching debit; it is carried, never silently dropped",
+      "fields": {
+        "breakReason": {
+          "description": "Why the expectation went unmatched",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "supplierPayoutId": {
+          "description": "Payout whose expectation broke",
+          "pattern": "^sp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "unmatchedAmount": {
+          "description": "Difference between the instructed amount and the evidence, in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "supplier_payout_break",
+      "idPrefix": "spbk",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "carried"
+        ],
+        "transitions": {
+          "carry": {
+            "from": [
+              "created"
+            ],
+            "to": "carried"
+          }
+        }
+      },
+      "required": [
+        "breakReason",
+        "currency",
+        "unmatchedAmount",
+        "supplierPayoutId"
+      ],
+      "summary": "Unmatched settlement expectation carried as its own row",
+      "title": "Supplier payout Break"
+    }
+  ],
+  "product": "reconciled_payout_example",
+  "subjects": [],
+  "title": "Reconciled payout example",
+  "udl": 1,
+  "version": 1
+}

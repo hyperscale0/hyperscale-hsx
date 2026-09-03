@@ -1,0 +1,507 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "confirm_delivery",
+        "release_on_deadline",
+        "cancel",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a sale that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonSale",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "cancel": {
+          "agentDescription": "Cancel the sale and start returning the held money to the buyer. It must be funded and not yet released. Cancellation is final, and a cancelled settlement never releases. Where the product sets a release deadline, this call is refused once that date passes.",
+          "deadline": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.price"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelSale",
+          "steps": [],
+          "summary": "Cancel the settlement and start the unwind"
+        },
+        "confirm_delivery": {
+          "agentDescription": "Confirm confirm_delivery and start paying the held money out of escrow. The sale must be funded first, and the caller must be buyer. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "deadline": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.price"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_delivery"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmDeliveryTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "confirmDeliverySale",
+          "steps": [],
+          "summary": "Confirm through confirm_delivery and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the sale and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createSale",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a sale settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the buyer's money into this settlement's escrow. Call it after create and before any release. It debits the buyer for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.price"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.serviceFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1ServiceFeeTransferId": "transferId"
+              },
+              "key": "service_fee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Sale",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "release_on_deadline": {
+          "due": {
+            "field": "releaseDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.price"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_on_deadline"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseOnDeadlineTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Release to the seller when releaseDueAt arrives undecided"
+        }
+      },
+      "agentDescription": "Reach for sale when the buyer must commit money up front and nobody is paid until confirm_delivery fires. Funding moves price into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the buyer funds price into this settlement's own escrow; buyer confirms through confirm_delivery to release",
+      "feeRules": [
+        {
+          "amountField": "serviceFeeAmount",
+          "baseField": "price",
+          "bearerField": "buyerAccountId",
+          "position": "on_top",
+          "rule": {
+            "bps": 100,
+            "kind": "bps"
+          }
+        }
+      ],
+      "fields": {
+        "buyerAccountId": {
+          "description": "The buyer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "price": {
+          "description": "The held amount in SAR minor units, funded and paid out whole",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "releaseDueAt": {
+          "description": "The date an undecided hold releases to the seller on; confirm_delivery and cancellation decide only before it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "serviceFeeAmount": {
+          "description": "Machine-owned 1% service fee computed from price; charged on top at funding",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "sale",
+      "idPrefix": "sale",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funded",
+          "released",
+          "cancelled",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelled"
+          },
+          "confirm_delivery": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          },
+          "release_on_deadline": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "buyerAccountId"
+      },
+      "required": [
+        "buyerAccountId",
+        "sellerAccountId",
+        "platformAccountId",
+        "price",
+        "releaseDueAt",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from buyer to seller",
+      "title": "Sale"
+    }
+  ],
+  "product": "held_payment_example",
+  "subjects": [],
+  "title": "Held payment example",
+  "udl": 1,
+  "version": 1
+}

@@ -1,5 +1,5 @@
 program derived_transfer "Derived transfer"
-import { instant_transfer } from "settlement"
+import { instant_transfer } from "std/settlements"
 
 party payer: person
 party payee: business

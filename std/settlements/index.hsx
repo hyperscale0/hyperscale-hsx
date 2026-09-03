@@ -1,0 +1,3 @@
+module std.settlements
+
+// Settlement modules are imported by their full std.settlements.<name> path.

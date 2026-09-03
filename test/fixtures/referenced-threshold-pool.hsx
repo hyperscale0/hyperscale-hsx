@@ -1,0 +1,79 @@
+program community_raise "Community raise"
+import { threshold_pool } from "std/settlements"
+
+instrument community_pledge {
+  fields {
+    amount { type: money<SAR>; }
+    beneficiaryAccountId { type: account<SAR>; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    communityRaiseId { type: ref<community_raise>; pattern: "^raise_(sandbox|live)_[a-z0-9]{8,64}$"; }
+    contributorAccountId { type: account<SAR>; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    escrowAccountId { type: account<SAR>; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+  }
+  lifecycle {
+    states pledged collected released refunded;
+    initial pledged;
+    on collect: pledged -> collected;
+    on release: collected -> released;
+    on refund: collected -> refunded;
+  }
+  parties { beneficiary: beneficiaryAccountId; payer: contributorAccountId; }
+  agent_description: "Reach for community pledge to record one contributor's promise against an open community raise. Pledging moves no money. The collection into escrow, the release to the beneficiary, and the refund all depend on what the raise does with its target.";
+  required: [amount, beneficiaryAccountId, communityRaiseId, contributorAccountId, currency, escrowAccountId];
+  action create {
+    agent_description: "Record one pledge against a raise that is still open. The raise supplies the beneficiary account, the currency, and the escrow account. No money moves. A closed or failed raise refuses the pledge.";
+    requires refs { field: communityRaiseId; statuses: [open]; bind: { beneficiaryAccountId: "fields.beneficiaryAccountId"; currency: "fields.currency"; escrowAccountId: "refs.escrowAccountId"; }; }
+    moves: [];
+    steps: [];
+  }
+  action collect {
+    agent_description: "Move the pledged amount from the contributor into the raise escrow. This moves money and the contributor pays. Only an open raise collects. The money stays in escrow until the raise either releases or fails.";
+    requires refs { field: communityRaiseId; statuses: [open]; }
+    moves: [{ key: collect; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.escrowAccountId; }; "metadata.instrumentId": { from: const; value: community_pledge; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: collect; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: fields.contributorAccountId; }; }; capture: { collectCollectTransferId: transferId; }; }];
+    steps: [];
+  }
+  action release {
+    agent_description: "Pay this pledge out of escrow to the beneficiary once the raise has met its target and gone active. This moves money and does not reverse. Only a collected pledge releases.";
+    requires refs { field: communityRaiseId; statuses: [active]; }
+    moves: [{ key: release; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.beneficiaryAccountId; }; "metadata.instrumentId": { from: const; value: community_pledge; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: release; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: fields.escrowAccountId; }; }; capture: { releaseReleaseTransferId: transferId; }; }];
+    steps: [];
+  }
+  action refund {
+    agent_description: "Return this pledge from escrow to the contributor after the raise has failed its target. This moves money and does not reverse. Only a collected pledge refunds, and only once the raise has failed.";
+    requires refs { field: communityRaiseId; statuses: [failed]; }
+    moves: [{ key: refund; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.contributorAccountId; }; "metadata.instrumentId": { from: const; value: community_pledge; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: refund; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: fields.escrowAccountId; }; }; capture: { refundRefundTransferId: transferId; }; }];
+    steps: [];
+  }
+}
+
+instrument community_raise = threshold_pool<SAR>(
+  target: targetAmount: money(SAR),
+  commitment: amount: money(SAR),
+  close_by: closesAt,
+  beneficiary_account: beneficiaryAccountId: account<SAR>,
+  memo: note,
+  contribution_instrument: {
+    instrument: community_pledge;
+    ref_field: communityRaiseId;
+    amount_field: amount;
+    committed_status: collected;
+    collected_status: released;
+    custody_ref: escrowAccountId;
+    beneficiary_account_description: "The account that receives a successful raise";
+    target_description: "The threshold that pledged contributions must meet";
+    currency_description: "ISO 4217 currency code";
+    id_prefix: raise;
+    active_parked: "published pledge rows collect after the target is met";
+    create_examples: [{ input: { beneficiaryAccountId: acct_sandbox_beneficiary1; closesAt: "2026-10-01T00:00:00.000Z"; currency: SAR; productId: prd_sandbox_community1; targetAmount: "100000"; tenantId: ten_sandbox_community1; }; name: create_community_raise; }];
+    activate_examples: [{ input: { communityRaiseId: raise_sandbox_community1; tenantId: ten_sandbox_community1; }; name: activate_community_raise; }];
+    fail_examples: [{ input: { communityRaiseId: raise_sandbox_community1; tenantId: ten_sandbox_community1; }; name: fail_community_raise; }];
+    close_examples: [{ input: { communityRaiseId: raise_sandbox_community1; tenantId: ten_sandbox_community1; }; name: close_community_raise; }];
+  },
+) {
+  title: "Community raise";
+  summary: "A threshold pool with published pledge rows";
+  description: "The pool releases pledged funds only after it reaches its target.";
+  action create { summary: "Open the raise"; }
+  action activate { summary: "Activate the funded raise"; }
+  action fail { summary: "Fail the short raise"; }
+  action close { summary: "Close the collected raise"; }
+}

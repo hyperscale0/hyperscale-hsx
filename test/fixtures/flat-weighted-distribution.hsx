@@ -1,0 +1,81 @@
+program flat_weighted_distribution "Flat weighted distribution"
+
+import { weighted_distribution } from "std/settlements"
+
+instrument distribution_group {
+  fields {}
+  lifecycle { states open; initial open; }
+  title: "Distribution group";
+  agent_description: "A shared key that ties one settled pool to the allocations that draw from it. It holds no money and no schedule. Create one before the pool and its allocations.";
+  id_prefix: "dgrp";
+  summary: "Reference group for a flat distribution";
+  action create { public: none; agent_description: "Register the shared key that a settled pool and its allocations both point at. No money moves and there is nothing to configure. Create this first."; moves: []; steps: []; }
+}
+
+instrument settled_pool {
+  fields {
+    currency { type: text; const: SAR; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    distributableTotal { type: money<SAR>; }
+    distributionGroupId { type: ref<distribution_group>; }
+    sourceAccountId { type: account<SAR>; }
+  }
+  lifecycle { states open settled; initial open; on settle: open -> settled; }
+  title: "Settled pool";
+  agent_description: "The pool that backs flat distribution claims. It carries the distributable total and the funding account, and it must settle before any claim pays out. Claims recorded after settlement are refused.";
+  id_prefix: "sp";
+  summary: "Pool that backs flat distribution claims";
+  action create { public: none; agent_description: "Open the pool with its distributable total and funding account. No money moves. Claims can be recorded from here until the pool settles."; moves: []; steps: []; }
+  action settle { public: none; agent_description: "Freeze the pool so its claims can pay out. No money moves on this call, and no further claim can be recorded. There is no unsettle."; moves: []; steps: []; }
+}
+
+instrument allocation {
+  fields {
+    amount { type: money<SAR>; }
+    distributionGroupId { type: ref<distribution_group>; }
+    recipientAccountId { type: account<SAR>; }
+  }
+  lifecycle { states admitted; initial admitted; }
+  title: "Allocation";
+  agent_description: "One stored weight and its recipient, admitted before the pool settles. A claim reads its weight and recipient from here rather than taking them from the caller. Each allocation backs at most one claim.";
+  id_prefix: "alloc";
+  summary: "Stored weight and recipient for one claim";
+  action create { public: none; agent_description: "Admit one recipient weight against the shared group. No money moves. The weight recorded here is what the matching claim pays out against the settled pool."; moves: []; steps: []; }
+}
+
+settlement payout_claim = weighted_distribution {
+  source: treasury
+  recipient: member
+  amount: weight: money(SAR)
+  record_at: payableAt
+  flat: {
+    amount_description: "Stored claim weight in SAR minor units"
+    recipient_account_description: "Account that receives this claim"
+    source_account_description: "Account that funds this claim"
+    pool: {
+      field: poolId: ref<settled_pool>
+      instrument: settled_pool
+      description: "Settled pool that backs the claim"
+      pattern: "^sp_(sandbox|live)_[a-z0-9]{8,64}$"
+      create_statuses: [open]
+      payout_statuses: [settled]
+      bind: { currency: "fields.currency"; treasuryAccountId: "fields.sourceAccountId"; }
+      match: { "fields.distributionGroupId": "fields.distributionGroupId"; }
+      amount_path: "fields.distributableTotal"
+    }
+    weight_source: {
+      field: allocationId: ref<allocation>
+      description: "Allocation that supplies the claim weight and recipient"
+      pattern: "^alloc_(sandbox|live)_[a-z0-9]{8,64}$"
+      statuses: [admitted]
+      unique: true
+      bind: { weight: "fields.amount"; memberAccountId: "fields.recipientAccountId"; }
+      match: { "fields.distributionGroupId": "fields.distributionGroupId"; }
+    }
+    group: {
+      field: distributionGroupId: ref<distribution_group>
+      description: "Group shared by the pool and allocation"
+      pattern: "^dgrp_(sandbox|live)_[a-z0-9]{8,64}$"
+    }
+    required: [poolId, distributionGroupId, allocationId, memberAccountId, treasuryAccountId, weight, currency, payableAt]
+  }
+}

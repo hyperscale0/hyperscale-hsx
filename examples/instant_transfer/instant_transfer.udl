@@ -1,0 +1,364 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_piece_1",
+        "pay_piece_2",
+        "collect_service_fee"
+      ],
+      "actions": {
+        "collect_service_fee": {
+          "agentDescription": "Finish the payment and collect the service fee the customer owes on top of the amount. Both pieces must already be paid. When the product charges no payer fee this only closes the payment out.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.checkoutFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "transfer"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_service_fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "collectServiceFeeTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectServiceFeeTransfer",
+          "steps": [],
+          "summary": "Collect the payer-side service fee"
+        },
+        "create": {
+          "agentDescription": "Open the payment row before anything moves. The caller supplies the transferAmount, the currency, and both party accounts. Fee and derived pieces are computed from the transferAmount, callers never supply them. Call pay piece 1 to move the money.",
+          "moves": [],
+          "publicAction": "createTransfer",
+          "steps": [],
+          "summary": "Create a transfer payment"
+        },
+        "pay_piece_1": {
+          "agentDescription": "Move the first piece from the customer to the merchant. The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.netOfCarvedFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "transfer"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "payPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece1Transfer",
+          "steps": [],
+          "summary": "Pay piece 1 of the amount through"
+        },
+        "pay_piece_2": {
+          "agentDescription": "Move the carved platform fee out of the amount. Call this after pay piece 1. When the product carves no merchant fee this only steps the payment forward and moves nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.carvedFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "transfer"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "payPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece2Transfer",
+          "steps": [],
+          "summary": "Pay piece 2 of the amount through"
+        }
+      },
+      "agentDescription": "Reach for instant transfer when the customer pays the merchant straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.",
+      "description": "Instant transfer: the customer pays transferAmount straight through to the merchant, no custody",
+      "feeRules": [
+        {
+          "amountField": "checkoutFee",
+          "baseField": "transferAmount",
+          "bearerField": "customerAccountId",
+          "position": "on_top",
+          "rule": {
+            "currencyField": "currency",
+            "field": "checkoutFee",
+            "kind": "exact"
+          }
+        },
+        {
+          "amountField": "carvedFeeAmount",
+          "baseField": "transferAmount",
+          "bearerField": "merchantAccountId",
+          "position": "carved",
+          "rule": {
+            "kind": "tiered",
+            "tiers": [
+              {
+                "fromInclusive": "0",
+                "rule": {
+                  "bps": 100,
+                  "kind": "bps"
+                },
+                "toExclusive": "10000"
+              },
+              {
+                "fromInclusive": "10000",
+                "rule": {
+                  "currencyField": "currency",
+                  "field": "highValueFee",
+                  "kind": "exact"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "fields": {
+        "carvedFeeAmount": {
+          "description": "The carved platform fee selected from transferAmount",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "checkoutFee": {
+          "description": "Immutable exact customer fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "customerAccountId": {
+          "description": "The customer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "highValueFee": {
+          "description": "Immutable exact merchant fee in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "merchantAccountId": {
+          "description": "The merchant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "netOfCarvedFeeAmount": {
+          "description": "The remainder of transferAmount after the carved platform fee",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "transferAmount": {
+          "description": "The gross amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "transfer",
+      "idPrefix": "tran",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paying_1",
+          "paying_2",
+          "paid"
+        ],
+        "transitions": {
+          "collect_service_fee": {
+            "from": [
+              "paying_2"
+            ],
+            "to": "paid"
+          },
+          "pay_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "paying_1"
+          },
+          "pay_piece_2": {
+            "from": [
+              "paying_1"
+            ],
+            "to": "paying_2"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "merchantAccountId",
+        "payer": "customerAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "netOfCarvedFeeAmount",
+            "carvedFeeAmount"
+          ],
+          "totalField": "transferAmount"
+        }
+      ],
+      "required": [
+        "customerAccountId",
+        "merchantAccountId",
+        "platformAccountId",
+        "transferAmount",
+        "netOfCarvedFeeAmount",
+        "checkoutFee",
+        "highValueFee",
+        "currency"
+      ],
+      "summary": "Instant payment from customer to merchant",
+      "title": "Transfer"
+    }
+  ],
+  "product": "instant_transfer_example",
+  "subjects": [],
+  "title": "Instant transfer example",
+  "udl": 1,
+  "version": 1
+}

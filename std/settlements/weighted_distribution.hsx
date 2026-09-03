@@ -1,0 +1,141 @@
+module std.settlements.weighted_distribution
+
+export instrument weighted_distribution<C>(
+  source: party,
+  recipient: party,
+  amount: money<C>,
+  record_at: date,
+  weight: optional<money<C>>,
+  max_recipients: optional<integer>,
+  snapshot: optional<condition>,
+  rounding_policy: optional<text>,
+  withholding_policy: optional<text>,
+  correction_policy: optional<text>,
+  flat: optional<block>,
+  id_prefix_override: optional<text>,
+) {
+  when_not(flat) {
+  fields {
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    amount { type: money<C>; description: "Distribution pool in {C} minor units"; }
+    [source]AccountId { type: account<C>; description: concat("The ", words(source), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    maxRecipients { type: integer; description: concat("Exactly ", max_recipients, " frozen entitlement rows"); const: max_recipients; }
+    record_at { type: date; description: "Stored record date"; }
+  }
+  lifecycle { states open snapshotted; initial open; on [snapshot]: open -> snapshotted; }
+  parties { payer: concat(camel(source), "AccountId"); }
+  required: [concat(camel(source), "AccountId"), currency, amount, record_at, maxRecipients];
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  agent_description: "Reach for weighted distribution when one pool splits across many recipients by declared weights. Record one entitlement per recipient, freeze the set with the snapshot port, then each entitlement pays its own largest-remainder share, so the shares add back to the pool exactly. Settlement batch goes the other way, many charges into one payout.";
+  summary: "Frozen largest-remainder distribution";
+  description: "Evidence-frozen weighted distribution";
+  aggregate_invariants { childInstrumentId: concat(instrument, "_entitlement"); childRefField: concat(camel(instrument), "Id"); childStatuses: [recorded, paid]; count: true; parentField: maxRecipients; }
+  action create { agent_description: "Open a distribution and start recording entitlements. No money moves. The pool amount, the record date, and the exact recipient count are fixed here."; summary: "Open entitlement recording"; moves: []; steps: []; }
+  action [snapshot] {
+    agent_description: "Freeze the entitlement set against a stated evidence reference. The distribution must still be open and its recorded entitlements must match the declared recipient count. Nothing can be recorded afterwards and there is no unfreeze. No money moves.";
+    summary: "Freeze the entitlement set from stored evidence";
+    port { allowedParties: [payer]; }
+    input { type: object; properties: { evidenceReference: { type: string; description: "Required decision reference retained in the operation receipt"; minLength: 1; maxLength: 180; }; }; required: [evidenceReference]; additionalProperties: false; }
+    capture_input { snapshotEvidenceReference: evidenceReference; }
+    moves: [];
+    steps: [];
+  }
+  instruments {
+    instrument {
+      let(parent_name): instrument;
+      id: concat(parent_name, "_entitlement");
+      generatedPrefix: true;
+      fields {
+        currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+        [source]AccountId { type: account<C>; description: concat("The ", words(source), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+        [weight] { type: money<C>; description: "Stored non-negative entitlement weight"; }
+        [parent_name]Id { type: ref<parent_name>; description: concat("The exact ", parent_name); pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+        [recipient]AccountId { type: account<C>; description: concat("The ", words(recipient), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      }
+      lifecycle { states recorded paid; initial recorded; on payout: recorded -> paid; }
+      parties { beneficiary: concat(camel(recipient), "AccountId"); payer: concat(camel(source), "AccountId"); }
+      required: [concat(camel(recipient), "AccountId"), concat(camel(source), "AccountId"), currency, concat(camel(parent_name), "Id"), weight];
+      title: concat(sentence(parent_name), " Entitlement");
+      agent_description: concat("One recipient weighted claim on ", parent_name, ". Record one per recipient before the snapshot. Its share is derived from its weight against the frozen set, never supplied by the caller.");
+      summary: concat("Frozen entitlement in ", parent_name);
+      description: concat("One frozen weighted entitlement in ", parent_name);
+      action create {
+        agent_description: "Record one recipient weight against an open distribution. The parent distribution must still be open, and the currency and source account are copied from it. No money moves. Do not supply a share. It is derived later from the frozen set.";
+        summary: "Record one entitlement before snapshot";
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; bind: { currency: "fields.currency"; [source]AccountId: concat("fields.", camel(source), "AccountId"); }; }
+        moves: [];
+        steps: [];
+      }
+      action payout {
+        agent_description: "Pay this recipient their largest-remainder share of the pool. The parent distribution must already be snapshotted. The amount is computed from the recorded weights, not supplied by the caller, and a zero share moves nothing. This moves money and does not reverse.";
+        summary: "Pay the deterministic largest-remainder share once";
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [snapshotted]; match: { "fields.currency": "fields.currency"; "fields.[source]AccountId": concat("fields.", camel(source), "AccountId"); }; }
+        computes distribute { amountRef: payoutShare; onZero: skip_steps; pool: { from: parent; path: concat("fields.", amount); }; refField: concat(camel(parent_name), "Id"); statuses: [recorded, paid]; weightField: weight; }
+        moves: [{ amount: refs.payoutShare; from: payer; to: beneficiary; key: payout; }];
+        steps: [];
+      }
+    }
+  }
+  }
+  when(flat) {
+    let(pool): get(flat, "pool");
+    let(pool_ref): get(pool, "field");
+    let(pool_ref_field): camel(pool_ref);
+    let(pool_instrument): get(pool, "instrument");
+    let(pool_create_statuses): get(pool, "create_statuses");
+    let(pool_payout_statuses): get(pool, "payout_statuses");
+    let(pool_bind): get(pool, "bind");
+    let(pool_match): get(pool, "match");
+    let(pool_amount_path): get(pool, "amount_path");
+    let(weight_source): get(flat, "weight_source");
+    let(weight_ref): get(weight_source, "field");
+    let(weight_ref_field): camel(weight_ref);
+    let(weight_statuses): get(weight_source, "statuses");
+    let(weight_bind): get(weight_source, "bind");
+    let(weight_match): get(weight_source, "match");
+    let(unique_weight_source): get(weight_source, "unique");
+    let(group): get(flat, "group");
+    let(group_ref): get(group, "field");
+    let(source_account_field): camel(concat(source, "_account_id"));
+    let(recipient_account_field): camel(concat(recipient, "_account_id"));
+    fields {
+      [amount] { type: money<C>; description: get(flat, "amount_description"); }
+      [record_at] { type: date; }
+      [pool_ref] { type: pool_ref; description: get(pool, "description"); pattern: get(pool, "pattern"); }
+      currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+      [weight_ref] { type: weight_ref; description: get(weight_source, "description"); pattern: get(weight_source, "pattern"); }
+      [group_ref] { type: group_ref; description: get(group, "description"); pattern: get(group, "pattern"); }
+      [recipient]AccountId { type: account<C>; description: get(flat, "recipient_account_description"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      [source]AccountId { type: account<C>; description: get(flat, "source_account_description"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    }
+    lifecycle { states claimed paid; initial claimed; on payout: claimed -> paid; }
+    parties { beneficiary: recipient_account_field; }
+    required: get(flat, "required");
+    title: sentence(instrument);
+    id_prefix: if_eq(id_prefix_override, false, prefix(instrument), id_prefix_override);
+    agent_description: concat("One weighted claim on a distribution pool that another instrument owns. Record one claim per recipient before the pool settles. Its share is derived from its weight against the settled pool, never supplied by the caller, and the shares add back to the pool exactly.");
+    summary: "Flat largest-remainder distribution claim";
+    description: "One weighted claim on a settled distribution pool";
+    action create {
+      public: none;
+      agent_description: concat("Record one recipient weight against a pool that is still open. Both the pool and the weight source must be in an accepting state, and the same weight source cannot be claimed twice. No money moves. Do not supply a share. It is derived at payout from the settled pool.");
+      summary: "Open one weighted distribution claim";
+      requires_refs: [
+        { field: pool_ref_field; statuses: pool_create_statuses; bind: pool_bind; match: pool_match; },
+        { field: weight_ref_field; statuses: weight_statuses; bind: weight_bind; match: weight_match; unique: unique_weight_source; }
+      ];
+      moves: [];
+      steps: [];
+    }
+    action payout {
+      public: none;
+      summary: "Pay one largest-remainder share from the settled pool";
+      due { field: record_at; whenParentStatus: { instrumentId: pool_instrument; refField: pool_ref_field; statuses: pool_payout_statuses; }; }
+      requires refs { field: pool_ref_field; statuses: pool_payout_statuses; }
+      computes distribute { amountRef: payoutShare; onZero: skip_steps; pool: { from: parent; path: pool_amount_path; }; refField: pool_ref_field; statuses: [claimed, paid]; weightField: amount; }
+      moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.payoutShare; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", recipient_account_field); }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", source_account_field); }; }; capture: { payoutTransferId: transferId; }; }];
+      steps: [];
+    }
+  }
+}

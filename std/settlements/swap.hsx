@@ -1,0 +1,1114 @@
+module std.settlements.swap;
+export instrument swap<C>(between: list<party>, amounts: block, fees: block, release: condition, dispute: condition, side_names: optional<block>, lifecycle_state_order: optional<list<text>>, action_bindings: optional<block>, parked_states: optional<block>, fixed_prefix: optional<text>) {
+  let(side_a): at(between, 1);
+  let(side_b): at(between, 2);
+  let(side_a_amount): get(amounts, side_a);
+  let(side_b_amount): get(amounts, side_b);
+  let(side_a_fee): get(fees, side_a);
+  let(side_b_fee): get(fees, side_b);
+  when(side_names) {
+    let(side_a_name): get(side_names, "first");
+    let(side_b_name): get(side_names, "second");
+  }
+  when_not(side_names) {
+    let(side_a_name): side_a;
+    let(side_b_name): side_b;
+  }
+  let(side_a_account): concat(camel(side_a_name), "AccountId");
+  let(side_b_account): concat(camel(side_b_name), "AccountId");
+  agent_description: "Reach for swap when two named parties pay each other in one atomic trade and neither leg may settle alone. Both principals fund one escrow together, both cross-payments reserve together, and one dispute unwinds both. A single payer paying a single payee is instant transfer instead.";
+  title: sentence(instrument);
+  when(fixed_prefix) {
+    id_prefix: fixed_prefix;
+  }
+  when_not(fixed_prefix) {
+    id_prefix: prefix(instrument);
+  }
+  summary: concat("Two-party atomic trade between ", words(side_a), " and ", words(side_b));
+  description: concat("Atomic swap between ", words(side_a), " and ", words(side_b), "; half-funded and half-released states do not exist");
+  distinct_parties: true;
+  when(side_names) {
+    parties {
+      payer: side_a_account;
+      beneficiary: side_b_account;
+    }
+  }
+  when_not(side_names) {
+    parties {
+      payer: side_a;
+      beneficiary: side_b;
+    }
+  }
+  required: [side_a_account, side_b_account, platformAccountId, concat(side_a_amount), concat(side_b_amount), concat(side_a_fee), concat(side_b_fee), currency];
+  when_not(side_names) {
+    computes fees {
+      amountField: concat(side_a_fee);
+      baseField: concat(side_a_amount);
+      bearerField: side_a_account;
+      position: on_top;
+      rule {
+        currencyField: currency;
+        field: concat(side_a_fee);
+        kind: exact;
+      }
+    }
+    computes fees {
+      amountField: concat(side_b_fee);
+      baseField: concat(side_b_amount);
+      bearerField: side_b_account;
+      position: on_top;
+      rule {
+        currencyField: currency;
+        field: concat(side_b_fee);
+        kind: exact;
+      }
+    }
+  }
+  when(parked_states) {
+    caller_parked_states: parked_states;
+  }
+  fields {
+    when(side_names) {
+      clawbackAt {
+        type: date;
+        description: "Machine-owned absolute end of the release clawback window";
+        optional: true;
+      }
+      currency {
+        type: text;
+        description: "One currency for both trade legs and both fees";
+        const: C;
+      }
+      "[side_a_account]" {
+        type: account<C>;
+        description: "First trade party and funder";
+        pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+        "x-hyperscale-reference-filter" {
+          column: role;
+          values: [customer_balance];
+        }
+      }
+      "[side_a_amount]" {
+        type: get(amounts, side_a);
+        description: concat("Amount side A holds against the whole exchange, in ", C, " minor units");
+      }
+      "[side_a_fee]" {
+        type: get(fees, side_a);
+        description: "Side A custody fee charged on top and never placed in escrow";
+      }
+      "[side_b_account]" {
+        type: account<C>;
+        description: "Second trade party and funder";
+        pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+        "x-hyperscale-reference-filter" {
+          column: role;
+          values: [customer_balance];
+        }
+      }
+      "[side_b_amount]" {
+        type: get(amounts, side_b);
+        description: concat("Amount side B holds against the whole exchange, in ", C, " minor units");
+      }
+      "[side_b_fee]" {
+        type: get(fees, side_b);
+        description: "Side B custody fee charged on top and never placed in escrow";
+      }
+    }
+    when_not(side_names) {
+      clawbackAt {
+        type: date;
+        description: concat("Machine-owned end of the ", dispute_within, " whole-trade dispute window");
+      }
+      "[side_a_amount]" {
+        type: get(amounts, side_a);
+        description: "Side A amount in SAR minor units, held against the whole trade";
+      }
+      "[side_b_amount]" {
+        type: get(amounts, side_b);
+        description: "Side B amount in SAR minor units, held against the whole trade";
+      }
+      "[side_a_fee]" {
+        type: get(fees, side_a);
+        description: concat("Immutable exact ", words(side_a), " service fee in SAR minor units");
+      }
+      "[side_b_fee]" {
+        type: get(fees, side_b);
+        description: concat("Immutable exact ", words(side_b), " service fee in SAR minor units");
+      }
+    }
+    platformAccountId {
+      type: account<C>;
+      when(side_names) {
+        description: "Product revenue or customer balance account collecting trade service fees";
+      }
+      when_not(side_names) {
+        description: "The product fee collection account";
+      }
+      pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+      "x-hyperscale-fee-collection-port": true;
+      "x-hyperscale-reference-filter" {
+        column: role;
+        values: [customer_balance, product_revenue];
+      }
+    }
+  }
+  when(lifecycle_state_order) {
+    let(states_key): "states";
+    lifecycle {
+      "[states_key]": lifecycle_state_order;
+      initial created;
+      on abandon: created -> abandoned;
+      on cancel: funded -> cancelled;
+      on dispute: released -> clawed_back;
+      on fund: created -> funded;
+      on post: released -> settled;
+      on release: funded -> released;
+    }
+  }
+  when_not(lifecycle_state_order) {
+    lifecycle {
+      states created abandoned funded cancelled released settled clawed_back;
+      initial created;
+      on abandon: created -> abandoned;
+      on cancel: funded -> cancelled;
+      on dispute: released -> clawed_back;
+      on fund: created -> funded;
+      on post: released -> settled;
+      on release: funded -> released;
+    }
+  }
+  when_not(action_bindings) {
+    action abandon {
+      agent_description: "Walk away from a trade that never funded. Only a created trade abandons, and its escrow account must hold nothing, so there is nothing to refund. No money moves.";
+      summary: "Abandon the trade before its atomic funding batch";
+      public_action: concat("abandon", title(camel(instrument)));
+      requires drained {
+        path: "refs.escrowAccountId";
+      }
+      moves: [];
+      steps: [];
+    }
+    action cancel {
+      agent_description: "Unwind a funded trade before release. Both principals return from escrow to their own sides in one batch. The trade must be funded and not yet released. The service fees taken at funding stay with the platform.";
+      summary: "Cancel and return both trade principals atomically";
+      public_action: concat("cancel", title(camel(instrument)));
+      moves: [{
+        amount: concat(side_a_amount);
+        from: "refs.escrowAccountId";
+        to: side_a;
+        key: side_a_refund;
+      }, {
+        amount: concat(side_b_amount);
+        from: "refs.escrowAccountId";
+        to: side_b;
+        key: side_b_refund;
+      }];
+      steps: [];
+    }
+    action create {
+      agent_description: "Open a trade and provision its escrow account. No money moves. Both principals and both exact service fees are fixed here and cannot change afterwards.";
+      summary: concat("Create a ", words(instrument), " atomic trade");
+      public_action: concat("create", title(camel(instrument)));
+      moves: [];
+      steps: [{
+        operation: "account.escrow.provision";
+        bind {
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          "owner.id" {
+            from: instance;
+            path: productId;
+          }
+          "owner.type" {
+            from: const;
+            value: product;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          role {
+            from: const;
+            value: product_escrow;
+          }
+        }
+        capture {
+          escrowAccountId: accountId;
+        }
+      }];
+    }
+    action dispute {
+      agent_description: "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. Either trading party may call it.";
+      summary: "Void both reservations, then refund both principals atomically";
+      public_action: concat("dispute", title(camel(instrument)));
+      deadline {
+        field: clawbackAt;
+      }
+      port {
+        allowedParties: [payer, beneficiary];
+      }
+      moves: [{
+        bind {
+          reason {
+            from: const;
+            value: "Whole trade disputed inside the clawback window";
+          }
+          transferId {
+            from: instance;
+            path: "refs.releaseSideATransferId";
+          }
+        }
+        key: side_a_void;
+        operation: "internal_transfer.void";
+      }, {
+        bind {
+          reason {
+            from: const;
+            value: "Whole trade disputed inside the clawback window";
+          }
+          transferId {
+            from: instance;
+            path: "refs.releaseSideBTransferId";
+          }
+        }
+        key: side_b_void;
+        operation: "internal_transfer.void";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+          "metadata.clawbackOfTransferId" {
+            from: instance;
+            path: "refs.releaseSideATransferId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: "dispute";
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          disputeSideARefundTransferId: transferId;
+        }
+        key: side_a_refund;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+          "metadata.clawbackOfTransferId" {
+            from: instance;
+            path: "refs.releaseSideBTransferId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: "dispute";
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          disputeSideBRefundTransferId: transferId;
+        }
+        key: side_b_refund;
+        operation: "internal_transfer.create";
+      }];
+      steps: [];
+    }
+    action fund {
+      agent_description: "Fund both sides at once. Each side pays its principal into escrow and its service fee to the platform account, four transfers in one batch. The trade must be created and unfunded. This moves real money from both parties.";
+      summary: "Fund both trade sides and collect on-top fees atomically";
+      public_action: concat("fund", title(camel(instrument)));
+      moves: [{
+        amount: concat(side_a_amount);
+        from: side_a;
+        to: "refs.escrowAccountId";
+        key: side_a_principal;
+      }, {
+        amount: concat(side_b_amount);
+        from: side_b;
+        to: "refs.escrowAccountId";
+        key: side_b_principal;
+      }, {
+        amount: concat(side_a_fee);
+        from: side_a;
+        to: platformAccountId;
+        key: side_a_service_fee;
+      }, {
+        amount: concat(side_b_fee);
+        from: side_b;
+        to: platformAccountId;
+        key: side_b_service_fee;
+      }];
+      steps: [];
+    }
+    action post {
+      summary: "Post both trade reservations when the clawback window matures";
+      due {
+        field: clawbackAt;
+      }
+      moves: [{
+        bind {
+          transferId {
+            from: instance;
+            path: "refs.releaseSideATransferId";
+          }
+        }
+        key: "side_a";
+        operation: "internal_transfer.post";
+      }, {
+        bind {
+          transferId {
+            from: instance;
+            path: "refs.releaseSideBTransferId";
+          }
+        }
+        key: "side_b";
+        operation: "internal_transfer.post";
+      }];
+      steps: [];
+    }
+    action release {
+      agent_description: "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. Either trading party may call it.";
+      summary: "Reserve both cross-payments for the whole-trade clawback window";
+      public_action: concat("release", title(camel(instrument)));
+      port {
+        allowedParties: [payer, beneficiary];
+      }
+      sets_at {
+        field: clawbackAt;
+        offset: dispute_within;
+      }
+      moves: [{
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+          "metadata.clawbackAt" {
+            from: instance;
+            path: "fields.clawbackAt";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: "release";
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          releaseSideATransferId: transferId;
+        }
+        key: "side_a";
+        operation: "internal_transfer.reserve";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+          "metadata.clawbackAt" {
+            from: instance;
+            path: "fields.clawbackAt";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: "release";
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          releaseSideBTransferId: transferId;
+        }
+        key: "side_b";
+        operation: "internal_transfer.reserve";
+      }];
+      steps: [];
+    }
+  }
+  when(action_bindings) {
+    let(event_prefix): get(action_bindings, "event_prefix");
+    let(fund_principal_capture): get(action_bindings, "fund_principal_capture");
+    let(fund_fee_capture): get(action_bindings, "fund_fee_capture");
+    let(fund_principal_phase): get(action_bindings, "fund_principal_phase");
+    let(fund_fee_phase): get(action_bindings, "fund_fee_phase");
+    let(release_capture): get(action_bindings, "release_capture");
+    let(release_phase): get(action_bindings, "release_phase");
+    let(release_key): get(action_bindings, "release_key");
+    let(post_key): get(action_bindings, "post_key");
+    let(dispute_capture): get(action_bindings, "dispute_capture");
+    let(dispute_phase): get(action_bindings, "dispute_phase");
+    let(dispute_reason): get(action_bindings, "dispute_reason");
+    let(cancel_capture): get(action_bindings, "cancel_capture");
+    let(cancel_phase): get(action_bindings, "cancel_phase");
+    let(side_a_fund_capture): camel(concat(side_a_name, "_", fund_principal_capture, "_transfer_id"));
+    let(side_b_fund_capture): camel(concat(side_b_name, "_", fund_principal_capture, "_transfer_id"));
+    let(side_a_fee_capture): camel(concat(side_a_name, "_", fund_fee_capture, "_transfer_id"));
+    let(side_b_fee_capture): camel(concat(side_b_name, "_", fund_fee_capture, "_transfer_id"));
+    let(side_a_release_capture): camel(concat(side_a_name, "_", release_capture, "_id"));
+    let(side_b_release_capture): camel(concat(side_b_name, "_", release_capture, "_id"));
+    let(side_a_release_ref): concat("refs.", side_a_release_capture);
+    let(side_b_release_ref): concat("refs.", side_b_release_capture);
+    let(side_a_dispute_capture): camel(concat(side_a_name, "_", dispute_capture, "_transfer_id"));
+    let(side_b_dispute_capture): camel(concat(side_b_name, "_", dispute_capture, "_transfer_id"));
+    let(side_a_cancel_capture): camel(concat(side_a_name, "_", cancel_capture, "_transfer_id"));
+    let(side_b_cancel_capture): camel(concat(side_b_name, "_", cancel_capture, "_transfer_id"));
+    action create {
+      agent_description: "Open a trade and provision its escrow account. No money moves. Both principals and both exact service fees are fixed here and cannot change afterwards.";
+      summary: concat("Create a ", words(instrument), " atomic trade");
+      public_action: concat("create", title(camel(instrument)));
+      moves: [];
+      steps: [{
+        operation: "account.escrow.provision";
+        bind {
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          "owner.id" {
+            from: instance;
+            path: productId;
+          }
+          "owner.type" {
+            from: const;
+            value: product;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          role {
+            from: const;
+            value: product_escrow;
+          }
+        }
+        capture {
+          escrowAccountId: accountId;
+        }
+      }];
+    }
+    action fund {
+      agent_description: "Fund both sides at once. Each side pays its principal into escrow and its service fee to the platform account, four transfers in one batch. The trade must be created and unfunded. This moves real money from both parties.";
+      summary: "Fund both trade sides and collect on-top fees atomically";
+      public_action: concat("fund", title(camel(instrument)));
+      event_name: concat(event_prefix, ".funded");
+      sandbox_failure_point: "funding";
+      moves: [{
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: fund_principal_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+        }
+        capture {
+          "[side_a_fund_capture]": transferId;
+        }
+        key: side_a_principal;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: fund_principal_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+        }
+        capture {
+          "[side_b_fund_capture]": transferId;
+        }
+        key: side_b_principal;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_fee);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: "fields.platformAccountId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: fund_fee_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+        }
+        capture {
+          "[side_a_fee_capture]": transferId;
+        }
+        key: side_a_service_fee;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_fee);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: "fields.platformAccountId";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: fund_fee_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+        }
+        capture {
+          "[side_b_fee_capture]": transferId;
+        }
+        key: side_b_service_fee;
+        operation: "internal_transfer.create";
+      }];
+      steps: [];
+    }
+    action release {
+      agent_description: "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. Either trading party may call it.";
+      summary: "Reserve both cross-payments for the whole-trade clawback window";
+      public_action: concat("release", title(camel(instrument)));
+      event_name: concat(event_prefix, ".released");
+      port {
+        allowedParties: [payer, beneficiary];
+      }
+      sandbox_failure_point: "release";
+      sets_at {
+        field: clawbackAt;
+        offset: dispute_within;
+      }
+      moves: [{
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+          "metadata.clawbackAt" {
+            from: instance;
+            path: "fields.clawbackAt";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: release_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_a_release_capture]": transferId;
+        }
+        key: concat("side_a_", release_key);
+        operation: "internal_transfer.reserve";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+          "metadata.clawbackAt" {
+            from: instance;
+            path: "fields.clawbackAt";
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: release_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_b_release_capture]": transferId;
+        }
+        key: concat("side_b_", release_key);
+        operation: "internal_transfer.reserve";
+      }];
+      steps: [];
+    }
+    action post {
+      summary: "Post both trade reservations when the clawback window matures";
+      event_name: concat(event_prefix, ".posted");
+      due {
+        field: clawbackAt;
+      }
+      moves: [{
+        bind {
+          transferId {
+            from: instance;
+            path: side_a_release_ref;
+          }
+        }
+        key: concat("side_a_", post_key);
+        operation: "internal_transfer.post";
+      }, {
+        bind {
+          transferId {
+            from: instance;
+            path: side_b_release_ref;
+          }
+        }
+        key: concat("side_b_", post_key);
+        operation: "internal_transfer.post";
+      }];
+      steps: [];
+    }
+    action dispute {
+      agent_description: "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. Either trading party may call it.";
+      summary: "Void both reservations, then refund both principals atomically";
+      public_action: concat("dispute", title(camel(instrument)));
+      event_name: concat(event_prefix, ".clawed_back");
+      deadline {
+        field: clawbackAt;
+      }
+      port {
+        allowedParties: [payer, beneficiary];
+      }
+      moves: [{
+        bind {
+          reason {
+            from: const;
+            value: dispute_reason;
+          }
+          transferId {
+            from: instance;
+            path: side_a_release_ref;
+          }
+        }
+        key: side_a_void;
+        operation: "internal_transfer.void";
+      }, {
+        bind {
+          reason {
+            from: const;
+            value: dispute_reason;
+          }
+          transferId {
+            from: instance;
+            path: side_b_release_ref;
+          }
+        }
+        key: side_b_void;
+        operation: "internal_transfer.void";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+          "metadata.clawbackOfTransferId" {
+            from: instance;
+            path: side_a_release_ref;
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: dispute_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_a_dispute_capture]": transferId;
+        }
+        key: side_a_refund;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+          "metadata.clawbackOfTransferId" {
+            from: instance;
+            path: side_b_release_ref;
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: dispute_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_b_dispute_capture]": transferId;
+        }
+        key: side_b_refund;
+        operation: "internal_transfer.create";
+      }];
+      steps: [];
+    }
+    action cancel {
+      agent_description: "Unwind a funded trade before release. Both principals return from escrow to their own sides in one batch. The trade must be funded and not yet released. The service fees taken at funding stay with the platform.";
+      summary: "Cancel and return both trade principals atomically";
+      public_action: concat("cancel", title(camel(instrument)));
+      event_name: concat(event_prefix, ".cancelled");
+      moves: [{
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_a_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_a_account);
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: cancel_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_a_cancel_capture]": transferId;
+        }
+        key: side_a_refund;
+        operation: "internal_transfer.create";
+      }, {
+        bind {
+          amount {
+            from: instance;
+            path: concat("fields.", side_b_amount);
+          }
+          currency {
+            from: instance;
+            path: "fields.currency";
+          }
+          destinationAccountId {
+            from: instance;
+            path: concat("fields.", side_b_account);
+          }
+          "metadata.instrumentId" {
+            from: const;
+            value: instrument;
+          }
+          "metadata.instrumentInstanceId" {
+            from: instance;
+            path: instrumentInstanceId;
+          }
+          "metadata.phase" {
+            from: const;
+            value: cancel_phase;
+          }
+          productId {
+            from: instance;
+            path: productId;
+          }
+          sourceAccountId {
+            from: instance;
+            path: "refs.escrowAccountId";
+          }
+        }
+        capture {
+          "[side_b_cancel_capture]": transferId;
+        }
+        key: side_b_refund;
+        operation: "internal_transfer.create";
+      }];
+      steps: [];
+    }
+    action abandon {
+      agent_description: "Walk away from a trade that never funded. Only a created trade abandons, and its escrow account must hold nothing, so there is nothing to refund. No money moves.";
+      summary: "Abandon the trade before its atomic funding batch";
+      public_action: concat("abandon", title(camel(instrument)));
+      event_name: concat(event_prefix, ".abandoned");
+      requires drained {
+        path: "refs.escrowAccountId";
+      }
+      moves: [];
+      steps: [];
+    }
+  }
+}

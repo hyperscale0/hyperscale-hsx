@@ -1,0 +1,984 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_piece_1",
+        "pay_piece_2",
+        "collect_service_fee"
+      ],
+      "actions": {
+        "collect_service_fee": {
+          "agentDescription": "Finish the payment and collect the service fee the shopper owes on top of the amount. Both pieces must already be paid. When the product charges no payer fee this only closes the payment out.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.serviceFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "checkout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_service_fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "collectServiceFeeTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectServiceFeeCheckout",
+          "steps": [],
+          "summary": "Collect the payer-side service fee"
+        },
+        "create": {
+          "agentDescription": "Open the payment row before anything moves. The caller supplies the orderTotal, the currency, and both party accounts. Fee and derived pieces are computed from the orderTotal, callers never supply them. Call pay piece 1 to move the money.",
+          "moves": [],
+          "publicAction": "createCheckout",
+          "steps": [],
+          "summary": "Create a checkout payment"
+        },
+        "pay_piece_1": {
+          "agentDescription": "Move the first piece from the shopper to the merchant. The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "checkout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "payPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece1Checkout",
+          "steps": [],
+          "summary": "Pay piece 1 of the amount through"
+        },
+        "pay_piece_2": {
+          "agentDescription": "Move the carved platform fee out of the amount. Call this after pay piece 1. When the product carves no merchant fee this only steps the payment forward and moves nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "checkout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "payPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece2Checkout",
+          "steps": [],
+          "summary": "Pay piece 2 of the amount through"
+        }
+      },
+      "agentDescription": "Reach for instant transfer when the shopper pays the merchant straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.",
+      "description": "Instant transfer: the shopper pays orderTotal straight through to the merchant, no custody",
+      "feeRules": [
+        {
+          "amountField": "serviceFeeAmount",
+          "baseField": "orderTotal",
+          "bearerField": "shopperAccountId",
+          "position": "on_top",
+          "rule": {
+            "bps": 100,
+            "kind": "bps"
+          }
+        },
+        {
+          "amountField": "piece2Amount",
+          "baseField": "orderTotal",
+          "bearerField": "merchantAccountId",
+          "position": "carved",
+          "rule": {
+            "bps": 200,
+            "kind": "bps"
+          }
+        }
+      ],
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "merchantAccountId": {
+          "description": "The merchant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "orderTotal": {
+          "description": "The gross amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece1Amount": {
+          "description": "98% of orderTotal (carries the integer-division remainder): released to the merchant. Computed as floor(orderTotal * 9800 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "2% of orderTotal: released to the platform. Computed as floor(orderTotal * 200 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "serviceFeeAmount": {
+          "description": "Machine-owned 1% service fee computed from orderTotal; charged on top",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "shopperAccountId": {
+          "description": "The shopper account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "checkout",
+      "idPrefix": "chec",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paying_1",
+          "paying_2",
+          "paid"
+        ],
+        "transitions": {
+          "collect_service_fee": {
+            "from": [
+              "paying_2"
+            ],
+            "to": "paid"
+          },
+          "pay_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "paying_1"
+          },
+          "pay_piece_2": {
+            "from": [
+              "paying_1"
+            ],
+            "to": "paying_2"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "merchantAccountId",
+        "payer": "shopperAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "orderTotal"
+        }
+      ],
+      "required": [
+        "shopperAccountId",
+        "merchantAccountId",
+        "platformAccountId",
+        "orderTotal",
+        "piece1Amount",
+        "currency"
+      ],
+      "summary": "Instant payment from shopper to merchant",
+      "title": "Checkout"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "place_deposit",
+        "assess_damage",
+        "release_deposit"
+      ],
+      "actions": {
+        "assess_damage": {
+          "agentDescription": "Claim the held deposit for the merchant. The deposit must be in held. The reservation settles here, whole or up to the decided amount with the exact remainder released back to the shopper. There is no return afterwards.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "assessDamageRentalDeposit",
+          "steps": [],
+          "summary": "Claim the deposit for the merchant through assess_damage"
+        },
+        "create": {
+          "agentDescription": "Open the deposit row before anything is reserved. The caller supplies the depositAmount, the currency, and the shopper and merchant accounts. Nothing is reserved yet, call place deposit next.",
+          "moves": [],
+          "publicAction": "createRentalDeposit",
+          "steps": [],
+          "summary": "Create a rental deposit"
+        },
+        "place_deposit": {
+          "agentDescription": "Reserve the depositAmount against the shopper's account in the merchant's favor. The deposit must be created. The money is held, not paid: the claim posts it to the merchant and the return releases it back.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.depositAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "rental_deposit"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "place_deposit"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "placeDepositReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "placeDepositRentalDeposit",
+          "steps": [],
+          "summary": "Reserve the depositAmount against the shopper's account"
+        },
+        "release_deposit": {
+          "agentDescription": "Return the held deposit to the shopper. The deposit must be in held and unclaimed. This releases the reservation whole and the merchant receives nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "releaseDepositRentalDeposit",
+          "steps": [],
+          "summary": "Return the deposit to the shopper through release_deposit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the shopper in the merchant's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "description": "Deposit: the depositAmount is reserved against the shopper's account in the merchant's favor, then claimed or returned in full",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "depositAmount": {
+          "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "merchantAccountId": {
+          "description": "The merchant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "shopperAccountId": {
+          "description": "The shopper account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "rental_deposit",
+      "idPrefix": "rd",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned"
+        ],
+        "transitions": {
+          "assess_damage": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "place_deposit": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "release_deposit": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "merchantAccountId",
+        "payer": "shopperAccountId"
+      },
+      "required": [
+        "shopperAccountId",
+        "merchantAccountId",
+        "depositAmount",
+        "currency"
+      ],
+      "summary": "Refundable deposit from shopper held for merchant",
+      "title": "Rental deposit"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "fund_share_1",
+        "distribute_share_1",
+        "fund_share_2",
+        "distribute_share_2"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a fulfillment pool period and provision the escrow account the pool sits in. This is the first call on the period, and funding a share refuses until it lands. It moves no money.",
+          "moves": [],
+          "publicAction": "createFulfillmentPool",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Open a fulfillment pool period"
+        },
+        "distribute_share_1": {
+          "due": {
+            "field": "payoutDate"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.courierShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.courierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "fulfillment_pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the courier's share of the pool"
+        },
+        "distribute_share_2": {
+          "due": {
+            "field": "payoutDate"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.packerShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.packerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "fulfillment_pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the packer's share of the pool"
+        },
+        "fund_share_1": {
+          "agentDescription": "Move share 1 of the period total, the courier's cut, from the merchant into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the merchant for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.courierShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "fulfillment_pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                }
+              },
+              "capture": {
+                "fundShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare1FulfillmentPool",
+          "steps": [],
+          "summary": "Pool share 1 of the period total"
+        },
+        "fund_share_2": {
+          "agentDescription": "Move share 2 of the period total, the packer's cut, from the merchant into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the merchant for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.packerShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "fulfillment_pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.merchantAccountId"
+                }
+              },
+              "capture": {
+                "fundShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare2FulfillmentPool",
+          "steps": [],
+          "summary": "Pool share 2 of the period total"
+        }
+      },
+      "agentDescription": "Reach for fulfillment pool when the merchant funds one period total that is then split across 2 fixed recipients by stored share amounts. Callers fund the pool one share at a time. Each recipient's payout fires from the stored payout date, not from a call.",
+      "description": "Pooled split: the merchant pools the period's poolTotal share by share; the pool distributes to every recipient in full on the stored payout date",
+      "fields": {
+        "courierAccountId": {
+          "description": "The courier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "courierShareAmount": {
+          "description": "60% of poolTotal (carries the integer-division remainder): the courier's share. Computed as floor(poolTotal * 6000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "merchantAccountId": {
+          "description": "The merchant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "packerAccountId": {
+          "description": "The packer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "packerShareAmount": {
+          "description": "40% of poolTotal: the packer's share. Computed as floor(poolTotal * 4000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "payoutDate": {
+          "description": "The period's payout date; the pool distributes from it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "poolTotal": {
+          "description": "The pooled period total in SAR minor units; the share fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "fulfillment_pool",
+      "idPrefix": "fp",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "pooling_1",
+          "pooled",
+          "distributing_1",
+          "distributed"
+        ],
+        "transitions": {
+          "distribute_share_1": {
+            "from": [
+              "pooled"
+            ],
+            "to": "distributing_1"
+          },
+          "distribute_share_2": {
+            "from": [
+              "distributing_1"
+            ],
+            "to": "distributed"
+          },
+          "fund_share_1": {
+            "from": [
+              "created"
+            ],
+            "to": "pooling_1"
+          },
+          "fund_share_2": {
+            "from": [
+              "pooling_1"
+            ],
+            "to": "pooled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "courierAccountId",
+        "payer": "merchantAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "courierShareAmount",
+            "packerShareAmount"
+          ],
+          "totalField": "poolTotal"
+        }
+      ],
+      "required": [
+        "merchantAccountId",
+        "courierAccountId",
+        "packerAccountId",
+        "poolTotal",
+        "payoutDate",
+        "courierShareAmount",
+        "packerShareAmount",
+        "currency"
+      ],
+      "summary": "Period pool from merchant split 2 ways",
+      "title": "Fulfillment pool"
+    }
+  ],
+  "product": "commerce_escrow",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "order",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Order",
+      "version": 1
+    }
+  ],
+  "title": "Commerce cooperative",
+  "udl": 1,
+  "version": 1
+}

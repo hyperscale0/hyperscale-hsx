@@ -1,0 +1,26 @@
+program unified_fees "Unified fees"
+
+import { instant_transfer } from "std/settlements"
+
+party buyer: person
+party seller: business
+
+settlement sale = instant_transfer {
+  payer: buyer
+  payee: seller
+  amount: price: money(SAR)
+  fees {
+    buyer: checkoutFee: money(SAR)
+    seller {
+      tier {
+        from: 0
+        to: 10000
+        fee: 1%
+      }
+      tier {
+        from: 10000
+        fee: highValueFee: money(SAR)
+      }
+    }
+  }
+}

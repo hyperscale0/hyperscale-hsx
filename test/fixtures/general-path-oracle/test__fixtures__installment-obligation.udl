@@ -1,0 +1,1528 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "approve",
+        "advance",
+        "collect_installment_1",
+        "mark_installment_1_delinquent",
+        "collect_installment_2",
+        "mark_installment_2_delinquent",
+        "collect_installment_3",
+        "mark_installment_3_delinquent",
+        "complete",
+        "write_off"
+      ],
+      "actions": {
+        "advance": {
+          "agentDescription": "Pay the principal out to the advance recipient and put the obligation into repayment. The obligation must be approved. This moves the whole principal and does not reverse, so approve is the last point to stop.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.principal"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.advanceRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "advance"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                }
+              },
+              "capture": {
+                "advanceAdvanceTransferId": "transferId"
+              },
+              "key": "advance",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "advanceObligation",
+          "steps": [],
+          "summary": "Advance the principal to the advance recipient; the internal ledger receipt is the confirmation"
+        },
+        "approve": {
+          "agentDescription": "Approve the draft obligation and freeze its principal partition and due anchors. The obligation must be in draft. No money moves. Where the product advances funds, approve is what makes advance available.",
+          "moves": [],
+          "publicAction": "approveObligation",
+          "steps": [],
+          "summary": "Approve the immutable principal partition and stored anchors"
+        },
+        "collect_installment_1": {
+          "due": {
+            "field": "firstDueAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment1Amount"
+              },
+              "instrumentId": "obligation_installment_1_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Close delinquent installment 1 after linked payments reach its stored amount"
+        },
+        "collect_installment_2": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment2Amount"
+              },
+              "instrumentId": "obligation_installment_2_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Close delinquent installment 2 after linked payments reach its stored amount"
+        },
+        "collect_installment_3": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment3Amount"
+              },
+              "instrumentId": "obligation_installment_3_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Close delinquent installment 3 after linked payments reach its stored amount"
+        },
+        "complete": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment1Amount"
+              },
+              "instrumentId": "obligation_installment_1_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            },
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment2Amount"
+              },
+              "instrumentId": "obligation_installment_2_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            },
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_exactly",
+                "targetField": "installment3Amount"
+              },
+              "instrumentId": "obligation_installment_3_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Close the obligation only after every stored anchor is paid exactly"
+        },
+        "create": {
+          "agentDescription": "Create the obligation in draft with its principal split across stored installment anchors. Approve is the next call. Where the product declares a derived fee, creating the obligation also moves that fee from its bearer to the platform account.",
+          "moves": [],
+          "publicAction": "createObligation",
+          "steps": [],
+          "summary": "Create a obligation obligation"
+        },
+        "mark_installment_1_delinquent": {
+          "due": {
+            "field": "firstDueAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_below",
+                "targetField": "installment1Amount"
+              },
+              "instrumentId": "obligation_installment_1_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "setsAt": {
+            "field": "installment1DelinquentAfter",
+            "marker": true,
+            "offset": "PT1S"
+          },
+          "steps": [],
+          "summary": "Mark installment 1 delinquent only when its due anchor is unmet"
+        },
+        "mark_installment_2_delinquent": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_below",
+                "targetField": "installment2Amount"
+              },
+              "instrumentId": "obligation_installment_2_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "setsAt": {
+            "field": "installment2DelinquentAfter",
+            "marker": true,
+            "offset": "PT1S"
+          },
+          "steps": [],
+          "summary": "Mark installment 2 delinquent only when its due anchor is unmet"
+        },
+        "mark_installment_3_delinquent": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_below",
+                "targetField": "installment3Amount"
+              },
+              "instrumentId": "obligation_installment_3_payment",
+              "over": "children",
+              "refField": "obligationId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "setsAt": {
+            "field": "installment3DelinquentAfter",
+            "marker": true,
+            "offset": "PT1S"
+          },
+          "steps": [],
+          "summary": "Mark installment 3 delinquent only when its due anchor is unmet"
+        },
+        "write_off": {
+          "agentDescription": "Write off the remaining exposure and stop the obligation. No money moves and nothing is refunded. This is the bookkeeping exit for debt that will not be collected. A written-off obligation never returns to repayment.",
+          "moves": [],
+          "publicAction": "writeOffObligation",
+          "steps": [],
+          "summary": "Write off the remaining exposure without moving money"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "aggregateInvariants": [
+        {
+          "childField": "amount",
+          "childInstrumentId": "obligation_installment_1_payment",
+          "childRefField": "obligationId",
+          "childStatuses": [
+            "paid"
+          ],
+          "parentField": "installment1Amount"
+        },
+        {
+          "childField": "amount",
+          "childInstrumentId": "obligation_installment_2_payment",
+          "childRefField": "obligationId",
+          "childStatuses": [
+            "paid"
+          ],
+          "parentField": "installment2Amount"
+        },
+        {
+          "childField": "amount",
+          "childInstrumentId": "obligation_installment_3_payment",
+          "childRefField": "obligationId",
+          "childStatuses": [
+            "paid"
+          ],
+          "parentField": "installment3Amount"
+        }
+      ],
+      "description": "Installment obligation for debtor; repayment source pays settlement recipient against exact stored anchors",
+      "fields": {
+        "advanceRecipientAccountId": {
+          "description": "The advance recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "debtorAccountId": {
+          "description": "The debtor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "firstDueAt": {
+          "description": "Due date of the first installment; later anchors use fixed offsets of P30D",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "installment1Amount": {
+          "description": "Stored amount for installment 1 of 3 (carries the integer-division remainder)",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment1DelinquentAfter": {
+          "description": "Machine-set marker proving installment 1 reached its stored due date while unpaid",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "installment2Amount": {
+          "description": "Stored amount for installment 2 of 3",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment2DelinquentAfter": {
+          "description": "Machine-set marker proving installment 2 reached its stored due date while unpaid",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "installment3Amount": {
+          "description": "Stored amount for installment 3 of 3",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment3DelinquentAfter": {
+          "description": "Machine-set marker proving installment 3 reached its stored due date while unpaid",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "principal": {
+          "description": "The principal in SAR minor units; the stored installment anchors partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repaymentSourceAccountId": {
+          "description": "The repayment source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "settlementRecipientAccountId": {
+          "description": "The settlement recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "obligation",
+      "idPrefix": "obli",
+      "lifecycle": {
+        "initial": "draft",
+        "states": [
+          "draft",
+          "approved",
+          "active",
+          "installment_1_delinquent",
+          "installment_2_delinquent",
+          "installment_3_delinquent",
+          "written_off",
+          "repaid"
+        ],
+        "transitions": {
+          "advance": {
+            "from": [
+              "approved"
+            ],
+            "to": "active"
+          },
+          "approve": {
+            "from": [
+              "draft"
+            ],
+            "to": "approved"
+          },
+          "collect_installment_1": {
+            "from": [
+              "installment_1_delinquent",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "active"
+          },
+          "collect_installment_2": {
+            "from": [
+              "installment_1_delinquent",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "active"
+          },
+          "collect_installment_3": {
+            "from": [
+              "installment_1_delinquent",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "active"
+          },
+          "complete": {
+            "from": [
+              "active",
+              "installment_1_delinquent",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "repaid"
+          },
+          "mark_installment_1_delinquent": {
+            "from": [
+              "active",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "installment_1_delinquent"
+          },
+          "mark_installment_2_delinquent": {
+            "from": [
+              "active",
+              "installment_1_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "installment_2_delinquent"
+          },
+          "mark_installment_3_delinquent": {
+            "from": [
+              "active",
+              "installment_1_delinquent",
+              "installment_2_delinquent"
+            ],
+            "to": "installment_3_delinquent"
+          },
+          "write_off": {
+            "from": [
+              "draft",
+              "approved",
+              "active",
+              "installment_1_delinquent",
+              "installment_2_delinquent",
+              "installment_3_delinquent"
+            ],
+            "to": "written_off"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "advanceRecipientAccountId",
+        "payer": "repaymentSourceAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "installment1Amount",
+            "installment2Amount",
+            "installment3Amount"
+          ],
+          "totalField": "principal"
+        }
+      ],
+      "required": [
+        "advanceRecipientAccountId",
+        "settlementRecipientAccountId",
+        "repaymentSourceAccountId",
+        "debtorAccountId",
+        "currency",
+        "principal",
+        "firstDueAt",
+        "installment1Amount",
+        "installment2Amount",
+        "installment3Amount"
+      ],
+      "summary": "3-anchor obligation for debtor",
+      "title": "Obligation"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "repay",
+        "refund"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a payment record against installment 1. The parent obligation must be live. No money moves yet. Repay is what pays.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createObligationInstallment1Payment",
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "field": "obligationId",
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a payment record for installment 1"
+        },
+        "refund": {
+          "agentDescription": "Return one whole installment 1 payment to the payer. The record must be paid, and the refund is always its full amount, so split a payment across records when a partial refund could be needed. This moves money back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_1_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                }
+              },
+              "capture": {
+                "refundRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundObligationInstallment1Payment",
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Refund this one stored installment 1 payment whole"
+        },
+        "repay": {
+          "agentDescription": "Pay this record's amount toward installment 1. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_1_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "repay"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                }
+              },
+              "capture": {
+                "repayRepaymentTransferId": "transferId"
+              },
+              "key": "repayment",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "repayObligationInstallment1Payment",
+          "requiresExposure": [
+            {
+              "amountField": "amount",
+              "anchorField": "obligationId",
+              "capField": "installment1Amount",
+              "capOnAnchor": true,
+              "childInstrumentId": "obligation_installment_1_payment",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay a partial or full amount against installment 1"
+        }
+      },
+      "agentDescription": "One payment against installment 1 of the obligation. Payments can be partial, so create a record, repay it, and the parent installment closes once its paid records sum to the stored anchor amount.",
+      "description": "One partial or full payment bound to installment 1 of obligation; the operation name fixes the anchor and obligationId fixes the obligation",
+      "fields": {
+        "amount": {
+          "description": "Positive payment amount capped with its paid siblings at installment1Amount",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "obligationId": {
+          "description": "The exact obligation this payment belongs to",
+          "pattern": "^obli_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "repaymentSourceAccountId": {
+          "description": "The repayment source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "settlementRecipientAccountId": {
+          "description": "The settlement recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "obligation_installment_1_payment",
+      "idPrefix": "zzaa",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paid",
+          "refunded"
+        ],
+        "transitions": {
+          "refund": {
+            "from": [
+              "paid"
+            ],
+            "to": "refunded"
+          },
+          "repay": {
+            "from": [
+              "created"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "settlementRecipientAccountId",
+        "payer": "repaymentSourceAccountId"
+      },
+      "required": [
+        "settlementRecipientAccountId",
+        "repaymentSourceAccountId",
+        "amount",
+        "currency",
+        "obligationId"
+      ],
+      "summary": "Anchor-bound payment for installment 1",
+      "title": "Obligation Installment 1 Payment"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "repay",
+        "refund"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a payment record against installment 2. The parent obligation must be live. No money moves yet. Repay is what pays.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createObligationInstallment2Payment",
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "field": "obligationId",
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a payment record for installment 2"
+        },
+        "refund": {
+          "agentDescription": "Return one whole installment 2 payment to the payer. The record must be paid, and the refund is always its full amount, so split a payment across records when a partial refund could be needed. This moves money back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_2_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                }
+              },
+              "capture": {
+                "refundRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundObligationInstallment2Payment",
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Refund this one stored installment 2 payment whole"
+        },
+        "repay": {
+          "agentDescription": "Pay this record's amount toward installment 2. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_2_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "repay"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                }
+              },
+              "capture": {
+                "repayRepaymentTransferId": "transferId"
+              },
+              "key": "repayment",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "repayObligationInstallment2Payment",
+          "requiresExposure": [
+            {
+              "amountField": "amount",
+              "anchorField": "obligationId",
+              "capField": "installment2Amount",
+              "capOnAnchor": true,
+              "childInstrumentId": "obligation_installment_2_payment",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay a partial or full amount against installment 2"
+        }
+      },
+      "agentDescription": "One payment against installment 2 of the obligation. Payments can be partial, so create a record, repay it, and the parent installment closes once its paid records sum to the stored anchor amount.",
+      "description": "One partial or full payment bound to installment 2 of obligation; the operation name fixes the anchor and obligationId fixes the obligation",
+      "fields": {
+        "amount": {
+          "description": "Positive payment amount capped with its paid siblings at installment2Amount",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "obligationId": {
+          "description": "The exact obligation this payment belongs to",
+          "pattern": "^obli_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "repaymentSourceAccountId": {
+          "description": "The repayment source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "settlementRecipientAccountId": {
+          "description": "The settlement recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "obligation_installment_2_payment",
+      "idPrefix": "zzab",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paid",
+          "refunded"
+        ],
+        "transitions": {
+          "refund": {
+            "from": [
+              "paid"
+            ],
+            "to": "refunded"
+          },
+          "repay": {
+            "from": [
+              "created"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "settlementRecipientAccountId",
+        "payer": "repaymentSourceAccountId"
+      },
+      "required": [
+        "settlementRecipientAccountId",
+        "repaymentSourceAccountId",
+        "amount",
+        "currency",
+        "obligationId"
+      ],
+      "summary": "Anchor-bound payment for installment 2",
+      "title": "Obligation Installment 2 Payment"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "repay",
+        "refund"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a payment record against installment 3. The parent obligation must be live. No money moves yet. Repay is what pays.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createObligationInstallment3Payment",
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "field": "obligationId",
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a payment record for installment 3"
+        },
+        "refund": {
+          "agentDescription": "Return one whole installment 3 payment to the payer. The record must be paid, and the refund is always its full amount, so split a payment across records when a partial refund could be needed. This moves money back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_3_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                }
+              },
+              "capture": {
+                "refundRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundObligationInstallment3Payment",
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Refund this one stored installment 3 payment whole"
+        },
+        "repay": {
+          "agentDescription": "Pay this record's amount toward installment 3. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.settlementRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "obligation_installment_3_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "repay"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.repaymentSourceAccountId"
+                }
+              },
+              "capture": {
+                "repayRepaymentTransferId": "transferId"
+              },
+              "key": "repayment",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "repayObligationInstallment3Payment",
+          "requiresExposure": [
+            {
+              "amountField": "amount",
+              "anchorField": "obligationId",
+              "capField": "installment3Amount",
+              "capOnAnchor": true,
+              "childInstrumentId": "obligation_installment_3_payment",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "obligationId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.repaymentSourceAccountId": "fields.repaymentSourceAccountId",
+                "fields.settlementRecipientAccountId": "fields.settlementRecipientAccountId"
+              },
+              "statuses": [
+                "active",
+                "installment_1_delinquent",
+                "installment_2_delinquent",
+                "installment_3_delinquent"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay a partial or full amount against installment 3"
+        }
+      },
+      "agentDescription": "One payment against installment 3 of the obligation. Payments can be partial, so create a record, repay it, and the parent installment closes once its paid records sum to the stored anchor amount.",
+      "description": "One partial or full payment bound to installment 3 of obligation; the operation name fixes the anchor and obligationId fixes the obligation",
+      "fields": {
+        "amount": {
+          "description": "Positive payment amount capped with its paid siblings at installment3Amount",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "obligationId": {
+          "description": "The exact obligation this payment belongs to",
+          "pattern": "^obli_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "repaymentSourceAccountId": {
+          "description": "The repayment source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "settlementRecipientAccountId": {
+          "description": "The settlement recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "obligation_installment_3_payment",
+      "idPrefix": "zzac",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paid",
+          "refunded"
+        ],
+        "transitions": {
+          "refund": {
+            "from": [
+              "paid"
+            ],
+            "to": "refunded"
+          },
+          "repay": {
+            "from": [
+              "created"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "settlementRecipientAccountId",
+        "payer": "repaymentSourceAccountId"
+      },
+      "required": [
+        "settlementRecipientAccountId",
+        "repaymentSourceAccountId",
+        "amount",
+        "currency",
+        "obligationId"
+      ],
+      "summary": "Anchor-bound payment for installment 3",
+      "title": "Obligation Installment 3 Payment"
+    }
+  ],
+  "product": "installment_obligation",
+  "subjects": [],
+  "title": "Installment obligation",
+  "udl": 1,
+  "version": 1
+}

@@ -1,0 +1,38 @@
+program fixed_side_exchange "Fixed side exchange";
+import { swap } from "std/settlements";
+party buyer: person;
+party seller: business;
+instrument exchange = swap(between: [buyer, seller], amounts: {
+  buyer: legAAmount: money(USD);
+  seller: legBAmount: money(USD);
+}, fees: {
+  buyer: legAServiceFeeAmount: money(USD);
+  seller: legBServiceFeeAmount: money(USD);
+}, release: port confirm_exchange within P7D, dispute: port dispute_exchange within P7D, side_names: {
+  first: legA;
+  second: legB;
+}, lifecycle_state_order: [created, funded, released, settled, cancelled, abandoned, clawed_back], action_bindings: {
+  event_prefix: exchange;
+  fund_principal_capture: funding;
+  fund_fee_capture: service_fee;
+  fund_principal_phase: funding;
+  fund_fee_phase: fee;
+  release_capture: pending_release;
+  release_phase: pending;
+  release_key: reserve;
+  post_key: mature;
+  dispute_capture: disputed_refund;
+  dispute_phase: dispute;
+  dispute_reason: "Exchange disputed inside its review window";
+  cancel_capture: cancelled_refund;
+  cancel_phase: cancellation;
+}, parked_states: {
+  created: "The parties have not funded the exchange.";
+  funded: "The parties have not released or cancelled the exchange.";
+}, fixed_prefix: exch);
+port confirm_exchange {
+  allowed: [buyer, seller];
+}
+port dispute_exchange {
+  allowed: [buyer, seller];
+}

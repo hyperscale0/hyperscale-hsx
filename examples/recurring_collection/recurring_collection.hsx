@@ -1,0 +1,21 @@
+program recurring_collection_example "Recurring collection example"
+import { recurring_collection, scheduled } from "std/settlements"
+party debtor: person
+party repayment_source: business
+party recipient: business
+settlement obligation = scheduled {
+  mode: obligation
+  payer: repayment_source
+  payee: recipient
+  debtor: debtor
+  amount: principal: money(SAR)
+  count: 2
+  every: P30D
+  first_due: firstDueAt
+  mandate: port mandate_evidence
+}
+settlement collection = recurring_collection {}
+port mandate_evidence {
+  allowed: [repayment_source]
+  shape: { evidenceReference: text }
+}

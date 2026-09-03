@@ -9,7 +9,7 @@ has to guess where it sits.
 
 What that means in practice:
 
-- **Yes.** Say your project uses HSX, compiles HSX, or reads the HSX-JSON IR.
+- **Yes.** Say your project uses HSX, compiles HSX, or reads its internal lowering record.
   Say it in your README, your docs, your talk, and your package description.
   Fork this repository and keep the notices intact.
 - **Yes.** Publish an HSX implementation or tool in another language, and name
@@ -23,9 +23,9 @@ What that means in practice:
 ## Claiming compatibility
 
 An independent implementation may say it "implements HSX IR version X" only
-while it emits IR that validates against the published schema for that version,
-from the published example programs, unmodified. The schema in
-[`spec/`](./spec) and the programs in [`examples/`](./examples) are the whole
+while it emits canonical UDL that validates against the UDL schema published
+for that version, from the published example programs, unmodified. The UDL
+schema and the programs in [`examples/`](./examples) are the whole
 test: no edited fixture, no local relaxation of the schema.
 
 That claim is a statement about your implementation, so keep the marks out of

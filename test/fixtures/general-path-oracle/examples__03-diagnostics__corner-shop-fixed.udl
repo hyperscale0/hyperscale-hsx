@@ -1,0 +1,630 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "confirm_pickup",
+        "cancel",
+        "fund_piece_2",
+        "release_piece_2",
+        "refund_piece_2",
+        "unfund_piece_1",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a basket that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonBasket",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "cancel": {
+          "agentDescription": "Cancel the basket and start returning the held money to the shopper. It must be funded and not yet released. Cancellation is final, and a cancelled settlement never releases. Where the product sets a release deadline, this call is refused once that date passes.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelBasket",
+          "steps": [],
+          "summary": "Cancel the settlement and start the unwind"
+        },
+        "confirm_pickup": {
+          "agentDescription": "Confirm confirm_pickup and start paying the held money out of escrow. The basket must be funded first, and the caller must be grocer. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.grocerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_pickup"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmPickupTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "confirmPickupBasket",
+          "steps": [],
+          "summary": "Confirm through confirm_pickup and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the basket and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createBasket",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a basket settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the shopper's money into this settlement's escrow. Call it after create and before any release. It debits the shopper for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Basket",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move piece 2 of the split amount from the shopper into escrow, which completes funding. Piece 1 must be in escrow first. It debits the shopper for real, and the whole held amount then sits in escrow.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Basket",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "refund_piece_2": {
+          "agentDescription": "Return piece 2 out of escrow to the grocer, which closes the cancellation. Cancel must have run first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.grocerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "refundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundPiece2Basket",
+          "steps": [],
+          "summary": "Return piece 2 on cancellation"
+        },
+        "release_piece_2": {
+          "agentDescription": "Pay piece 2 out of escrow to the grocer, which closes the release. The release decision must have run first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.grocerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releasePiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releasePiece2Basket",
+          "steps": [],
+          "summary": "Release piece 2 of the held amount"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return piece 1 from escrow to the shopper and abandon the basket. It runs only while funding stopped after piece 1, before the release. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.shopperAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "basket"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Basket",
+          "steps": [],
+          "summary": "Return piece 1 to the shopper on abandonment"
+        }
+      },
+      "agentDescription": "Reach for basket when the shopper must commit money up front and nobody is paid until confirm_pickup fires. Funding moves basketTotal into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the shopper funds basketTotal into this settlement's own escrow; grocer confirms through confirm_pickup to release",
+      "fields": {
+        "basketTotal": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "grocerAccountId": {
+          "description": "The grocer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "piece1Amount": {
+          "description": "60% of basketTotal (carries the integer-division remainder): released to the grocer; on cancellation to the shopper. Computed as floor(basketTotal * 6000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "40% of basketTotal: released to the grocer; on cancellation to the grocer. Computed as floor(basketTotal * 4000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "shopperAccountId": {
+          "description": "The shopper account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "basket",
+      "idPrefix": "bask",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funded",
+          "releasing_1",
+          "released",
+          "cancelling_1",
+          "cancelled",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelling_1"
+          },
+          "confirm_pickup": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funded"
+          },
+          "refund_piece_2": {
+            "from": [
+              "cancelling_1"
+            ],
+            "to": "cancelled"
+          },
+          "release_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "released"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "abandoned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "grocerAccountId",
+        "payer": "shopperAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "basketTotal"
+        }
+      ],
+      "required": [
+        "shopperAccountId",
+        "grocerAccountId",
+        "platformAccountId",
+        "basketTotal",
+        "piece1Amount",
+        "piece2Amount",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from shopper to grocer",
+      "title": "Basket"
+    }
+  ],
+  "product": "corner_shop",
+  "subjects": [],
+  "title": "Corner shop",
+  "udl": 1,
+  "version": 1
+}

@@ -6,7 +6,7 @@
 
 program retention_holdback "Construction retention"
 
-import { held_payment } from "settlement"
+import { held_payment } from "std/settlements"
 
 party contractor:    business
 party subcontractor: business

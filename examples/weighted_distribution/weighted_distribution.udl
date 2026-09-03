@@ -1,0 +1,337 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "snapshot_entitlements"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a distribution and start recording entitlements. No money moves. The pool amount, the record date, and the exact recipient count are fixed here.",
+          "moves": [],
+          "publicAction": "createProceeds",
+          "steps": [],
+          "summary": "Open entitlement recording"
+        },
+        "snapshot_entitlements": {
+          "agentDescription": "Freeze the entitlement set against a stated evidence reference. The distribution must still be open and its recorded entitlements must match the declared recipient count. Nothing can be recorded afterwards and there is no unfreeze. No money moves.",
+          "captureInput": {
+            "snapshotEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "snapshotEntitlementsProceeds",
+          "steps": [],
+          "summary": "Freeze the entitlement set from stored evidence"
+        }
+      },
+      "agentDescription": "Reach for weighted distribution when one pool splits across many recipients by declared weights. Record one entitlement per recipient, freeze the set with the snapshot port, then each entitlement pays its own largest-remainder share, so the shares add back to the pool exactly. Settlement batch goes the other way, many charges into one payout.",
+      "aggregateInvariants": [
+        {
+          "childInstrumentId": "proceeds_entitlement",
+          "childRefField": "proceedsId",
+          "childStatuses": [
+            "recorded",
+            "paid"
+          ],
+          "count": true,
+          "parentField": "maxRecipients"
+        }
+      ],
+      "description": "Evidence-frozen weighted distribution",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "distributableAmount": {
+          "description": "Distribution pool in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "distributionSourceAccountId": {
+          "description": "The distribution source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "maxRecipients": {
+          "const": 12,
+          "description": "Exactly 12 frozen entitlement rows",
+          "type": "integer"
+        },
+        "recordAt": {
+          "description": "Stored record date",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "proceeds",
+      "idPrefix": "proc",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "snapshotted"
+        ],
+        "transitions": {
+          "snapshot_entitlements": {
+            "from": [
+              "open"
+            ],
+            "to": "snapshotted"
+          }
+        }
+      },
+      "parties": {
+        "payer": "distributionSourceAccountId"
+      },
+      "required": [
+        "distributionSourceAccountId",
+        "currency",
+        "distributableAmount",
+        "recordAt",
+        "maxRecipients"
+      ],
+      "summary": "Frozen largest-remainder distribution",
+      "title": "Proceeds"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "payout"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Record one recipient weight against an open distribution. The parent distribution must still be open, and the currency and source account are copied from it. No money moves. Do not supply a share. It is derived later from the frozen set.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createProceedsEntitlement",
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "distributionSourceAccountId": "fields.distributionSourceAccountId"
+              },
+              "field": "proceedsId",
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record one entitlement before snapshot"
+        },
+        "payout": {
+          "agentDescription": "Pay this recipient their largest-remainder share of the pool. The parent distribution must already be snapshotted. The amount is computed from the recorded weights, not supplied by the caller, and a zero share moves nothing. This moves money and does not reverse.",
+          "distribute": {
+            "amountRef": "payoutShare",
+            "onZero": "skip_steps",
+            "pool": {
+              "from": "parent",
+              "path": "fields.distributableAmount"
+            },
+            "refField": "proceedsId",
+            "statuses": [
+              "recorded",
+              "paid"
+            ],
+            "weightField": "entitlementWeight"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.payoutShare"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.recipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "proceeds_entitlement"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "payout"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.distributionSourceAccountId"
+                }
+              },
+              "capture": {
+                "payoutPayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payoutProceedsEntitlement",
+          "requiresRefs": [
+            {
+              "field": "proceedsId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.distributionSourceAccountId": "fields.distributionSourceAccountId"
+              },
+              "statuses": [
+                "snapshotted"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the deterministic largest-remainder share once"
+        }
+      },
+      "agentDescription": "One recipient weighted claim on proceeds. Record one per recipient before the snapshot. Its share is derived from its weight against the frozen set, never supplied by the caller.",
+      "description": "One frozen weighted entitlement in proceeds",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "distributionSourceAccountId": {
+          "description": "The distribution source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "entitlementWeight": {
+          "description": "Stored non-negative entitlement weight",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "proceedsId": {
+          "description": "The exact proceeds",
+          "pattern": "^proc_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "recipientAccountId": {
+          "description": "The recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "proceeds_entitlement",
+      "idPrefix": "zzaa",
+      "lifecycle": {
+        "initial": "recorded",
+        "states": [
+          "recorded",
+          "paid"
+        ],
+        "transitions": {
+          "payout": {
+            "from": [
+              "recorded"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "recipientAccountId",
+        "payer": "distributionSourceAccountId"
+      },
+      "required": [
+        "recipientAccountId",
+        "distributionSourceAccountId",
+        "currency",
+        "proceedsId",
+        "entitlementWeight"
+      ],
+      "summary": "Frozen entitlement in proceeds",
+      "title": "Proceeds Entitlement"
+    }
+  ],
+  "product": "weighted_distribution_example",
+  "subjects": [],
+  "title": "Weighted distribution example",
+  "udl": 1,
+  "version": 1
+}

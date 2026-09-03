@@ -1,0 +1,19 @@
+program premium_forward_example "Premium forward example"
+import { premium_forward } from "std/settlements"
+party policyholder: person
+party carrier: business
+settlement premium = premium_forward {
+  payer: policyholder
+  carrier: carrier
+  amount: premiumAmount: money(SAR)
+  commission: 2%
+  bind: port bind_policy
+  policy_ref: policyReference
+  renewal_due: renewalDueAt
+  endorsement: port record_endorsement
+}
+port bind_policy { allowed: [policyholder, carrier] }
+port record_endorsement {
+  allowed: [carrier]
+  shape: { evidenceReference: text }
+}

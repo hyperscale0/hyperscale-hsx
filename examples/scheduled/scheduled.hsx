@@ -1,0 +1,12 @@
+program scheduled_example "Scheduled example"
+import { scheduled } from "std/settlements"
+party payer: business
+party payee: business
+settlement installments = scheduled {
+  payer: payer
+  payee: payee
+  amount: totalAmount: money(SAR)
+  count: 3
+  every: P30D
+  first_due: firstDueAt
+}

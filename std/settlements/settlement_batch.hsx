@@ -1,0 +1,122 @@
+module std.settlements.settlement_batch
+
+export instrument settlement_batch<C>(
+  settlement_account: party,
+  source_capture_refs: text,
+  fee_entries: text,
+  external_reversal_offsets: text,
+  close_trigger: date,
+  payout_destination: party,
+  negative_position: text,
+  payout_acknowledgement: condition,
+  payout_beneficiary_ref: text,
+) {
+  fields {
+    close_trigger { type: date; description: "Date the open batch freezes against later entries"; }
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    payout_beneficiary_ref { type: text; description: "Beneficiary ID for the payout instruction"; pattern: "^ben_(sandbox|live)_[a-z0-9]{8,64}$"; }
+    [payout_destination]AccountId { type: account<C>; description: concat("The ", words(payout_destination), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    [settlement_account]AccountId { type: account<C>; description: concat("The ", words(settlement_account), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+  }
+  lifecycle {
+    states open closed calculated approved instructed acknowledged reconciled;
+    initial open;
+    on close: open -> closed;
+    on calculate: closed -> calculated;
+    on approve: calculated -> approved;
+    on instruct: approved -> instructed;
+    on [payout_acknowledgement]: instructed -> acknowledged;
+    on reconcile: instructed|acknowledged -> reconciled;
+  }
+  parties { beneficiary: concat(camel(payout_destination), "AccountId"); payer: concat(camel(settlement_account), "AccountId"); }
+  required: [concat(camel(payout_destination), "AccountId"), concat(camel(settlement_account), "AccountId"), close_trigger, currency, payout_beneficiary_ref];
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  agent_description: "Reach for settlement batch when many charges over a period roll up into one payout. Capture entries and adjustments accrue against an open batch, the batch freezes on its close date, calculate proves one signed net payable, and instruct sends a single external payout. Weighted distribution goes the other way, one amount out to many recipients.";
+  summary: concat("Payout batch from ", words(settlement_account), " to ", words(payout_destination));
+  description: "Immutable batch of capture lineage and signed adjustments that creates one payout";
+  action create { agent_description: "Open a batch that capture entries and adjustments can accrue into. No money moves. The batch keeps taking entries until its close date freezes it."; summary: concat("Open a ", words(instrument)); moves: []; steps: []; }
+  action close { summary: "Freeze the batch and stop all new entries"; due { field: close_trigger; } moves: []; steps: []; }
+  action calculate {
+    agent_description: "Prove and freeze the one net payable from gross captures plus credit adjustments minus debit adjustments. The batch must be closed first. A zero or negative net is refused, so a batch in deficit never reaches a payout. No money moves.";
+    summary: "Prove and freeze the one signed net payable amount";
+    computes signed_sum {
+      amountRef: netPayable; onNegative: refuse; onZero: refuse;
+      sources: [
+        { amountField: amount; instrumentId: concat(instrument, "_capture_entry"); refField: concat(camel(instrument), "Id"); sign: add; statuses: [accrued]; subtotalRef: grossCaptureAmount; },
+        { amountField: amount; instrumentId: concat(instrument, "_credit_adjustment"); refField: concat(camel(instrument), "Id"); sign: add; statuses: [applied]; subtotalRef: creditAdjustmentAmount; },
+        { amountField: amount; instrumentId: concat(instrument, "_debit_adjustment"); refField: concat(camel(instrument), "Id"); sign: subtract; statuses: [applied]; subtotalRef: debitAdjustmentAmount; },
+      ];
+    }
+    moves: []; steps: [];
+  }
+  action approve { agent_description: "Sign off on the frozen net payable. The batch must already be calculated. Nothing is recomputed and no money moves. This is the gate instruct waits on."; summary: "Approve the frozen payable without recomputing it"; moves: []; steps: []; }
+  action instruct {
+    agent_description: "Create one external payout for the frozen net payable, drawn on the settlement account and sent to the stored beneficiary. The batch must be approved. This moves money off the platform and is idempotent, so a retry never pays twice.";
+    summary: "Create one idempotent payout from the frozen net payable";
+    payout { amount: "refs.netPayable"; beneficiaryField: payout_beneficiary_ref; beneficiaryPartyField: concat(camel(payout_destination), "AccountId"); capture: payoutId; currencyField: currency; sourceAccountField: concat(camel(settlement_account), "AccountId"); speed: standard; }
+    moves: []; steps: [];
+  }
+  action [payout_acknowledgement] {
+    agent_description: "Record the beneficiary confirmation that the payout landed, with the reference kept in the receipt. The batch must already be instructed. Only the payout destination may call it. No money moves.";
+    summary: "Record the tenant's payout acknowledgement in the receipt";
+    port { allowedParties: [beneficiary]; }
+    input { type: object; properties: { acknowledgementReference: { type: string; description: "Required decision reference retained in the operation receipt"; minLength: 1; maxLength: 180; }; }; required: [acknowledgementReference]; additionalProperties: false; }
+    capture_input { acknowledgementReference: acknowledgementReference; }
+    moves: []; steps: [];
+  }
+  action reconcile {
+    summary: "Match durable evidence that the payout settled";
+    due { field: close_trigger; offset: "P30D"; }
+    reconcile {
+      amount: "refs.netPayable"; capture: settlementEvidenceId; counterpartyRef: payoutId;
+      currencyField: currency; direction: debit; evidence: statement_line;
+      exception { amountField: amount; childInstrumentId: concat(instrument, "_debit_adjustment"); maxOpen: 1; reasonField: adjustmentReference; refField: concat(camel(instrument), "Id"); }
+      match { law: exact; }
+      within { offset: "P30D"; }
+    }
+    moves: []; steps: [];
+  }
+  instruments {
+    instrument {
+      let(parent_name): instrument;
+      id: concat(parent_name, "_capture_entry");
+      id_prefix: concat(prefix(parent_name), "ce");
+      fields {
+        amount { type: money<C>; description: "Gross captured amount in minor units"; }
+        [source_capture_refs] { type: text; description: "Immutable source capture reference"; minLength: 1; maxLength: 180; }
+        currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+        [parent_name]Id { type: ref<parent_name>; description: "Open batch this capture entry accrues into"; pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+      }
+      lifecycle { states created accrued; initial created; on accrue: created -> accrued; }
+      required: [amount, currency, concat(camel(parent_name), "Id"), source_capture_refs];
+      agent_description: "One gross capture that belongs to an open batch. Record one per source capture so the net payable keeps its lineage back to the original charge.";
+      title: concat(sentence(parent_name), " Capture Entry"); summary: "Gross capture lineage entry"; description: "One gross capture entry linked to an open payout batch";
+      action create { agent_description: "Record one capture with its source reference against an open batch. The batch must be open and share the currency. No money moves, and the entry counts toward the net payable only once it accrues."; summary: "Create a capture lineage entry on an open batch"; requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+      action accrue { agent_description: "Count this capture toward the batch gross total. The entry must be created and its batch still open, because a closed batch admits nothing new. No money moves."; summary: "Accrue the capture entry into the open batch"; requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+    }
+    for adjustment_kind in [credit, debit] {
+      instrument {
+        let(parent_name): instrument;
+        id: concat(parent_name, "_", adjustment_kind, "_adjustment");
+        id_prefix: concat(prefix(parent_name), if_eq(adjustment_kind, "credit", "ca", "da"));
+        fields {
+          adjustmentReference { type: text; description: "Immutable explicit adjustment reference"; minLength: 1; maxLength: 180; }
+          amount { type: money<C>; description: concat(title(adjustment_kind), " adjustment amount in minor units"); }
+          [source_capture_refs] { type: text; description: "Original capture reference that this adjustment corrects"; minLength: 1; maxLength: 180; }
+          currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+          [external_reversal_offsets] { type: text; description: "Optional externally decided reversal reference"; minLength: 1; maxLength: 180; optional: true; }
+          [fee_entries] { type: text; description: "Optional fee entry reference"; minLength: 1; maxLength: 180; optional: true; }
+          [parent_name]Id { type: ref<parent_name>; description: "Open batch this adjustment applies to"; pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+        }
+        lifecycle { states created applied; initial created; on adjust: created -> applied; on correct: created -> applied; }
+        required: [amount, currency, adjustmentReference, concat(camel(parent_name), "Id"), source_capture_refs];
+        agent_description: concat("One ", adjustment_kind, " adjustment against an open batch, carrying the capture reference it corrects. Credit adjustments add to the net payable and debit adjustments subtract from it, so a late correction lands on the current open batch instead of reopening a closed one.");
+        title: concat(sentence(parent_name), " ", title(adjustment_kind), " Adjustment"); summary: concat(title(adjustment_kind), " adjustment with capture lineage"); description: concat("One ", adjustment_kind, " adjustment linked to an open payout batch; closed batches stay unchanged");
+        action create { agent_description: concat("Record a ", adjustment_kind, " adjustment on an open batch, naming the capture reference it corrects. The batch must be open and share the currency. No money moves, and the adjustment counts only once it is applied."); summary: concat("Create a ", adjustment_kind, " adjustment on an open batch"); requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+        action adjust { agent_description: concat("Apply the ", adjustment_kind, " adjustment so calculate counts it. The adjustment must be created and its batch still open. No money moves. The effect shows up in the batch net payable."); summary: concat("Apply the ", adjustment_kind, " adjustment to the open batch"); requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+        action correct { agent_description: "Apply this adjustment as a correction on the open batch it names. Use it when the batch carrying the original entry has already closed, because a closed batch never changes. The adjustment must be created and no money moves."; summary: "Record a later correction on this open batch instead of changing the closed source batch"; requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+      }
+    }
+  }
+}

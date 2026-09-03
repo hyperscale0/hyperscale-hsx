@@ -1,0 +1,167 @@
+module std.settlements.credit_facility
+
+export instrument credit_facility<C>(
+  lender: party,
+  borrower: party,
+  draw_destination: party,
+  limit: money<C>,
+  expires_at: date,
+  obligation: ref,
+  availability_policy: text,
+  expiry_policy: text,
+  close_policy: text,
+) {
+  let(draw_id): concat(instrument, "_draw");
+  let(parent_field): camel(concat(instrument, "_id"));
+  let(borrower_field): camel(concat(borrower, "_account_id"));
+  let(lender_field): camel(concat(lender, "_account_id"));
+  let(destination_field): camel(concat(draw_destination, "_account_id"));
+  let(currency_path): "fields.currency";
+  let(lender_path): concat("fields.", lender_field);
+  let(destination_path): concat("fields.", destination_field);
+  let(reference_filter): "x-hyperscale-reference-filter";
+  let(obligation_name): owner(obligation);
+  let(obligation_field): camel(concat(obligation_name, "_id"));
+
+  title: sentence(instrument);
+  agent_description: "Reach for credit facility when the {lender} gives the {borrower} reusable capacity up to {limit} and every draw is repaid through its own scheduled obligation. Capacity frees up as each obligation resolves. Pick advance for one up-front payment with no reusable limit.";
+  summary: "Draw capacity for {borrower}";
+  description: "Reusable capacity with repayment delegated to one scheduled obligation";
+  id_prefix: prefix(instrument);
+  fields {
+    [borrower_field] {
+      type: account<C>;
+      description: "The {borrower} account";
+      pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+      [reference_filter]: {
+        column: role;
+        values: [customer_balance];
+      };
+    }
+    limit {
+      type: money<C>;
+      description: "Facility limit in {C} minor units";
+    }
+    expires_at {
+      type: date;
+      description: "Stored draw expiry";
+    }
+  }
+  required: [borrower_field, destination_field, lender_field, currency, limit, expires_at];
+  lifecycle {
+    states active frozen closed;
+    initial active;
+    on freeze: active -> frozen;
+    on close: active|frozen -> closed;
+  }
+  parties {
+    beneficiary: draw_destination;
+    payer: lender;
+  }
+  action create {
+    agent_description: "Open the facility before any draw exists. The caller supplies the {limit}, the currency, the {borrower} and {lender} accounts, the draw destination account, and the stored expiry. No money moves.";
+    summary: "Open the facility";
+    steps: [];
+    moves: [];
+  }
+  action freeze {
+    summary: "Freeze new draws at expiry";
+    due: { field: expires_at; };
+    steps: [];
+    moves: [];
+  }
+  action close {
+    agent_description: "Close the facility for good. Every draw under it must already be resolved, so clear the outstanding obligations first. No money moves and a closed facility never lends again.";
+    summary: "Close only when every admitted draw resolved";
+    requires aggregate: {
+      check: { kind: all_in; };
+      instrument_id: draw_id;
+      over: children;
+      ref_field: parent_field;
+      statuses: [resolved];
+    };
+    steps: [];
+    moves: [];
+  }
+
+  instruments {
+    instrument {
+      id: draw_id;
+      generatedPrefix: true;
+      title: concat(sentence(instrument), " Draw");
+      agent_description: concat("Reach for this child row to take one draw against a ", words(instrument), ". The parent carries the {limit}, this row carries one drawn amount and the single obligation that repays it.");
+      summary: "Draw from {instrument}";
+      description: "One capacity-capped draw linked to obligation";
+      fields {
+        amount {
+          type: money<C>;
+          description: "One draw amount";
+        }
+        currency {
+          type: text;
+          description: "ISO 4217 currency code";
+          max_length: 3;
+          min_length: 3;
+          pattern: "^[A-Z]{3}$";
+        }
+        [parent_field] {
+          type: ref<instrument>;
+          description: "The exact {instrument}";
+          pattern: concat("^", prefix(instrument), "_(sandbox|live)_[a-z0-9]{8,64}$");
+        }
+        [obligation_field] {
+          type: ref<obligation_name>;
+          description: "The sole repayment obligation";
+          pattern: concat("^", prefix(obligation_name), "_(sandbox|live)_[a-z0-9]{8,64}$");
+        }
+      }
+      required: [destination_field, lender_field, amount, currency, parent_field, obligation_field];
+      lifecycle {
+        states drawn resolved;
+        initial drawn;
+        on resolve: drawn -> resolved;
+      }
+      parties {
+        beneficiary: draw_destination;
+        payer: lender;
+      }
+      action create {
+        agent_description: "Draw one amount out of the facility to the draw destination account. The facility must be active, the linked obligation active and bound to no other draw, and the drawn amounts plus this one must stay within {limit}. The money leaves the {lender} straight away.";
+        summary: "Create one draw under the locked facility capacity";
+        requires exposure: {
+          amount_field: amount;
+          anchor_field: parent_field;
+          cap_field: limit;
+          cap_on_anchor: true;
+          child_instrument_id: draw_id;
+          statuses: [drawn];
+        };
+        requires refs: [{
+          bind: {
+            currency: currency_path;
+            [destination_field]: destination_path;
+            [lender_field]: lender_path;
+          };
+          field: parent_field;
+          statuses: [active];
+        }, {
+          field: obligation_field;
+          statuses: [active];
+          unique: true;
+        }];
+        moves: [{ amount: amount; from: payer; to: beneficiary; key: draw; operation: create; }];
+        steps: [];
+      }
+      action resolve {
+        agent_description: "Free the drawn capacity back to the facility. The linked obligation must already be repaid or written off. No money moves here, the obligation did the repaying.";
+        summary: "Release revolving capacity only after the linked obligation resolves";
+        requires refs: {
+          field: obligation_field;
+          statuses: [repaid, written_off];
+        };
+        steps: [];
+        moves: [];
+      }
+    }
+  }
+}

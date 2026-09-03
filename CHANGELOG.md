@@ -11,6 +11,37 @@ listed here.
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-09-02
+
+### Added
+
+- Added the repository guide, generated compiler reference, `llms.txt`, and
+  `llms-full.txt`. Tests compile every guide program and compare generated
+  files byte for byte.
+- Added one compiled example and pinned canonical UDL file for every standard
+  library module.
+- Added the public HSX agent skill and moved language examples into it.
+- Added `hsx explain` for the stable diagnostics catalog.
+- Added a generated VS Code grammar, standard-library snippets, and a CI-built
+  `hsx.vsix` artifact.
+
+### Changed
+
+- `hsx cost` now prints a versioned effect table by default. `--json` prints the
+  complete manifest, and `--out <file.json>` writes that JSON. Basis-point rows
+  label their total as amount-dependent because the compiler has no priced
+  runtime amount. No cost flags were removed.
+- The npm package now includes `docs/` and `skills/`. It no longer lists the
+  deleted `spec/` directory.
+- The package exports its shipped standard-library files through `./std/*`.
+
+### Fixed
+
+- Diagnostics raised from an imported module now name that module and its own
+  source coordinates.
+- `premium_forward` now reports `HSX1011` when endorsement selects a path that
+  needs `renewal_due`. It no longer reaches an internal lowering refusal.
+
 ## [1.0.0-beta.1] - 2026-08-29
 
 - This is the first beta and has no package behavior changes from
@@ -21,7 +52,7 @@ listed here.
 ### Fixed
 
 - Alpha.6 carries a `held_payment` or `premium_forward` release port's actor
-  allowlist and declared input fields into the generated release verb. Alpha.5
+  allowlist and declared input fields into the generated release action. Alpha.5
   kept those constraints in the checked program and Business Frame but dropped
   them from HSX-JSON IR, so a runtime consuming the IR could admit the release
   without the declared actor or evidence. Recompile affected programs with
@@ -31,7 +62,7 @@ listed here.
 
 ### Added
 
-- Six settlement archetypes now compile and lower. `funding_round` caps locked
+- Six settlement archetypes now compile and lower. `threshold_pool` caps locked
   commitments and contributor count, then collects or refunds each commitment
   whole. `weighted_distribution` freezes evidence-backed weights and pays by
   deterministic largest remainder. `credit_facility` owns draw capacity while
@@ -75,7 +106,7 @@ listed here.
 ### Changed
 
 - `scheduled` accepts `mode: obligation` for installment obligations. It emits
-  one payment noun per anchor, binds each payment to its obligation and anchor,
+  one payment instrument per anchor, binds each payment to its obligation and anchor,
   allows partial and early payments, and refunds one stored paid row whole.
   Obligation mode accepts 2 through 7 anchors and refuses rescheduling. Use the
   original transfer schedule without `mode`, or declare the debtor and every
@@ -83,13 +114,13 @@ listed here.
 - The program money-event budget is 20 instead of 14, and every settlement has
   its own event cap. Advance carves now validate their amount field, currency,
   recourse, and fee rules. Settlement references resolve through
-  archetype-declared exits, and lowering binds referenced noun identity,
+  archetype-declared exits, and lowering binds referenced instrument identity,
   statuses, amounts, and currency before movement. Recompile programs that
   previously sat near the budget or used an advance carve. The stricter checker
   may refuse a carve or reference that alpha.4 accepted.
-- HSX-JSON IR version 1 grew new noun fields for generated-child prefixes,
+- HSX-JSON IR version 1 grew new instrument fields for generated-child prefixes,
   aggregate invariants, derived amounts, typed references, beneficiary IDs,
-  currency, text, counts, and constants. Verbs gained public intents, reference
+  currency, text, counts, and constants. Actions gained public actions, reference
   bindings, captured input, payout instructions, signed sums, deterministic
   distribution, aggregate and exposure checks, and durable-settlement gates.
   Money events gained fixed, remaining-balance, and runtime-bounded amount
@@ -143,7 +174,7 @@ listed here.
   The depth budget counts nested expressions and blocks, which is not the same
   number as source levels: `key { … }` spends one per level and `key: { … }`
   spends two, so the budget buys 63 levels of the first and 31 of the second.
-  `docs/reference.md` carries the conversion for every shape. Both refusals are
+  The release reference carried the conversion for every shape. Both refusals are
   ordinary parse diagnostics, not exceptions.
 
 ## [1.0.0-alpha.2] - 2026-08-23
@@ -183,7 +214,7 @@ This is the first version published as a package anyone can install.
 - `spec/hsx-ir.schema.json`, JSON Schema 2020-12 for the HSX-JSON IR document
   and the Business Frame. Every `.hsx` file in the repository is validated
   against it in CI.
-- `docs/reference.md`: the lexical grammar, the EBNF the parser accepts, what
+- The release reference: the lexical grammar, the EBNF the parser accepts, what
   each stage does, the diagnostic model, and all nine `settlement` archetypes
   with their parameters and constraints.
 - `examples/`, four teaching programs compiled by the test suite.
@@ -200,7 +231,8 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-beta.1...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-beta.1...v1.0.0-rc.1
 [1.0.0-beta.1]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.6...v1.0.0-beta.1
 [1.0.0-alpha.6]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...v1.0.0-alpha.6
 [1.0.0-alpha.5]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.4...v1.0.0-alpha.5

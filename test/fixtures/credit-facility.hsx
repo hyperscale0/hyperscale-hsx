@@ -1,5 +1,5 @@
 program facility_draws "Facility draws"
-import { credit_facility, scheduled } from "settlement"
+import { credit_facility, scheduled } from "std/settlements"
 
 party lender: business
 party borrower: business
@@ -15,11 +15,6 @@ settlement obligation = scheduled {
   count: 2
   every: P30D
   first_due: firstDueAt
-  partial_payment: anchor_bound
-  repayment_matching: obligation_and_anchor
-  refund_policy: full_payment_only
-  reschedule_policy: refuse
-  delinquency_policy: due_condition
 }
 
 settlement facility = credit_facility {

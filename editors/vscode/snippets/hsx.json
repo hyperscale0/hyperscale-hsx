@@ -1,0 +1,247 @@
+{
+  "advance": {
+    "body": [
+      "settlement ${1:name} = advance {",
+      "  funder: ${2:value}",
+      "  to: ${3:value}",
+      "  amount: ${4:value}",
+      "}"
+    ],
+    "description": "Apply the advance standard-library module.",
+    "prefix": "advance"
+  },
+  "cancellable_booking": {
+    "body": [
+      "settlement ${1:name} = cancellable_booking {",
+      "  guest: ${2:value}",
+      "  host: ${3:value}",
+      "  amount: ${4:value}",
+      "  starts_at: ${5:value}",
+      "  late_penalty_bps: ${6:value}",
+      "  late_within: ${7:value}",
+      "  early_penalty_bps: ${8:value}",
+      "  offer_life: ${9:value}",
+      "}"
+    ],
+    "description": "Apply the cancellable_booking standard-library module.",
+    "prefix": "cancellable_booking"
+  },
+  "captured_payment": {
+    "body": [
+      "settlement ${1:name} = captured_payment {",
+      "  payer: ${2:value}",
+      "  payee: ${3:value}",
+      "  amount: ${4:value}",
+      "  reserve_until: ${5:value}",
+      "  correction: ${6:value}",
+      "  external_reversal: ${7:value}",
+      "  capture_mode: ${8:value}",
+      "  correction_mode: ${9:value}",
+      "  negative_position: ${10:value}",
+      "  timeout: ${11:value}",
+      "}"
+    ],
+    "description": "Apply the captured_payment standard-library module.",
+    "prefix": "captured_payment"
+  },
+  "conditional_disbursement": {
+    "body": [
+      "settlement ${1:name} = conditional_disbursement {",
+      "  source: ${2:value}",
+      "  destination: ${3:value}",
+      "  cap: ${4:value}",
+      "  amount: ${5:value}",
+      "  decision: ${6:value}",
+      "  reopen_policy: ${7:value}",
+      "  recovery_policy: ${8:value}",
+      "}"
+    ],
+    "description": "Apply the conditional_disbursement standard-library module.",
+    "prefix": "conditional_disbursement"
+  },
+  "credit_facility": {
+    "body": [
+      "settlement ${1:name} = credit_facility {",
+      "  lender: ${2:value}",
+      "  borrower: ${3:value}",
+      "  draw_destination: ${4:value}",
+      "  limit: ${5:value}",
+      "  expires_at: ${6:value}",
+      "  obligation: ${7:value}",
+      "  availability_policy: ${8:value}",
+      "  expiry_policy: ${9:value}",
+      "  close_policy: ${10:value}",
+      "}"
+    ],
+    "description": "Apply the credit_facility standard-library module.",
+    "prefix": "credit_facility"
+  },
+  "held_payment": {
+    "body": [
+      "settlement ${1:name} = held_payment {",
+      "  payer: ${2:value}",
+      "  payee: ${3:value}",
+      "  amount: ${4:value}",
+      "  release: ${5:value}",
+      "}"
+    ],
+    "description": "Apply the held_payment standard-library module.",
+    "prefix": "held_payment"
+  },
+  "instant_transfer": {
+    "body": [
+      "settlement ${1:name} = instant_transfer {",
+      "  payer: ${2:value}",
+      "  payee: ${3:value}",
+      "  amount: ${4:value}",
+      "}"
+    ],
+    "description": "Apply the instant_transfer standard-library module.",
+    "prefix": "instant_transfer"
+  },
+  "metered": {
+    "body": [
+      "settlement ${1:name} = metered {",
+      "  payer: ${2:value}",
+      "  payee: ${3:value}",
+      "  close_by: ${4:value}",
+      "  rates: ${5:value}",
+      "}"
+    ],
+    "description": "Apply the metered standard-library module.",
+    "prefix": "metered"
+  },
+  "pooled_split": {
+    "body": [
+      "settlement ${1:name} = pooled_split {",
+      "  payer: ${2:value}",
+      "  amount: ${3:value}",
+      "  payout_due: ${4:value}",
+      "  split: ${5:value}",
+      "}"
+    ],
+    "description": "Apply the pooled_split standard-library module.",
+    "prefix": "pooled_split"
+  },
+  "premium_forward": {
+    "body": [
+      "settlement ${1:name} = premium_forward {",
+      "  payer: ${2:value}",
+      "  carrier: ${3:value}",
+      "  amount: ${4:value}",
+      "  bind: ${5:value}",
+      "  commission: ${6:value}",
+      "}"
+    ],
+    "description": "Apply the premium_forward standard-library module.",
+    "prefix": "premium_forward"
+  },
+  "reconciled_payout": {
+    "body": [
+      "settlement ${1:name} = reconciled_payout {",
+      "  payer: ${2:value}",
+      "  beneficiary: ${3:value}",
+      "  amount: ${4:value}",
+      "  beneficiary_ref: ${5:value}",
+      "  settle_by: ${6:value}",
+      "  matched_within: ${7:value}",
+      "  matched_ceiling: ${8:value}",
+      "}"
+    ],
+    "description": "Apply the reconciled_payout standard-library module.",
+    "prefix": "reconciled_payout"
+  },
+  "recurring_collection": {
+    "body": ["settlement ${1:name} = recurring_collection {", "}"],
+    "description": "Apply the recurring_collection standard-library module.",
+    "prefix": "recurring_collection"
+  },
+  "rotating_pool": {
+    "body": [
+      "settlement ${1:name} = rotating_pool {",
+      "  contribution: ${2:value}",
+      "  count: ${3:value}",
+      "  first_due: ${4:value}",
+      "}"
+    ],
+    "description": "Apply the rotating_pool standard-library module.",
+    "prefix": "rotating_pool"
+  },
+  "scheduled": {
+    "body": [
+      "settlement ${1:name} = scheduled {",
+      "  payer: ${2:value}",
+      "  payee: ${3:value}",
+      "  amount: ${4:value}",
+      "  every: ${5:value}",
+      "  first_due: ${6:value}",
+      "}"
+    ],
+    "description": "Apply the scheduled standard-library module.",
+    "prefix": "scheduled"
+  },
+  "security_deposit": {
+    "body": [
+      "settlement ${1:name} = security_deposit {",
+      "  payer: ${2:value}",
+      "  holder: ${3:value}",
+      "  amount: ${4:value}",
+      "}"
+    ],
+    "description": "Apply the security_deposit standard-library module.",
+    "prefix": "security_deposit"
+  },
+  "settlement_batch": {
+    "body": [
+      "settlement ${1:name} = settlement_batch {",
+      "  settlement_account: ${2:value}",
+      "  source_capture_refs: ${3:value}",
+      "  fee_entries: ${4:value}",
+      "  external_reversal_offsets: ${5:value}",
+      "  close_trigger: ${6:value}",
+      "  payout_destination: ${7:value}",
+      "  negative_position: ${8:value}",
+      "  payout_acknowledgement: ${9:value}",
+      "  payout_beneficiary_ref: ${10:value}",
+      "}"
+    ],
+    "description": "Apply the settlement_batch standard-library module.",
+    "prefix": "settlement_batch"
+  },
+  "swap": {
+    "body": [
+      "settlement ${1:name} = swap {",
+      "  between: ${2:value}",
+      "  amounts: ${3:value}",
+      "  fees: ${4:value}",
+      "  release: ${5:value}",
+      "  dispute: ${6:value}",
+      "}"
+    ],
+    "description": "Apply the swap standard-library module.",
+    "prefix": "swap"
+  },
+  "threshold_pool": {
+    "body": [
+      "settlement ${1:name} = threshold_pool {",
+      "  target: ${2:value}",
+      "  commitment: ${3:value}",
+      "  close_by: ${4:value}",
+      "}"
+    ],
+    "description": "Apply the threshold_pool standard-library module.",
+    "prefix": "threshold_pool"
+  },
+  "weighted_distribution": {
+    "body": [
+      "settlement ${1:name} = weighted_distribution {",
+      "  source: ${2:value}",
+      "  recipient: ${3:value}",
+      "  amount: ${4:value}",
+      "  record_at: ${5:value}",
+      "}"
+    ],
+    "description": "Apply the weighted_distribution standard-library module.",
+    "prefix": "weighted_distribution"
+  }
+}

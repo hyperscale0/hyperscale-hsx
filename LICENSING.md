@@ -39,9 +39,9 @@ says nothing about trademarks in either direction, so
 
 ## The language is not the compiler
 
-HSX the language and the HSX-JSON IR are separate from this compiler. The IR
-schema in [`spec/`](./spec) and the fixtures under [`examples/`](./examples)
-are data describing a language, and anyone may write their own compiler,
+HSX the language and its output contract are separate from this compiler. The
+canonical UDL schema published by the UDL repository and the fixtures under
+[`examples/`](./examples) are data describing a language, and anyone may write their own compiler,
 formatter, or runtime against them, in any language, under any license, without
 touching this code.
 

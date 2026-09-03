@@ -1,0 +1,13 @@
+program held_payment_example "Held payment example"
+import { held_payment } from "std/settlements"
+party buyer: person
+party seller: business
+settlement sale = held_payment {
+  payer: buyer
+  payee: seller
+  amount: price: money(SAR)
+  fees { buyer: 1% }
+  on_cancel(funded) { buyer: 100% }
+  release: port confirm_delivery | at(releaseDueAt)
+}
+port confirm_delivery { allowed: [buyer] }

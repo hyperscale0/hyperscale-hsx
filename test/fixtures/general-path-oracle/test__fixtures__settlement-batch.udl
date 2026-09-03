@@ -1,0 +1,753 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "close",
+        "calculate",
+        "approve",
+        "instruct",
+        "acknowledge_payout",
+        "reconcile"
+      ],
+      "actions": {
+        "acknowledge_payout": {
+          "agentDescription": "Record the beneficiary confirmation that the payout landed, with the reference kept in the receipt. The batch must already be instructed. Only the payout destination may call it. No money moves.",
+          "captureInput": {
+            "acknowledgementReference": "acknowledgementReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "acknowledgementReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "acknowledgementReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "acknowledgePayoutPayoutBatch",
+          "steps": [],
+          "summary": "Record the tenant's payout acknowledgement in the receipt"
+        },
+        "approve": {
+          "agentDescription": "Sign off on the frozen net payable. The batch must already be calculated. Nothing is recomputed and no money moves. This is the gate instruct waits on.",
+          "moves": [],
+          "publicAction": "approvePayoutBatch",
+          "steps": [],
+          "summary": "Approve the frozen payable without recomputing it"
+        },
+        "calculate": {
+          "agentDescription": "Prove and freeze the one net payable from gross captures plus credit adjustments minus debit adjustments. The batch must be closed first. A zero or negative net is refused, so a batch in deficit never reaches a payout. No money moves.",
+          "moves": [],
+          "publicAction": "calculatePayoutBatch",
+          "signedSum": {
+            "amountRef": "netPayable",
+            "onNegative": "refuse",
+            "onZero": "refuse",
+            "sources": [
+              {
+                "amountField": "amount",
+                "instrumentId": "payout_batch_capture_entry",
+                "refField": "payoutBatchId",
+                "sign": "add",
+                "statuses": [
+                  "accrued"
+                ],
+                "subtotalRef": "grossCaptureAmount"
+              },
+              {
+                "amountField": "amount",
+                "instrumentId": "payout_batch_credit_adjustment",
+                "refField": "payoutBatchId",
+                "sign": "add",
+                "statuses": [
+                  "applied"
+                ],
+                "subtotalRef": "creditAdjustmentAmount"
+              },
+              {
+                "amountField": "amount",
+                "instrumentId": "payout_batch_debit_adjustment",
+                "refField": "payoutBatchId",
+                "sign": "subtract",
+                "statuses": [
+                  "applied"
+                ],
+                "subtotalRef": "debitAdjustmentAmount"
+              }
+            ]
+          },
+          "steps": [],
+          "summary": "Prove and freeze the one signed net payable amount"
+        },
+        "close": {
+          "due": {
+            "field": "closeAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Freeze the batch and stop all new entries"
+        },
+        "create": {
+          "agentDescription": "Open a batch that capture entries and adjustments can accrue into. No money moves. The batch keeps taking entries until its close date freezes it.",
+          "moves": [],
+          "publicAction": "createPayoutBatch",
+          "steps": [],
+          "summary": "Open a payout batch"
+        },
+        "instruct": {
+          "agentDescription": "Create one external payout for the frozen net payable, drawn on the settlement account and sent to the stored beneficiary. The batch must be approved. This moves money off the platform and is idempotent, so a retry never pays twice.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.payout.external",
+                "source": "payout"
+              }
+            ]
+          },
+          "moves": [],
+          "payout": {
+            "amount": "refs.netPayable",
+            "beneficiaryField": "payoutBeneficiaryId",
+            "beneficiaryPartyField": "payoutDestinationAccountId",
+            "capture": "payoutId",
+            "currencyField": "currency",
+            "sourceAccountField": "settlementAccountAccountId",
+            "speed": "standard"
+          },
+          "publicAction": "instructPayoutBatch",
+          "steps": [],
+          "summary": "Create one idempotent payout from the frozen net payable"
+        },
+        "reconcile": {
+          "due": {
+            "field": "closeAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.reconcile",
+                "source": "reconcile[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "reconcile": [
+            {
+              "amount": "refs.netPayable",
+              "capture": "settlementEvidenceId",
+              "counterpartyRef": "payoutId",
+              "currencyField": "currency",
+              "direction": "debit",
+              "evidence": "statement_line",
+              "exception": {
+                "amountField": "amount",
+                "childInstrumentId": "payout_batch_debit_adjustment",
+                "maxOpen": 1,
+                "reasonField": "adjustmentReference",
+                "refField": "payoutBatchId"
+              },
+              "match": {
+                "law": "exact"
+              },
+              "within": {
+                "offset": "P30D"
+              }
+            }
+          ],
+          "steps": [],
+          "summary": "Match durable evidence that the payout settled"
+        }
+      },
+      "agentDescription": "Reach for settlement batch when many charges over a period roll up into one payout. Capture entries and adjustments accrue against an open batch, the batch freezes on its close date, calculate proves one signed net payable, and instruct sends a single external payout. Weighted distribution goes the other way, one amount out to many recipients.",
+      "description": "Immutable batch of capture lineage and signed adjustments that creates one payout",
+      "fields": {
+        "closeAt": {
+          "description": "Date the open batch freezes against later entries",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "payoutBeneficiaryId": {
+          "description": "Beneficiary ID for the payout instruction",
+          "pattern": "^ben_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "payoutDestinationAccountId": {
+          "description": "The payout destination account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "settlementAccountAccountId": {
+          "description": "The settlement account account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "payout_batch",
+      "idPrefix": "pb",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "closed",
+          "calculated",
+          "approved",
+          "instructed",
+          "acknowledged",
+          "reconciled"
+        ],
+        "transitions": {
+          "acknowledge_payout": {
+            "from": [
+              "instructed"
+            ],
+            "to": "acknowledged"
+          },
+          "approve": {
+            "from": [
+              "calculated"
+            ],
+            "to": "approved"
+          },
+          "calculate": {
+            "from": [
+              "closed"
+            ],
+            "to": "calculated"
+          },
+          "close": {
+            "from": [
+              "open"
+            ],
+            "to": "closed"
+          },
+          "instruct": {
+            "from": [
+              "approved"
+            ],
+            "to": "instructed"
+          },
+          "reconcile": {
+            "from": [
+              "instructed",
+              "acknowledged"
+            ],
+            "to": "reconciled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "payoutDestinationAccountId",
+        "payer": "settlementAccountAccountId"
+      },
+      "required": [
+        "payoutDestinationAccountId",
+        "settlementAccountAccountId",
+        "closeAt",
+        "currency",
+        "payoutBeneficiaryId"
+      ],
+      "summary": "Payout batch from settlement account to payout destination",
+      "title": "Payout batch"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "accrue"
+      ],
+      "actions": {
+        "accrue": {
+          "agentDescription": "Count this capture toward the batch gross total. The entry must be created and its batch still open, because a closed batch admits nothing new. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "accruePayoutBatchCaptureEntry",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Accrue the capture entry into the open batch"
+        },
+        "create": {
+          "agentDescription": "Record one capture with its source reference against an open batch. The batch must be open and share the currency. No money moves, and the entry counts toward the net payable only once it accrues.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPayoutBatchCaptureEntry",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a capture lineage entry on an open batch"
+        }
+      },
+      "agentDescription": "One gross capture that belongs to an open batch. Record one per source capture so the net payable keeps its lineage back to the original charge.",
+      "description": "One gross capture entry linked to an open payout batch",
+      "fields": {
+        "amount": {
+          "description": "Gross captured amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Immutable source capture reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "payoutBatchId": {
+          "description": "Open batch this capture entry accrues into",
+          "pattern": "^pb_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "payout_batch_capture_entry",
+      "idPrefix": "pbce",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "accrued"
+        ],
+        "transitions": {
+          "accrue": {
+            "from": [
+              "created"
+            ],
+            "to": "accrued"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "payoutBatchId",
+        "captureReference"
+      ],
+      "summary": "Gross capture lineage entry",
+      "title": "Payout batch Capture Entry"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "adjust",
+        "correct"
+      ],
+      "actions": {
+        "adjust": {
+          "agentDescription": "Apply the credit adjustment so calculate counts it. The adjustment must be created and its batch still open. No money moves. The effect shows up in the batch net payable.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "adjustPayoutBatchCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Apply the credit adjustment to the open batch"
+        },
+        "correct": {
+          "agentDescription": "Apply this adjustment as a correction on the open batch it names. Use it when the batch carrying the original entry has already closed, because a closed batch never changes. The adjustment must be created and no money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "correctPayoutBatchCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record a later correction on this open batch instead of changing the closed source batch"
+        },
+        "create": {
+          "agentDescription": "Record a credit adjustment on an open batch, naming the capture reference it corrects. The batch must be open and share the currency. No money moves, and the adjustment counts only once it is applied.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPayoutBatchCreditAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a credit adjustment on an open batch"
+        }
+      },
+      "agentDescription": "One credit adjustment against an open batch, carrying the capture reference it corrects. Credit adjustments add to the net payable and debit adjustments subtract from it, so a late correction lands on the current open batch instead of reopening a closed one.",
+      "description": "One credit adjustment linked to an open payout batch; closed batches stay unchanged",
+      "fields": {
+        "adjustmentReference": {
+          "description": "Immutable explicit adjustment reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "amount": {
+          "description": "Credit adjustment amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Original capture reference that this adjustment corrects",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "externalReversalReference": {
+          "description": "Optional externally decided reversal reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "feeReference": {
+          "description": "Optional fee entry reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "payoutBatchId": {
+          "description": "Open batch this adjustment applies to",
+          "pattern": "^pb_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "payout_batch_credit_adjustment",
+      "idPrefix": "pbca",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "applied"
+        ],
+        "transitions": {
+          "adjust": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          },
+          "correct": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "adjustmentReference",
+        "payoutBatchId",
+        "captureReference"
+      ],
+      "summary": "Credit adjustment with capture lineage",
+      "title": "Payout batch Credit Adjustment"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "adjust",
+        "correct"
+      ],
+      "actions": {
+        "adjust": {
+          "agentDescription": "Apply the debit adjustment so calculate counts it. The adjustment must be created and its batch still open. No money moves. The effect shows up in the batch net payable.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "adjustPayoutBatchDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Apply the debit adjustment to the open batch"
+        },
+        "correct": {
+          "agentDescription": "Apply this adjustment as a correction on the open batch it names. Use it when the batch carrying the original entry has already closed, because a closed batch never changes. The adjustment must be created and no money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "correctPayoutBatchDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record a later correction on this open batch instead of changing the closed source batch"
+        },
+        "create": {
+          "agentDescription": "Record a debit adjustment on an open batch, naming the capture reference it corrects. The batch must be open and share the currency. No money moves, and the adjustment counts only once it is applied.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPayoutBatchDebitAdjustment",
+          "requiresRefs": [
+            {
+              "field": "payoutBatchId",
+              "match": {
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create a debit adjustment on an open batch"
+        }
+      },
+      "agentDescription": "One debit adjustment against an open batch, carrying the capture reference it corrects. Credit adjustments add to the net payable and debit adjustments subtract from it, so a late correction lands on the current open batch instead of reopening a closed one.",
+      "description": "One debit adjustment linked to an open payout batch; closed batches stay unchanged",
+      "fields": {
+        "adjustmentReference": {
+          "description": "Immutable explicit adjustment reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "amount": {
+          "description": "Debit adjustment amount in minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "captureReference": {
+          "description": "Original capture reference that this adjustment corrects",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "externalReversalReference": {
+          "description": "Optional externally decided reversal reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "feeReference": {
+          "description": "Optional fee entry reference",
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "payoutBatchId": {
+          "description": "Open batch this adjustment applies to",
+          "pattern": "^pb_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "payout_batch_debit_adjustment",
+      "idPrefix": "pbda",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "applied"
+        ],
+        "transitions": {
+          "adjust": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          },
+          "correct": {
+            "from": [
+              "created"
+            ],
+            "to": "applied"
+          }
+        }
+      },
+      "required": [
+        "amount",
+        "currency",
+        "adjustmentReference",
+        "payoutBatchId",
+        "captureReference"
+      ],
+      "summary": "Debit adjustment with capture lineage",
+      "title": "Payout batch Debit Adjustment"
+    }
+  ],
+  "product": "payout_batch",
+  "subjects": [],
+  "title": "Payout batch",
+  "udl": 1,
+  "version": 1
+}

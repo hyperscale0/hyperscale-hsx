@@ -5,7 +5,7 @@
 
 program tip_jar "Tip jar"
 
-import { instant_transfer } from "settlement"
+import { instant_transfer } from "std/settlements"
 
 party listener: person
 party host:     business

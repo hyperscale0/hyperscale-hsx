@@ -1,0 +1,13 @@
+program metered_example "Metered example"
+import { metered } from "std/settlements"
+party customer: business
+party provider: business
+settlement usage = metered {
+  payer: customer
+  payee: provider
+  close_by: periodEnd
+  rates {
+    api_call: callRate: money(SAR)
+    storage_gib: storageRate: money(SAR)
+  }
+}

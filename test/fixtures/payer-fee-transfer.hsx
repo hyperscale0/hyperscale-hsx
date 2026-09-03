@@ -1,0 +1,12 @@
+program payer_fee_transfer "Payer fee transfer"
+import { instant_transfer } from "std/settlements"
+
+party student: person
+party tutor: business
+
+settlement lesson_payment = instant_transfer {
+  payer: student
+  payee: tutor
+  amount: lessonPrice: money(SAR)
+  fees { student: 2.5% }
+}

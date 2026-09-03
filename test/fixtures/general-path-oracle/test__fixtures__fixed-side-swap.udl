@@ -1,0 +1,862 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund",
+        "release",
+        "post",
+        "dispute",
+        "cancel",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Walk away from a trade that never funded. Only a created trade abandons, and its escrow account must hold nothing, so there is nothing to refund. No money moves.",
+          "eventName": "exchange.abandoned",
+          "moves": [],
+          "publicAction": "abandonExchange",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the trade before its atomic funding batch"
+        },
+        "cancel": {
+          "agentDescription": "Unwind a funded trade before release. Both principals return from escrow to their own sides in one batch. The trade must be funded and not yet released. The service fees taken at funding stay with the platform.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "eventName": "exchange.cancelled",
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legAAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancellation"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legACancelledRefundTransferId": "transferId"
+              },
+              "key": "side_a_refund",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legBAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancellation"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legBCancelledRefundTransferId": "transferId"
+              },
+              "key": "side_b_refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelExchange",
+          "steps": [],
+          "summary": "Cancel and return both trade principals atomically"
+        },
+        "create": {
+          "agentDescription": "Open a trade and provision its escrow account. No money moves. Both principals and both exact service fees are fixed here and cannot change afterwards.",
+          "moves": [],
+          "publicAction": "createExchange",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a exchange atomic trade"
+        },
+        "dispute": {
+          "agentDescription": "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. Either trading party may call it.",
+          "deadline": {
+            "field": "clawbackAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[2]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[3]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "eventName": "exchange.clawed_back",
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Exchange disputed inside its review window"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.legAPendingReleaseId"
+                }
+              },
+              "key": "side_a_void",
+              "operation": "internal_transfer.void"
+            },
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Exchange disputed inside its review window"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.legBPendingReleaseId"
+                }
+              },
+              "key": "side_b_void",
+              "operation": "internal_transfer.void"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legAAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legAAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.legAPendingReleaseId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "dispute"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legADisputedRefundTransferId": "transferId"
+              },
+              "key": "side_a_refund",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legBAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legBAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.legBPendingReleaseId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "dispute"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legBDisputedRefundTransferId": "transferId"
+              },
+              "key": "side_b_refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer",
+              "beneficiary"
+            ]
+          },
+          "publicAction": "disputeExchange",
+          "steps": [],
+          "summary": "Void both reservations, then refund both principals atomically"
+        },
+        "fund": {
+          "agentDescription": "Fund both sides at once. Each side pays its principal into escrow and its service fee to the platform account, four transfers in one batch. The trade must be created and unfunded. This moves real money from both parties.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[1]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[2]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[3]"
+              }
+            ]
+          },
+          "eventName": "exchange.funded",
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legAAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "funding"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.legAAccountId"
+                }
+              },
+              "capture": {
+                "legAFundingTransferId": "transferId"
+              },
+              "key": "side_a_principal",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legBAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "funding"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.legBAccountId"
+                }
+              },
+              "capture": {
+                "legBFundingTransferId": "transferId"
+              },
+              "key": "side_b_principal",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legAServiceFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.legAAccountId"
+                }
+              },
+              "capture": {
+                "legAServiceFeeTransferId": "transferId"
+              },
+              "key": "side_a_service_fee",
+              "operation": "internal_transfer.create"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legBServiceFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.legBAccountId"
+                }
+              },
+              "capture": {
+                "legBServiceFeeTransferId": "transferId"
+              },
+              "key": "side_b_service_fee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundExchange",
+          "sandboxFailurePoint": "funding",
+          "steps": [],
+          "summary": "Fund both trade sides and collect on-top fees atomically"
+        },
+        "post": {
+          "due": {
+            "field": "clawbackAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "eventName": "exchange.posted",
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.legAPendingReleaseId"
+                }
+              },
+              "key": "side_a_mature",
+              "operation": "internal_transfer.post"
+            },
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.legBPendingReleaseId"
+                }
+              },
+              "key": "side_b_mature",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "steps": [],
+          "summary": "Post both trade reservations when the clawback window matures"
+        },
+        "release": {
+          "agentDescription": "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. Either trading party may call it.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "holds.reserve",
+                "source": "moves[1]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "eventName": "exchange.released",
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legAAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legBAccountId"
+                },
+                "metadata.clawbackAt": {
+                  "from": "instance",
+                  "path": "fields.clawbackAt"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pending"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legAPendingReleaseId": "transferId"
+              },
+              "key": "side_a_reserve",
+              "operation": "internal_transfer.reserve"
+            },
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.legBAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.legAAccountId"
+                },
+                "metadata.clawbackAt": {
+                  "from": "instance",
+                  "path": "fields.clawbackAt"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "exchange"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pending"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "legBPendingReleaseId": "transferId"
+              },
+              "key": "side_b_reserve",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer",
+              "beneficiary"
+            ]
+          },
+          "publicAction": "releaseExchange",
+          "sandboxFailurePoint": "release",
+          "setsAt": {
+            "field": "clawbackAt",
+            "offset": "P7D"
+          },
+          "steps": [],
+          "summary": "Reserve both cross-payments for the whole-trade clawback window"
+        }
+      },
+      "agentDescription": "Reach for swap when two named parties pay each other in one atomic trade and neither leg may settle alone. Both principals fund one escrow together, both cross-payments reserve together, and one dispute unwinds both. A single payer paying a single payee is instant transfer instead.",
+      "callerParkedStates": {
+        "created": "The parties have not funded the exchange.",
+        "funded": "The parties have not released or cancelled the exchange."
+      },
+      "description": "Atomic swap between buyer and seller; half-funded and half-released states do not exist",
+      "distinctParties": true,
+      "fields": {
+        "clawbackAt": {
+          "description": "Machine-owned absolute end of the release clawback window",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "currency": {
+          "const": "C",
+          "description": "One currency for both trade legs and both fees",
+          "type": "string"
+        },
+        "legAAccountId": {
+          "description": "First trade party and funder",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "legAAmount": {
+          "description": "Amount side A holds against the whole exchange, in C minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "legAServiceFeeAmount": {
+          "description": "Side A custody fee charged on top and never placed in escrow",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "legBAccountId": {
+          "description": "Second trade party and funder",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "legBAmount": {
+          "description": "Amount side B holds against the whole exchange, in C minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "legBServiceFeeAmount": {
+          "description": "Side B custody fee charged on top and never placed in escrow",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "Product revenue or customer balance account collecting trade service fees",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        }
+      },
+      "id": "exchange",
+      "idPrefix": "exch",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funded",
+          "released",
+          "settled",
+          "cancelled",
+          "abandoned",
+          "clawed_back"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelled"
+          },
+          "dispute": {
+            "from": [
+              "released"
+            ],
+            "to": "clawed_back"
+          },
+          "fund": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          },
+          "post": {
+            "from": [
+              "released"
+            ],
+            "to": "settled"
+          },
+          "release": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "legBAccountId",
+        "payer": "legAAccountId"
+      },
+      "required": [
+        "legAAccountId",
+        "legBAccountId",
+        "platformAccountId",
+        "legAAmount",
+        "legBAmount",
+        "legAServiceFeeAmount",
+        "legBServiceFeeAmount",
+        "currency"
+      ],
+      "summary": "Two-party atomic trade between buyer and seller",
+      "title": "Exchange"
+    }
+  ],
+  "product": "fixed_side_exchange",
+  "subjects": [],
+  "title": "Fixed side exchange",
+  "udl": 1,
+  "version": 1
+}

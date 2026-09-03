@@ -1,0 +1,190 @@
+module std.settlements.instant_transfer
+
+export instrument instant_transfer<C>(payer: party, payee: party, amount: money<C>, fees: optional<block>, derived_amount: optional<block>) {
+  let(payer_fee): get(fees, payer);
+  let(payee_fee): get(fees, payee);
+  let(payer_fee_kind): kind(payer_fee);
+  let(payee_fee_kind): kind(payee_fee);
+  let(payer_account_field): camel(concat(payer, "_account_id"));
+  let(payee_account_field): camel(concat(payee, "_account_id"));
+  let(net_bps): sub(10000, payee_fee);
+  let(net_percent): percent_text(net_bps);
+  let(payee_bps): basis_points(payee_fee);
+  let(payee_tiers): values(payee_fee);
+  let(first_tier): at(payee_tiers, 1);
+  let(second_tier): at(payee_tiers, 2);
+  let(second_tier_fee): get(second_tier, "fee");
+  when(derived_amount) {
+    let(derived_field): get(derived_amount, "field");
+    let(derived_source): get(derived_amount, "source");
+    let(derived_rule): get(derived_amount, "rule");
+    let(derived_bearer): get(derived_amount, "bearer");
+  }
+  agent_description: concat("Reach for instant transfer when the ", words(payer), " pays the ", words(payee), " straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.");
+  summary: concat("Instant payment from ", words(payer), " to ", words(payee));
+  title: sentence(instrument);
+  description: concat("Instant transfer: the ", words(payer), " pays ", amount, " straight through to the ", words(payee), ", no custody");
+  fields {
+    when_not(fees) {
+      when(derived_amount) {
+        let(fee_collection_key): "x-hyperscale-fee-collection-port";
+        let(reference_filter_key): "x-hyperscale-reference-filter";
+        platformAccountId {
+          type: account<C>;
+          description: "The product fee collection account";
+          pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+          [fee_collection_key]: true;
+          [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+        }
+      }
+    }
+    when(fees) {
+      let(fee_collection_key): "x-hyperscale-fee-collection-port";
+      let(reference_filter_key): "x-hyperscale-reference-filter";
+      platformAccountId {
+        type: account<C>;
+        description: "The product fee collection account";
+        pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+        [fee_collection_key]: true;
+        [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+      }
+    }
+    when_not(fees) {
+      amount { type: money<C>; description: "The amount in {C} minor units, paid through whole"; }
+    }
+    when(fees) {
+      amount { type: money<C>; description: "The gross amount in {C} minor units; the piece fields below partition it exactly"; }
+      when_eq(payee_fee_kind, percent) {
+        piece1Amount { type: money<C>; description: concat(net_percent, " of ", amount, " (carries the integer-division remainder): released to the ", payee, ". Computed as floor(", amount, " * ", net_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+        piece2Amount { type: money<C>; description: concat(payee_fee, " of ", amount, ": released to the platform. Computed as floor(", amount, " * ", payee_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+      }
+      when_eq(payee_fee_kind, block) {
+        netOfCarvedFeeAmount { type: money<C>; description: "The remainder of {amount} after the carved platform fee"; pattern: "^[1-9][0-9]{0,17}$"; }
+        carvedFeeAmount { type: money<C>; description: "The carved platform fee selected from {amount}"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+      }
+      when_eq(payer_fee_kind, percent) {
+        serviceFeeAmount { type: money<C>; description: "Machine-owned {payer_fee} service fee computed from {amount}; charged on top"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+      }
+      when_eq(payer_fee_kind, binding) {
+        [payer_fee] { type: payer_fee; description: "Immutable exact {payer} fee in {C} minor units"; pattern: "^[1-9][0-9]{0,17}$"; }
+      }
+      when_eq(payee_fee_kind, block) {
+        [second_tier_fee] { type: second_tier_fee; description: "Immutable exact {payee} fee in {C} minor units"; pattern: "^[1-9][0-9]{0,17}$"; }
+      }
+    }
+    when(derived_amount) {
+      [derived_field] { type: money<C>; description: "Machine-computed {derived_rule} of {derived_source}; callers never supply it"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+    }
+  }
+  lifecycle {
+    when_not(fees) { states created paid; }
+    when(fees) { states created paying_1 paying_2 paid; }
+    initial created;
+    when_not(fees) { on pay_piece_1: created -> paid; }
+    when(fees) {
+      on pay_piece_1: created -> paying_1;
+      on pay_piece_2: paying_1 -> paying_2;
+      on collect_service_fee: paying_2 -> paid;
+    }
+  }
+  parties {
+    payer: payer;
+    beneficiary: payee;
+  }
+  when(derived_amount) {
+    computes derived: { field: derived_field; source_field: derived_source; rounding: floor; rule: { kind: percentage_of; bps: derived_rule; }; };
+  }
+  when(fees) {
+    when_eq(payer_fee_kind, percent) {
+      computes fees: { amount_field: serviceFeeAmount; base_field: amount; bearer_field: payer_account_field; position: on_top; rule: { kind: bps; bps: payer_fee; }; };
+    }
+    when_eq(payer_fee_kind, binding) {
+      computes fees: { amount_field: camel(payer_fee); base_field: amount; bearer_field: payer_account_field; position: on_top; rule: { kind: exact; field: camel(payer_fee); currency_field: currency; }; };
+    }
+    when_eq(payee_fee_kind, percent) {
+      computes fees: { amount_field: piece2Amount; base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: bps; bps: payee_fee; }; };
+      partitions: { total_field: amount; piece_fields: [piece1Amount, piece2Amount]; };
+    }
+    when_eq(payee_fee_kind, block) {
+      computes fees: { amount_field: carvedFeeAmount; base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: tiered; tiers: [{ from_inclusive: concat("", get(first_tier, "from")); to_exclusive: concat("", get(first_tier, "to")); rule: { kind: bps; bps: get(first_tier, "fee"); }; }, { from_inclusive: concat("", get(second_tier, "from")); rule: { kind: exact; field: camel(second_tier_fee); currency_field: currency; }; }]; }; };
+      partitions: { total_field: amount; piece_fields: [netOfCarvedFeeAmount, carvedFeeAmount]; };
+    }
+  }
+  action create {
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    agent_description: "Open the payment row before anything moves. The caller supplies the {amount}, the currency, and both party accounts. Fee and derived pieces are computed from the {amount}, callers never supply them. Call pay piece 1 to move the money.";
+    summary: concat("Create a ", words(instrument), " payment");
+    when(derived_amount) {
+      moves: [{
+        key: "derived_amount";
+        operation: internal_transfer.create;
+        bind: {
+          amount: { from: instance; path: concat("fields.", derived_field); };
+          currency: { from: instance; path: fields.currency; };
+          destinationAccountId: { from: instance; path: fields.platformAccountId; };
+          [metadata_instrument]: { from: const; value: instrument; };
+          [metadata_instance]: { from: instance; path: instrumentInstanceId; };
+          [metadata_phase]: { from: const; value: create; };
+          productId: { from: instance; path: productId; };
+          sourceAccountId: { from: instance; path: concat("fields.", camel(derived_bearer), "AccountId"); };
+        };
+        capture: { createDerivedAmountTransferId: transferId; };
+      }];
+    }
+    steps: [];
+  }
+  action pay_piece_1 {
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    agent_description: concat("Move the first piece from the ", words(payer), " to the ", words(payee), ". The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.");
+    summary: "Pay piece 1 of the amount through";
+    when_not(fees) {
+      moves: [{ key: transfer; amount: amount; from: payer; to: beneficiary; }];
+    }
+    when(fees) {
+      when_eq(payee_fee_kind, none) {
+        moves: [{ key: transfer; amount: amount; from: payer; to: beneficiary; }];
+      }
+      when_eq(payee_fee_kind, percent) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: pay_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { payPiece1TransferTransferId: transferId; }; }];
+      }
+      when_eq(payee_fee_kind, block) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.netOfCarvedFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: pay_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { payPiece1TransferTransferId: transferId; }; }];
+      }
+    }
+    steps: [];
+  }
+  when(fees) {
+    action pay_piece_2 {
+      let(metadata_instrument): "metadata.instrumentId";
+      let(metadata_instance): "metadata.instrumentInstanceId";
+      let(metadata_phase): "metadata.phase";
+      agent_description: concat("Move the carved platform fee out of the amount. Call this after pay piece 1. When the product carves no ", words(payee), " fee this only steps the payment forward and moves nothing.");
+      summary: "Pay piece 2 of the amount through";
+      when_eq(payee_fee_kind, percent) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: pay_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { payPiece2TransferTransferId: transferId; }; }];
+      }
+      when_eq(payee_fee_kind, block) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.carvedFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: pay_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { payPiece2TransferTransferId: transferId; }; }];
+      }
+      steps: [];
+    }
+    action collect_service_fee {
+      let(metadata_instrument): "metadata.instrumentId";
+      let(metadata_instance): "metadata.instrumentInstanceId";
+      let(metadata_phase): "metadata.phase";
+      agent_description: concat("Finish the payment and collect the service fee the ", words(payer), " owes on top of the amount. Both pieces must already be paid. When the product charges no payer fee this only closes the payment out.");
+      summary: "Collect the payer-side service fee";
+      when_eq(payer_fee_kind, percent) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.serviceFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: collect_service_fee; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { collectServiceFeeTransferTransferId: transferId; }; }];
+      }
+      when_eq(payer_fee_kind, binding) {
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", payer_fee); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: collect_service_fee; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { collectServiceFeeTransferTransferId: transferId; }; }];
+      }
+      steps: [];
+    }
+  }
+}

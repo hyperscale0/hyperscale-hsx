@@ -5,7 +5,7 @@
 
 program insured_travel "Insured travel platform"
 
-import { scheduled, metered, advance } from "settlement"
+import { scheduled, metered, advance } from "std/settlements"
 
 party traveler: person
 party agency:   business

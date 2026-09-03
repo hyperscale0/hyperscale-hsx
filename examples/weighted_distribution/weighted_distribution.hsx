@@ -1,0 +1,20 @@
+program weighted_distribution_example "Weighted distribution example"
+import { weighted_distribution } from "std/settlements"
+party distribution_source: business
+party recipient: business
+settlement proceeds = weighted_distribution {
+  source: distribution_source
+  recipient: recipient
+  amount: distributableAmount: money(SAR)
+  weight: entitlementWeight: money(SAR)
+  max_recipients: 12
+  record_at: recordAt
+  snapshot: port snapshot_entitlements
+  rounding_policy: largest_remainder
+  withholding_policy: refuse
+  correction_policy: new_distribution
+}
+port snapshot_entitlements {
+  allowed: [distribution_source]
+  shape: { evidenceReference: text }
+}

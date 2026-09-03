@@ -8,7 +8,7 @@
 
 program photo_booth "Photo booth rentals"
 
-import { held_payment } from "settlement"
+import { held_payment } from "std/settlements"
 
 party renter:  person
 party company: business

@@ -1,0 +1,148 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_piece_1"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the payment row before anything moves. The caller supplies the tipAmount, the currency, and both party accounts. Fee and derived pieces are computed from the tipAmount, callers never supply them. Call pay piece 1 to move the money.",
+          "moves": [],
+          "publicAction": "createTip",
+          "steps": [],
+          "summary": "Create a tip payment"
+        },
+        "pay_piece_1": {
+          "agentDescription": "Move the first piece from the listener to the host. The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.tipAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.hostAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "tip"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.listenerAccountId"
+                }
+              },
+              "capture": {
+                "payPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece1Tip",
+          "steps": [],
+          "summary": "Pay piece 1 of the amount through"
+        }
+      },
+      "agentDescription": "Reach for instant transfer when the listener pays the host straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.",
+      "description": "Instant transfer: the listener pays tipAmount straight through to the host, no custody",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "hostAccountId": {
+          "description": "The host account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "listenerAccountId": {
+          "description": "The listener account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tipAmount": {
+          "description": "The amount in SAR minor units, paid through whole",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "tip",
+      "idPrefix": "tip",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paid"
+        ],
+        "transitions": {
+          "pay_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "hostAccountId",
+        "payer": "listenerAccountId"
+      },
+      "required": [
+        "listenerAccountId",
+        "hostAccountId",
+        "tipAmount",
+        "currency"
+      ],
+      "summary": "Instant payment from listener to host",
+      "title": "Tip"
+    }
+  ],
+  "product": "tip_jar",
+  "subjects": [],
+  "title": "Tip jar",
+  "udl": 1,
+  "version": 1
+}

@@ -1,0 +1,68 @@
+module std.settlements.pooled_split
+
+export instrument pooled_split<C>(payer: party, amount: money<C>, payout_due: date, split: block) {
+  let(recipients): keys_except(split, "remainder_to");
+  let(recipient_count): len(recipients);
+  let(remainder_recipient): get(split, "remainder_to");
+  fields {
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    [payer]AccountId { type: account<C>; description: concat("The ", words(payer), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    amount { type: money<C>; description: concat("The pooled period total in {C} minor units; the share fields below partition it exactly"); }
+    payout_due { type: date; description: "The period's payout date; the pool distributes from it"; }
+    for index in recipient_count {
+      let(recipient): at(recipients, index);
+      let(share_bps): get(split, recipient);
+      [recipient]AccountId { type: account<C>; description: concat("The ", words(recipient), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      [recipient]ShareAmount {
+        type: money<C>;
+        description: concat(div_floor(basis_points(share_bps), 100), "% of ", amount, if_eq(recipient, remainder_recipient, " (carries the integer-division remainder): ", ": "), "the ", words(recipient), "'s share. Computed as floor(", amount, " * ", basis_points(share_bps), " / 10000) in {C} minor units");
+      }
+    }
+  }
+  lifecycle {
+    states created;
+    initial created;
+    for index in sub(recipient_count, 1) { states pooling_[index]; }
+    states pooled;
+    for index in sub(recipient_count, 1) { states distributing_[index]; }
+    states distributed;
+    for index in recipient_count {
+      let(fund_from): if_eq(index, 1, "created", concat("pooling_", sub(index, 1)));
+      let(fund_to): if_eq(index, recipient_count, "pooled", concat("pooling_", index));
+      on fund_share_[index]: [fund_from] -> [fund_to];
+      let(distribute_from): if_eq(index, 1, "pooled", concat("distributing_", sub(index, 1)));
+      let(distribute_to): if_eq(index, recipient_count, "distributed", concat("distributing_", index));
+      on distribute_share_[index]: [distribute_from] -> [distribute_to];
+    }
+  }
+  parties { beneficiary: concat(camel(at(recipients, 1)), "AccountId"); payer: concat(camel(payer), "AccountId"); }
+  required: concat_lists([concat(camel(payer), "AccountId")], suffix_each(recipients, "AccountId"), [concat("", amount), concat("", payout_due)], suffix_each(recipients, "ShareAmount"), ["currency"]);
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  agent_description: concat("Reach for ", words(instrument), " when the ", words(payer), " funds one period total that is then split across ", recipient_count, " fixed recipients by stored share amounts. Callers fund the pool one share at a time. Each recipient's payout fires from the stored payout date, not from a call.");
+  summary: concat("Period pool from ", words(payer), " split ", recipient_count, " ways");
+  description: concat("Pooled split: the ", words(payer), " pools the period's ", amount, " share by share; the pool distributes to every recipient in full on the stored payout date");
+  partitions { totalField: amount; pieceFields: suffix_each(recipients, "ShareAmount"); }
+  action create {
+    agent_description: concat("Open a ", words(instrument), " period and provision the escrow account the pool sits in. This is the first call on the period, and funding a share refuses until it lands. It moves no money.");
+    summary: concat("Open a ", words(instrument), " period");
+    moves: [];
+    steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { escrowAccountId: accountId; }; }];
+  }
+  for index in recipient_count {
+    let(recipient): at(recipients, index);
+    let(share_field): concat(camel(recipient), "ShareAmount");
+    action fund_share_[index] {
+      agent_description: concat("Move share ", index, " of the period total, the ", words(recipient), "'s cut, from the ", words(payer), " into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the ", words(payer), " for real. The pool pays out from the stored payout date with no release call.");
+      summary: concat("Pool share ", index, " of the period total");
+      moves: [{ amount: share_field; from: payer; to: refs.escrowAccountId; key: transfer; }];
+      steps: [];
+    }
+    action distribute_share_[index] {
+      summary: concat("Distribute the ", words(recipient), "'s share of the pool");
+      due { field: payout_due; }
+      moves: [{ amount: share_field; from: refs.escrowAccountId; to: recipient; key: transfer; }];
+      steps: [];
+    }
+  }
+}

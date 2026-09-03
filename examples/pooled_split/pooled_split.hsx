@@ -1,0 +1,15 @@
+program pooled_split_example "Pooled split example"
+import { pooled_split } from "std/settlements"
+party payer: business
+party first_recipient: business
+party second_recipient: business
+settlement pool = pooled_split {
+  payer: payer
+  amount: poolAmount: money(SAR)
+  payout_due: payoutDueAt
+  split {
+    first_recipient: 60%
+    second_recipient: 40%
+    remainder_to: first_recipient
+  }
+}

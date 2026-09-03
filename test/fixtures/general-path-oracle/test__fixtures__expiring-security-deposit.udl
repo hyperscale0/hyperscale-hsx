@@ -1,0 +1,409 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund",
+        "claim",
+        "return",
+        "expire",
+        "cancel"
+      ],
+      "actions": {
+        "cancel": {
+          "agentDescription": "Close a hold before anyone funds it. No money has moved, so this is a lifecycle transition only. Only a created hold cancels. A funded hold refuses, because its money is already reserved. Claim it or return it instead.",
+          "moves": [],
+          "publicAction": "cancelTenancyHold",
+          "steps": [],
+          "summary": "Cancel the security deposit"
+        },
+        "claim": {
+          "agentDescription": "Post the landlord's decided amount out of the reservation and void the remainder back to the tenant in one linked group. This moves money and does not reverse. Only a funded hold claims, and the claimed amount cannot exceed the held depositAmount.",
+          "captureInput": {
+            "claimedAmount": "claimAmount"
+          },
+          "deadline": {
+            "field": "expiresAt"
+          },
+          "decidedAmount": {
+            "boundField": "depositAmount",
+            "field": "claimAmount",
+            "remainderAction": "return"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "claimAmount": {
+                "description": "Positive minor-unit integer amount serialized as a string (at most 18 digits)",
+                "pattern": "^[1-9][0-9]{0,17}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "claimAmount"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "input",
+                  "path": "claimAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "postMode": {
+                  "from": "const",
+                  "value": "partial_only"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.holdTransferId"
+                }
+              },
+              "key": "claim",
+              "operation": "internal_transfer.post"
+            },
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Return unclaimed deposit remainder"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.holdTransferId"
+                }
+              },
+              "key": "remainder",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "claimTenancyHold",
+          "steps": [],
+          "summary": "Claim the security deposit"
+        },
+        "create": {
+          "agentDescription": "Open the hold by recording the tenant, the landlord, the depositAmount, and the deadline. No money moves here, so a created hold costs the tenant nothing until fund runs. The deadline is when the machine returns anything still unclaimed.",
+          "deadline": {
+            "field": "expiresAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createTenancyHold",
+          "steps": [],
+          "summary": "Create a tenancy hold"
+        },
+        "expire": {
+          "due": {
+            "field": "expiresAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit hold expired"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.holdTransferId"
+                }
+              },
+              "key": "expire",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "steps": [],
+          "summary": "Expire the security deposit"
+        },
+        "fund": {
+          "agentDescription": "Reserve the whole depositAmount out of the tenant's balance for the landlord. This moves money and the tenant can no longer spend it. Only a created hold funds. The reservation carries no expiry of its own, so the hold's deadline governs when it comes back.",
+          "deadline": {
+            "field": "expiresAt"
+          },
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.depositAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.landlordAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.tenantAccountId"
+                }
+              },
+              "capture": {
+                "holdTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "fundTenancyHold",
+          "steps": [],
+          "summary": "Fund the security deposit"
+        },
+        "return": {
+          "agentDescription": "Void the whole reservation so the tenant gets every unit back. Use this when the landlord decides to keep nothing. This moves money and does not reverse. Only a funded hold returns.",
+          "deadline": {
+            "field": "expiresAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.holdTransferId"
+                }
+              },
+              "key": "return",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "returnTenancyHold",
+          "steps": [],
+          "summary": "Return the security deposit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the tenant in the landlord's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "callerParkedStates": {
+        "created": "funding or canceling an unfunded hold is the payer's decision"
+      },
+      "dials": [
+        {
+          "field": "expiresAt",
+          "key": "holding_window",
+          "kind": "window",
+          "maxOffset": "P90D",
+          "summary": "Maximum time before the machine returns an unclaimed hold.",
+          "title": "Holding window"
+        }
+      ],
+      "distinctParties": true,
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "depositAmount": {
+          "description": "Positive minor-unit integer amount serialized as a string (at most 18 digits)",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "landlordAccountId": {
+          "description": "Hyperscale account ID",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memo": {
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tenantAccountId": {
+          "description": "Hyperscale account ID",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "tenancy_hold",
+      "idPrefix": "th",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned",
+          "expired",
+          "canceled"
+        ],
+        "transitions": {
+          "cancel": {
+            "from": [
+              "created"
+            ],
+            "to": "canceled"
+          },
+          "claim": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "expire": {
+            "from": [
+              "held"
+            ],
+            "to": "expired"
+          },
+          "fund": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "return": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "landlordAccountId",
+        "payer": "tenantAccountId"
+      },
+      "required": [
+        "tenantAccountId",
+        "landlordAccountId",
+        "depositAmount",
+        "currency",
+        "expiresAt"
+      ],
+      "summary": "Refundable deposit from tenant held for landlord",
+      "title": "Tenancy hold"
+    }
+  ],
+  "product": "expiring_security_deposit",
+  "subjects": [],
+  "title": "Expiring security deposit",
+  "udl": 1,
+  "version": 1
+}

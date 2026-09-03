@@ -4,7 +4,7 @@
 
 program used_car_escrow "Used-car escrow"
 
-import { held_payment } from "settlement"
+import { held_payment } from "std/settlements"
 
 party buyer:  person
 party seller: business

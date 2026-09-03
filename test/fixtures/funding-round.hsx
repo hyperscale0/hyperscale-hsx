@@ -1,10 +1,10 @@
 program capital_pool "Capital pool"
-import { funding_round } from "settlement"
+import { threshold_pool } from "std/settlements"
 
 party contributor: person
 party beneficiary: business
 
-settlement capital_pool = funding_round {
+settlement capital_pool = threshold_pool {
   contributor: contributor
   beneficiary: beneficiary
   target: targetAmount: money(SAR)

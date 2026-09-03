@@ -1,0 +1,977 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "approve_release",
+        "release_on_deadline",
+        "cancel",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a retention that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonRetention",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "approve_release": {
+          "agentDescription": "Confirm approve_release and start paying the held money out of escrow. The retention must be funded first, and the caller must be contractor. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "deadline": {
+            "field": "defectsPeriodEnd"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.retainedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "retention"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "approve_release"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "approveReleaseTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "approveReleaseRetention",
+          "steps": [],
+          "summary": "Confirm through approve_release and start the release payout"
+        },
+        "cancel": {
+          "agentDescription": "Cancel the retention and start returning the held money to the contractor. It must be funded and not yet released. Cancellation is final, and a cancelled settlement never releases. Where the product sets a release deadline, this call is refused once that date passes.",
+          "deadline": {
+            "field": "defectsPeriodEnd"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.retainedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.contractorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "retention"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelRetention",
+          "steps": [],
+          "summary": "Cancel the settlement and start the unwind"
+        },
+        "create": {
+          "agentDescription": "Open the retention and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createRetention",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a retention settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the contractor's money into this settlement's escrow. Call it after create and before any release. It debits the contractor for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.retainedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "retention"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.contractorAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Retention",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "release_on_deadline": {
+          "due": {
+            "field": "defectsPeriodEnd"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.retainedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "retention"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_on_deadline"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseOnDeadlineTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Release to the financier when defectsPeriodEnd arrives undecided"
+        }
+      },
+      "agentDescription": "Reach for retention when the contractor must commit money up front and nobody is paid until approve_release fires. Funding moves retainedAmount into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the contractor funds retainedAmount into this settlement's own escrow; contractor confirms through approve_release to release to the financier, whose advance the subcontractor repays out of it",
+      "fields": {
+        "contractorAccountId": {
+          "description": "The contractor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "defectsPeriodEnd": {
+          "description": "The date an undecided hold releases to the financier on; approve_release and cancellation decide only before it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "financierAccountId": {
+          "description": "The financier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "retainedAmount": {
+          "description": "The held amount in SAR minor units, funded and paid out whole",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "subcontractorAccountId": {
+          "description": "The subcontractor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "retention",
+      "idPrefix": "rete",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funded",
+          "released",
+          "cancelled",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "approve_release": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelled"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          },
+          "release_on_deadline": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "subcontractorAccountId",
+        "payer": "contractorAccountId"
+      },
+      "required": [
+        "contractorAccountId",
+        "subcontractorAccountId",
+        "financierAccountId",
+        "platformAccountId",
+        "retainedAmount",
+        "defectsPeriodEnd",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from contractor to subcontractor",
+      "title": "Retention"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "disburse",
+        "settle"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the advance row before any money moves. The caller supplies the retainedAmount, both party accounts, and the ids of the retention and the recourse that back repayment. Nothing is disbursed here.",
+          "moves": [],
+          "publicAction": "createFinancing",
+          "steps": [],
+          "summary": "Create a financing"
+        },
+        "disburse": {
+          "agentDescription": "Pay the retainedAmount from the financier to the subcontractor. The advance must be created, the bound retention funded, and the recourse active, both matching this amount and currency. The transfer posts straight out and does not unwind.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.retainedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.subcontractorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "financing"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "disburse"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                }
+              },
+              "capture": {
+                "disburseTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "disburseFinancing",
+          "requiresRefs": [
+            {
+              "field": "carveHoldId",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.retainedAmount": "fields.retainedAmount"
+              },
+              "statuses": [
+                "funded"
+              ]
+            },
+            {
+              "field": "carveRecourse1Id",
+              "match": {
+                "fields.currency": "fields.currency",
+                "fields.retainedAmount": "fields.retainedAmount"
+              },
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Disburse the retainedAmount to the subcontractor"
+        },
+        "settle": {
+          "agentDescription": "Close the advance once the retention has released to the financier in the subcontractor's place. The advance must already be disbursed. No money moves here, the release did the repaying.",
+          "moves": [],
+          "publicAction": "settleFinancing",
+          "steps": [],
+          "summary": "Close the advance once the retention has released to the financier"
+        }
+      },
+      "agentDescription": "Reach for advance when the financier pays the subcontractor up front and is repaid afterwards, either out of a carved hold release or over scheduled repayments. Pick deposit for a refundable reservation and instant transfer when nobody repays the payer.",
+      "description": "Advance: the financier disburses retainedAmount to the subcontractor and is repaid out of the retention release, which pays the financier in the subcontractor's place",
+      "fields": {
+        "carveHoldId": {
+          "description": "The retention bound to this advance",
+          "pattern": "^rete_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "carveRecourse1Id": {
+          "description": "The recourse bound to this advance",
+          "pattern": "^reco_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "financierAccountId": {
+          "description": "The financier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "retainedAmount": {
+          "description": "The advanced amount in SAR minor units, disbursed to the subcontractor up front",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "subcontractorAccountId": {
+          "description": "The subcontractor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "financing",
+      "idPrefix": "fina",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "advanced",
+          "repaid"
+        ],
+        "transitions": {
+          "disburse": {
+            "from": [
+              "created"
+            ],
+            "to": "advanced"
+          },
+          "settle": {
+            "from": [
+              "advanced"
+            ],
+            "to": "repaid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "subcontractorAccountId",
+        "payer": "financierAccountId"
+      },
+      "required": [
+        "subcontractorAccountId",
+        "financierAccountId",
+        "retainedAmount",
+        "carveHoldId",
+        "carveRecourse1Id",
+        "currency"
+      ],
+      "summary": "Advance to the subcontractor repaid by carving the retention release",
+      "title": "Financing"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "pay_installment_1",
+        "pay_installment_2",
+        "pay_installment_3"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Create the installment plan. No money moves. The total and its per-installment amounts are fixed here, and each installment collects on its own stored due date from then on.",
+          "moves": [],
+          "publicAction": "createRecourse",
+          "steps": [],
+          "summary": "Create a recourse plan"
+        },
+        "pay_installment_1": {
+          "due": {
+            "field": "recourseFirstDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "recourse"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.subcontractorAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 1 of 3"
+        },
+        "pay_installment_2": {
+          "due": {
+            "field": "recourseFirstDueAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "recourse"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.subcontractorAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 2 of 3"
+        },
+        "pay_installment_3": {
+          "due": {
+            "field": "recourseFirstDueAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.financierAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "recourse"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.subcontractorAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 3 of 3"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "description": "Scheduled payment: the subcontractor pays retainedAmount to the financier in 3 installments, one every P30D",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "financierAccountId": {
+          "description": "The financier account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "installment1Amount": {
+          "description": "Installment 1 of 3 (carries the integer-division remainder): about 33.34% of retainedAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment2Amount": {
+          "description": "Installment 2 of 3: about 33.33% of retainedAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment3Amount": {
+          "description": "Installment 3 of 3: about 33.33% of retainedAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "recourseFirstDueAt": {
+          "description": "Due date of the first installment; installment k falls P30D after its predecessor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "retainedAmount": {
+          "description": "The total scheduled amount in SAR minor units; the installment fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "subcontractorAccountId": {
+          "description": "The subcontractor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "recourse",
+      "idPrefix": "reco",
+      "lifecycle": {
+        "initial": "active",
+        "states": [
+          "active",
+          "collecting_1",
+          "collecting_2",
+          "settled"
+        ],
+        "transitions": {
+          "pay_installment_1": {
+            "from": [
+              "active"
+            ],
+            "to": "collecting_1"
+          },
+          "pay_installment_2": {
+            "from": [
+              "collecting_1"
+            ],
+            "to": "collecting_2"
+          },
+          "pay_installment_3": {
+            "from": [
+              "collecting_2"
+            ],
+            "to": "settled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "financierAccountId",
+        "payer": "subcontractorAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "installment1Amount",
+            "installment2Amount",
+            "installment3Amount"
+          ],
+          "totalField": "retainedAmount"
+        }
+      ],
+      "required": [
+        "subcontractorAccountId",
+        "financierAccountId",
+        "retainedAmount",
+        "recourseFirstDueAt",
+        "installment1Amount",
+        "installment2Amount",
+        "installment3Amount",
+        "currency"
+      ],
+      "summary": "3-installment schedule from subcontractor to financier",
+      "title": "Recourse"
+    }
+  ],
+  "product": "financed_retention",
+  "subjects": [],
+  "title": "Financed construction retention",
+  "udl": 1,
+  "version": 1
+}

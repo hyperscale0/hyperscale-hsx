@@ -1,11 +1,11 @@
 // An insured car marketplace: the sale price held in escrow until handover,
 // the insurance premium held until the policy binds and then forwarded to the
 // carrier minus commission, and a refundable test-drive deposit.
-// Exercises held_payment (no cancellation), premium_forward, and deposit.
+// Exercises held_payment (no cancellation), premium_forward, and security_deposit.
 
 program insured_car_marketplace "Insured car marketplace"
 
-import { held_payment, premium_forward, deposit } from "settlement"
+import { held_payment, premium_forward, security_deposit } from "std/settlements"
 
 party buyer:   person
 party seller:  business
@@ -29,7 +29,7 @@ settlement coverage = premium_forward {
   commission: 5%
 }
 
-settlement test_drive_deposit = deposit {
+settlement test_drive_deposit = security_deposit {
   payer:  buyer
   holder: seller
   amount: depositAmount: money(SAR)

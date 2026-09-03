@@ -2,7 +2,7 @@
   "name": "hsx",
   "displayName": "HSX",
   "description": "Syntax highlighting for the HSX settlement language.",
-  "version": "1.0.0-alpha.1",
+  "version": "1.0.0-rc.1",
   "publisher": "hyperscale0",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -36,6 +36,12 @@
         "language": "hsx",
         "scopeName": "source.hsx",
         "path": "./syntaxes/hsx.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "hsx",
+        "path": "./snippets/hsx.json"
       }
     ]
   }

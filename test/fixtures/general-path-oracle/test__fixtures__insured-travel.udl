@@ -1,0 +1,995 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_installment_1",
+        "pay_installment_2",
+        "pay_installment_3"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Create the installment plan. No money moves. The total and its per-installment amounts are fixed here, and each installment collects on its own stored due date from then on.",
+          "moves": [],
+          "publicAction": "createPackagePlan",
+          "steps": [],
+          "summary": "Create a package plan plan"
+        },
+        "pay_installment_1": {
+          "due": {
+            "field": "firstInstallmentDue"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "package_plan"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.travelerAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 1 of 3"
+        },
+        "pay_installment_2": {
+          "due": {
+            "field": "firstInstallmentDue",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "package_plan"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.travelerAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 2 of 3"
+        },
+        "pay_installment_3": {
+          "due": {
+            "field": "firstInstallmentDue",
+            "offset": "P60D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "package_plan"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.travelerAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 3 of 3"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "description": "Scheduled payment: the traveler pays packagePrice to the agency in 3 installments, one every P30D",
+      "fields": {
+        "agencyAccountId": {
+          "description": "The agency account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstInstallmentDue": {
+          "description": "Due date of the first installment; installment k falls P30D after its predecessor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "installment1Amount": {
+          "description": "Installment 1 of 3 (carries the integer-division remainder): about 33.34% of packagePrice, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment2Amount": {
+          "description": "Installment 2 of 3: about 33.33% of packagePrice, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment3Amount": {
+          "description": "Installment 3 of 3: about 33.33% of packagePrice, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "packagePrice": {
+          "description": "The total scheduled amount in SAR minor units; the installment fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "travelerAccountId": {
+          "description": "The traveler account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "package_plan",
+      "idPrefix": "pp",
+      "lifecycle": {
+        "initial": "active",
+        "states": [
+          "active",
+          "collecting_1",
+          "collecting_2",
+          "settled"
+        ],
+        "transitions": {
+          "pay_installment_1": {
+            "from": [
+              "active"
+            ],
+            "to": "collecting_1"
+          },
+          "pay_installment_2": {
+            "from": [
+              "collecting_1"
+            ],
+            "to": "collecting_2"
+          },
+          "pay_installment_3": {
+            "from": [
+              "collecting_2"
+            ],
+            "to": "settled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "agencyAccountId",
+        "payer": "travelerAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "installment1Amount",
+            "installment2Amount",
+            "installment3Amount"
+          ],
+          "totalField": "packagePrice"
+        }
+      ],
+      "required": [
+        "travelerAccountId",
+        "agencyAccountId",
+        "packagePrice",
+        "firstInstallmentDue",
+        "installment1Amount",
+        "installment2Amount",
+        "installment3Amount",
+        "currency"
+      ],
+      "summary": "3-installment schedule from traveler to agency",
+      "title": "Package plan"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "charge_excursion",
+        "charge_city_tour",
+        "close_period"
+      ],
+      "actions": {
+        "charge_city_tour": {
+          "agentDescription": "Charge one metered city tour at the committed price. The period must still be open, so charge before tripEndDate. The transfer posts from the traveler to the agency at once and there is no reversal action.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.cityTourFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "trip_extras"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "charge_city_tour"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.travelerAccountId"
+                }
+              },
+              "capture": {
+                "chargeCityTourTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "chargeCityTourTripExtras",
+          "steps": [],
+          "summary": "Charge one metered city tour; the emission is the transfer itself"
+        },
+        "charge_excursion": {
+          "agentDescription": "Charge one metered excursion at the committed price. The period must still be open, so charge before tripEndDate. The transfer posts from the traveler to the agency at once and there is no reversal action.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.excursionFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "trip_extras"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "charge_excursion"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.travelerAccountId"
+                }
+              },
+              "capture": {
+                "chargeExcursionTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "chargeExcursionTripExtras",
+          "steps": [],
+          "summary": "Charge one metered excursion; the emission is the transfer itself"
+        },
+        "close_period": {
+          "due": {
+            "field": "tripEndDate"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Close the metering period; no further usage can be charged"
+        },
+        "create": {
+          "agentDescription": "Open the metering period with its committed rate card. The caller supplies the tripEndDate anchor and every per-unit price. The prices are fixed here and no later charge can change them. No money moves.",
+          "moves": [],
+          "publicAction": "createTripExtras",
+          "steps": [],
+          "summary": "Open a trip extras period with its committed rate card"
+        }
+      },
+      "agentDescription": "Reach for metered when the traveler is billed per unit at a rate card fixed when the period opens, and the period closes on tripEndDate. Every charge is its own transfer. Pick recurring collection for a flat repeating amount and instant transfer for a one-off payment.",
+      "description": "Metered usage: the traveler is charged per unit at the committed rate card until the period closes on its stored end date",
+      "fields": {
+        "agencyAccountId": {
+          "description": "The agency account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "cityTourFee": {
+          "description": "Per-unit price of city tour in SAR minor units, committed at period open",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "excursionFee": {
+          "description": "Per-unit price of excursion in SAR minor units, committed at period open",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "travelerAccountId": {
+          "description": "The traveler account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tripEndDate": {
+          "description": "End of this metering period; the close makes further charges unreachable",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "trip_extras",
+      "idPrefix": "te",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "closed"
+        ],
+        "transitions": {
+          "charge_city_tour": {
+            "from": [
+              "open"
+            ],
+            "to": "open"
+          },
+          "charge_excursion": {
+            "from": [
+              "open"
+            ],
+            "to": "open"
+          },
+          "close_period": {
+            "from": [
+              "open"
+            ],
+            "to": "closed"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "agencyAccountId",
+        "payer": "travelerAccountId"
+      },
+      "required": [
+        "travelerAccountId",
+        "agencyAccountId",
+        "tripEndDate",
+        "excursionFee",
+        "cityTourFee",
+        "currency"
+      ],
+      "summary": "Metered charges from traveler on a committed rate card",
+      "title": "Trip extras"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "disburse",
+        "collect_repayment_1",
+        "collect_repayment_2",
+        "collect_repayment_3"
+      ],
+      "actions": {
+        "collect_repayment_1": {
+          "due": {
+            "field": "firstRepaymentDue"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.repayment1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.lenderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "agency_advance"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_repayment_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                }
+              },
+              "capture": {
+                "collectRepayment1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect repayment 1 of 3"
+        },
+        "collect_repayment_2": {
+          "due": {
+            "field": "firstRepaymentDue",
+            "offset": "P14D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.repayment2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.lenderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "agency_advance"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_repayment_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                }
+              },
+              "capture": {
+                "collectRepayment2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect repayment 2 of 3"
+        },
+        "collect_repayment_3": {
+          "due": {
+            "field": "firstRepaymentDue",
+            "offset": "P28D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.repayment3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.lenderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "agency_advance"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_repayment_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                }
+              },
+              "capture": {
+                "collectRepayment3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect repayment 3 of 3"
+        },
+        "create": {
+          "agentDescription": "Open the advance row before any money moves. The caller supplies the advanceAmount, the fee amount, the repayable total, and the first repayment date. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.",
+          "moves": [],
+          "publicAction": "createAgencyAdvance",
+          "steps": [],
+          "summary": "Create a agency advance"
+        },
+        "disburse": {
+          "agentDescription": "Pay the advanceAmount from the lender to the agency and start the repayment schedule. The advance must be created. The transfer posts straight out and does not unwind. Each repayment is collected on its own stored date anchor.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.advanceAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.agencyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "agency_advance"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "disburse"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.lenderAccountId"
+                }
+              },
+              "capture": {
+                "disburseTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "disburseAgencyAdvance",
+          "steps": [],
+          "summary": "Disburse the advanceAmount to the agency"
+        }
+      },
+      "agentDescription": "Reach for advance when the lender pays the agency up front and is repaid afterwards, either out of a carved hold release or over scheduled repayments. Pick deposit for a refundable reservation and instant transfer when nobody repays the payer.",
+      "description": "Advance: the lender disburses advanceAmount to the agency, repaid over 3 scheduled repayments plus the funder's discount",
+      "fields": {
+        "advanceAmount": {
+          "description": "The advanced amount in SAR minor units, disbursed to the agency up front",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "agencyAccountId": {
+          "description": "The agency account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "feeAmount": {
+          "description": "3% of advanceAmount, the funder's discount repaid on top of the advance",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "firstRepaymentDue": {
+          "description": "Due date of the first repayment; repayment k falls P2W after its predecessor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "lenderAccountId": {
+          "description": "The lender account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "repayableAmount": {
+          "description": "advanceAmount + feeAmount: the total the repayment fields below partition exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repayment1Amount": {
+          "description": "Repayment 1 of 3 (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repayment2Amount": {
+          "description": "Repayment 2 of 3: about 33.33% of repayableAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repayment3Amount": {
+          "description": "Repayment 3 of 3: about 33.33% of repayableAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "agency_advance",
+      "idPrefix": "aa",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "advanced",
+          "repaying_1",
+          "repaying_2",
+          "repaid"
+        ],
+        "transitions": {
+          "collect_repayment_1": {
+            "from": [
+              "advanced"
+            ],
+            "to": "repaying_1"
+          },
+          "collect_repayment_2": {
+            "from": [
+              "repaying_1"
+            ],
+            "to": "repaying_2"
+          },
+          "collect_repayment_3": {
+            "from": [
+              "repaying_2"
+            ],
+            "to": "repaid"
+          },
+          "disburse": {
+            "from": [
+              "created"
+            ],
+            "to": "advanced"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "agencyAccountId",
+        "payer": "lenderAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "repayment1Amount",
+            "repayment2Amount",
+            "repayment3Amount"
+          ],
+          "totalField": "repayableAmount"
+        },
+        {
+          "pieceFields": [
+            "advanceAmount",
+            "feeAmount"
+          ],
+          "totalField": "repayableAmount"
+        }
+      ],
+      "required": [
+        "lenderAccountId",
+        "agencyAccountId",
+        "advanceAmount",
+        "feeAmount",
+        "repayableAmount",
+        "firstRepaymentDue",
+        "repayment1Amount",
+        "repayment2Amount",
+        "repayment3Amount",
+        "currency"
+      ],
+      "summary": "Advance to agency repaid over 3 anchors",
+      "title": "Agency advance"
+    }
+  ],
+  "product": "insured_travel",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "trip",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Trip",
+      "version": 1
+    }
+  ],
+  "title": "Insured travel platform",
+  "udl": 1,
+  "version": 1
+}

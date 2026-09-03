@@ -1,0 +1,257 @@
+module std.settlements.premium_forward
+
+export instrument premium_forward<C>(
+  payer: party,
+  carrier: party,
+  amount: money<C>,
+  bind: condition,
+  commission: percent,
+  policy_ref: optional<text>,
+  renewal_due: optional<date>,
+  endorsement: optional<condition>,
+) {
+  let(instrument_words): words(instrument);
+  let(bind_name): concat(bind);
+  let(payer_field): camel(concat(payer, "_account_id"));
+  let(carrier_field): camel(concat(carrier, "_account_id"));
+  let(amount_field): concat(amount);
+  let(net_bps): sub(10000, commission);
+  let(fee_bps): add(commission, 0);
+  let(net_percent): if_eq(net_bps, 9500, "95%", if_eq(net_bps, 9800, "98%", "87.5%"));
+  let(fee_percent): if_eq(fee_bps, 500, "5%", if_eq(fee_bps, 200, "2%", "12.5%"));
+  let(bind_roles): if_eq(len(bind_allowed), 2, ["payer", "beneficiary"], ["beneficiary"]);
+  let(owner_id_key): "owner.id";
+  let(owner_type_key): "owner.type";
+  let(metadata_instrument_key): "metadata.instrumentId";
+  let(metadata_instance_key): "metadata.instrumentInstanceId";
+  let(metadata_phase_key): "metadata.phase";
+  let(bind_capture_key): camel(concat(bind, "_transfer_transfer_id"));
+  let(fee_port_key): "x-hyperscale-fee-collection-port";
+  let(reference_filter_key): "x-hyperscale-reference-filter";
+
+  title: sentence(instrument);
+  agent_description: "Reach for {instrument_words} when the {payer} pays an insurance premium ahead of cover and the {carrier} must not be paid until the policy binds. The {amount_field} sits in this settlement's own escrow until {bind_name} fires. Binding then forwards {net_percent} to the {carrier} and {fee_percent} to the platform.";
+  summary: "Premium held for the {carrier} until the policy binds";
+  description: "Premium forward: the {payer} funds the {amount_field} into this settlement's own escrow; binding through {bind_name} forwards it to the {carrier} exactly once, minus the platform commission";
+  partitions: { total_field: amount_field; piece_fields: [piece1Amount, piece2Amount]; };
+
+  fields {
+    platform_account_id: {
+      type: account;
+      description: "The product fee collection account";
+      pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+      [fee_port_key]: true;
+      [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+    }
+    amount: {
+      type: money<C>;
+      description: "The gross held amount in {C} minor units; the piece fields below partition it exactly";
+    }
+    piece1_amount: {
+      type: money<C>;
+      description: "{net_percent} of {amount_field} (carries the integer-division remainder): released to the {carrier}. Computed as floor({amount_field} * {net_bps} / 10000) in {C} minor units";
+    }
+    piece2_amount: {
+      type: money<C>;
+      description: "{fee_percent} of {amount_field}: released to the platform. Computed as floor({amount_field} * {fee_bps} / 10000) in {C} minor units";
+    }
+    when(policy_ref) {
+      policy_ref: {
+        type: text;
+        description: "Immutable external policy reference recorded with this forward";
+        max_length: 180;
+        min_length: 1;
+      }
+    }
+    when(renewal_due) {
+      renewal_due: {
+        type: date;
+        description: "Stored renewal due condition for the forwarded policy";
+      }
+    }
+  }
+
+  parties { payer: payer; beneficiary: carrier; }
+
+  lifecycle {
+    states created funding_1 funded releasing_1 released abandoned;
+    when(endorsement) { states endorsed lapsed; }
+    initial created;
+    on fund_piece_1: created -> funding_1;
+    on fund_piece_2: funding_1 -> funded;
+    on [bind]: funded -> releasing_1;
+    on forward_piece_2: releasing_1 -> released;
+    on unfund_piece_1: funding_1 -> abandoned;
+    on abandon: created -> abandoned;
+    when(endorsement) {
+      on [endorsement]: released -> endorsed;
+      on lapse: released|endorsed -> lapsed;
+    }
+  }
+
+  action create {
+    agent_description: "Open the {instrument_words} and provision the escrow account that holds the funds. This is the first call on the settlement, and funding refuses until it lands. It moves no money.";
+    summary: "Create a {instrument_words} settlement";
+    steps: [{
+      operation: "account.escrow.provision";
+      bind: {
+        currency: { from: instance; path: fields.currency; };
+        [owner_id_key]: { from: instance; path: productId; };
+        [owner_type_key]: { from: const; value: product; };
+        product_id: { from: instance; path: productId; };
+        role: { from: const; value: product_escrow; };
+      };
+      capture: { escrow_account_id: accountId; };
+    }];
+  }
+
+  action fund_piece_1 {
+    agent_description: "Move the {carrier}'s share of the premium from the {payer} into escrow. The settlement must exist and be unfunded. It debits the {payer} for real, and piece 2 still has to fund before the policy can bind.";
+    summary: "Fund piece 1 of the held amount into escrow";
+    moves: [{
+      key: transfer; operation: "internal_transfer.create";
+      bind: {
+        amount: { from: instance; path: fields.piece1Amount; };
+        currency: { from: instance; path: fields.currency; };
+        destination_account_id: { from: instance; path: refs.escrowAccountId; };
+        source_account_id: { from: instance; path: concat("fields.", payer_field); };
+        [metadata_instrument_key]: { from: const; value: instrument; };
+        [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+        [metadata_phase_key]: { from: const; value: fund_piece_1; };
+        product_id: { from: instance; path: productId; };
+      };
+      capture: { fund_piece_1_transfer_transfer_id: transferId; };
+    }];
+    steps: [];
+  }
+
+  action fund_piece_2 {
+    agent_description: "Move the platform commission piece from the {payer} into escrow, which completes funding. Piece 1 must be in escrow first. It debits the {payer} for real, and the premium is then held whole.";
+    summary: "Fund piece 2 of the held amount into escrow";
+    moves: [{
+      key: transfer; operation: "internal_transfer.create";
+      bind: {
+        amount: { from: instance; path: fields.piece2Amount; };
+        currency: { from: instance; path: fields.currency; };
+        destination_account_id: { from: instance; path: refs.escrowAccountId; };
+        source_account_id: { from: instance; path: concat("fields.", payer_field); };
+        [metadata_instrument_key]: { from: const; value: instrument; };
+        [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+        [metadata_phase_key]: { from: const; value: fund_piece_2; };
+        product_id: { from: instance; path: productId; };
+      };
+      capture: { fund_piece_2_transfer_transfer_id: transferId; };
+    }];
+    steps: [];
+  }
+
+  action [bind] {
+    agent_description: "Bind the policy through {bind_name} and forward the {carrier}'s share out of escrow. The premium must be fully funded first, and the call carries the decision reference the product asks for. Money leaves escrow here and does not come back.";
+    summary: "Confirm through {bind_name} and start the forward payout";
+    input: {
+      additional_properties: false;
+      properties: {
+        for item in keys(bind_fields) {
+          [item]: {
+            description: "Required decision reference retained in the operation receipt";
+            max_length: 180; min_length: 1; type: string;
+          }
+        }
+      };
+      required: keys(bind_fields);
+      type: object;
+    };
+    port: { allowed_parties: bind_roles; };
+    moves: [{
+      key: transfer; operation: "internal_transfer.create";
+      bind: {
+        amount: { from: instance; path: fields.piece1Amount; };
+        currency: { from: instance; path: fields.currency; };
+        destination_account_id: { from: instance; path: concat("fields.", carrier_field); };
+        source_account_id: { from: instance; path: refs.escrowAccountId; };
+        [metadata_instrument_key]: { from: const; value: instrument; };
+        [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+        [metadata_phase_key]: { from: const; value: bind; };
+        product_id: { from: instance; path: productId; };
+      };
+      capture: { [bind_capture_key]: transferId; };
+    }];
+    steps: [];
+  }
+
+  action forward_piece_2 {
+    agent_description: "Pay the platform commission out of escrow to the fee collection account, which closes the forward. {bind_name} must have run first. Money leaves escrow here and does not come back.";
+    summary: "Forward piece 2 of the held amount";
+    moves: [{
+      key: transfer; operation: "internal_transfer.create";
+      bind: {
+        amount: { from: instance; path: fields.piece2Amount; };
+        currency: { from: instance; path: fields.currency; };
+        destination_account_id: { from: instance; path: fields.platformAccountId; };
+        source_account_id: { from: instance; path: refs.escrowAccountId; };
+        [metadata_instrument_key]: { from: const; value: instrument; };
+        [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+        [metadata_phase_key]: { from: const; value: forward_piece_2; };
+        product_id: { from: instance; path: productId; };
+      };
+      capture: { forward_piece_2_transfer_transfer_id: transferId; };
+    }];
+    steps: [];
+  }
+
+  action unfund_piece_1 {
+    agent_description: "Return the {carrier}'s share from escrow to the {payer} and abandon the forward. It runs only while funding stopped after piece 1, before the policy binds. The settlement ends abandoned.";
+    summary: "Return piece 1 to the {payer} on abandonment";
+    moves: [{
+      key: transfer; operation: "internal_transfer.create";
+      bind: {
+        amount: { from: instance; path: fields.piece1Amount; };
+        currency: { from: instance; path: fields.currency; };
+        destination_account_id: { from: instance; path: concat("fields.", payer_field); };
+        source_account_id: { from: instance; path: refs.escrowAccountId; };
+        [metadata_instrument_key]: { from: const; value: instrument; };
+        [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+        [metadata_phase_key]: { from: const; value: unfund_piece_1; };
+        product_id: { from: instance; path: productId; };
+      };
+      capture: { unfund_piece_1_transfer_transfer_id: transferId; };
+    }];
+    steps: [];
+  }
+
+  action abandon {
+    agent_description: "Close a {instrument_words} that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here.";
+    summary: "Abandon the settlement before any money is held";
+    requires drained: { path: refs.escrowAccountId; };
+    steps: [];
+  }
+
+  when(endorsement) {
+    action [endorsement] {
+      agent_description: "Record one endorsement against a policy that already forwarded, from evidence the caller supplies. The forward must be released first, and only the {carrier} may call it. It moves no money and it does not change the premium.";
+      summary: "Record one non-money endorsement from external evidence";
+      input: {
+        additional_properties: false;
+        properties: {
+          for item in keys(endorsement_fields) {
+            [item]: {
+              description: "Required decision reference retained in the operation receipt";
+              max_length: 180; min_length: 1; type: string;
+            }
+          }
+        };
+        required: keys(endorsement_fields);
+        type: object;
+      };
+      capture_input: { endorsement_evidence_reference: evidenceReference; };
+      port: { allowed_parties: [beneficiary]; };
+      steps: [];
+    }
+    action lapse {
+      summary: "Mark the forwarded policy lapsed at its stored renewal due condition";
+      due: { field: renewal_due; };
+      requires drained: { path: refs.escrowAccountId; };
+      steps: [];
+    }
+  }
+}

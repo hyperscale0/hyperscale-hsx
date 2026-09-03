@@ -1,0 +1,578 @@
+module std.settlements.held_payment
+
+export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, release: condition, fees: optional<block>, on_cancel: optional<block>, derived_amount: optional<block>, release_to: optional<party>, whole_amount: optional<block>, release_action: optional<text>, whole_fee: optional<money<C>>, reference: optional<text>, upstream: optional<ref>, id_prefix_override: optional<text>) {
+  let(release_name): release;
+  let(release_actor): at(release_allowed, 1);
+  let(release_actor_2): at(release_allowed, 2);
+  let(release_multiple): lt(1, len(release_allowed));
+  let(release_role): if_eq(release_actor, payer, "payer", "beneficiary");
+  let(release_role_2): if_eq(release_actor_2, payer, "payer", "beneficiary");
+  let(release_actor_text): if_eq(len(release_allowed), 2, concat(words(release_actor), " or ", words(release_actor_2)), words(release_actor));
+  let(payer_account_field): camel(concat(payer, "_account_id"));
+  let(payee_account_field): camel(concat(payee, "_account_id"));
+  let(release_to_account_field): camel(concat(release_to, "_account_id"));
+  let(payer_fee): get(fees, payer);
+  let(payee_fee): get(fees, payee);
+  let(payer_fee_kind): kind(payer_fee);
+  let(payee_fee_kind): kind(payee_fee);
+  when_eq(payee_fee_kind, binding) {
+    when(on_cancel) {
+      unsupported {
+        code: HSX1110;
+        message: "exact payee fees cannot combine with on_cancel yet";
+        fix: "remove on_cancel or use a percentage payee fee";
+      }
+    }
+  }
+  let(payer_bps): basis_points(payer_fee);
+  let(payee_bps): basis_points(payee_fee);
+  let(net_bps): sub(10000, payee_fee);
+  let(net_percent): percent_text(net_bps);
+  let(cancel_payer): get(on_cancel, payer);
+  let(cancel_payee): get(on_cancel, payee);
+  let(cancel_payer_bps): basis_points(cancel_payer);
+  let(cancel_payee_bps): basis_points(cancel_payee);
+  let(cancel_splits): lt(1, len(on_cancel));
+  let(piece1_bps): min(net_bps, cancel_payer_bps);
+  let(piece3_bps): min(payee_bps, cancel_payee_bps);
+  let(piece2_bps): sub(sub(10000, piece1_bps), piece3_bps);
+  let(piece1_percent): percent_text(piece1_bps);
+  let(piece2_percent): percent_text(piece2_bps);
+  let(piece3_percent): percent_text(piece3_bps);
+  let(carved_spans): lt(cancel_payee_bps, payee_bps);
+  let(derived_field): get(derived_amount, "field");
+  let(derived_source): get(derived_amount, "source");
+  let(derived_rule): get(derived_amount, "rule");
+  let(derived_bearer): get(derived_amount, "bearer");
+  agent_description: concat("Reach for ", words(instrument), " when the ", words(payer), " must commit money up front and nobody is paid until ", release, " fires. Funding moves ", amount, " into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.");
+  when_not(whole_amount) {
+  summary: concat("Escrow-held payment from ", words(payer), " to ", words(payee));
+  title: sentence(instrument);
+  when_not(release_to) { description: concat("Held payment: the ", words(payer), " funds ", amount, " into this settlement's own escrow; ", release_actor_text, " confirms through ", release, " to release"); }
+  when(release_to) { description: concat("Held payment: the ", words(payer), " funds ", amount, " into this settlement's own escrow; ", release_actor_text, " confirms through ", release, " to release to the ", words(release_to), ", whose advance the ", words(payee), " repays out of it"); }
+  fields {
+    let(fee_collection_key): "x-hyperscale-fee-collection-port";
+    let(reference_filter_key): "x-hyperscale-reference-filter";
+    when(release_to) {
+      [release_to_account_field] { type: account<C>; description: concat("The ", words(release_to), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+    }
+    platformAccountId {
+      type: account<C>;
+      description: "The product fee collection account";
+      pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+      [fee_collection_key]: true;
+      [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+    }
+    when_not(payee_fee) {
+      when_not(cancel_splits) { amount { type: money<C>; description: "The held amount in {C} minor units, funded and paid out whole"; } }
+      when(cancel_splits) {
+        amount { type: money<C>; description: "The gross held amount in {C} minor units; the piece fields below partition it exactly"; }
+        piece1Amount { type: money<C>; description: concat(cancel_payer, " of ", amount, " (carries the integer-division remainder): released to the ", payee, "; on cancellation to the ", payer, ". Computed as floor(", amount, " * ", cancel_payer_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+        piece2Amount { type: money<C>; description: concat(cancel_payee, " of ", amount, ": released to the ", payee, "; on cancellation to the ", payee, ". Computed as floor(", amount, " * ", cancel_payee_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+      }
+    }
+    when(payee_fee) {
+      amount { type: money<C>; description: "The gross held amount in {C} minor units; the piece fields below partition it exactly"; }
+      when_not(on_cancel) {
+        when_eq(payee_fee_kind, percent) {
+          piece1Amount { type: money<C>; description: concat(net_percent, " of ", amount, " (carries the integer-division remainder): released to the ", payee, ". Computed as floor(", amount, " * ", net_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+          piece2Amount { type: money<C>; description: concat(payee_fee, " of ", amount, ": released to the platform. Computed as floor(", amount, " * ", payee_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+        }
+        when_eq(payee_fee_kind, binding) {
+          piece1Amount { type: money<C>; description: concat("The remainder of ", amount, " after the exact ", payee_fee, " fee; released to the ", payee); pattern: "^[1-9][0-9]{0,17}$"; }
+          [payee_fee] { type: payee_fee; description: concat("Immutable exact ", payee, " fee in ", C, " minor units; released to the platform"); pattern: "^[1-9][0-9]{0,17}$"; }
+        }
+      }
+      when(on_cancel) {
+        piece1Amount { type: money<C>; description: concat(piece1_percent, " of ", amount, " (carries the integer-division remainder): released to the ", payee, "; on cancellation to the ", payer, ". Computed as floor(", amount, " * ", piece1_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+        when(carved_spans) {
+          piece2Amount { type: money<C>; description: concat(piece2_percent, " of ", amount, ": released to the platform; on cancellation to the ", payer, ". Computed as floor(", amount, " * ", piece2_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+          piece3Amount { type: money<C>; description: concat(piece3_percent, " of ", amount, ": released to the platform; on cancellation to the ", payee, ". Computed as floor(", amount, " * ", piece3_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+          carvedFeeAmount { type: money<C>; description: "Machine-owned total of the 2 carved platform fee pieces"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+        }
+        when_not(carved_spans) {
+          piece2Amount { type: money<C>; description: concat(piece2_percent, " of ", amount, ": released to the ", payee, "; on cancellation to the ", payee, ". Computed as floor(", amount, " * ", piece2_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; }
+          piece3Amount { type: money<C>; description: concat(piece3_percent, " of ", amount, ": released to the platform; on cancellation to the ", payee, ". Computed as floor(", amount, " * ", piece3_bps, " / 10000) in ", C, " minor units"); pattern: "^[1-9][0-9]{0,17}$"; optional: true; }
+        }
+      }
+    }
+    when_eq(payer_fee_kind, percent) { serviceFeeAmount { type: money<C>; description: concat("Machine-owned ", payer_fee, " service fee computed from ", amount, "; charged on top at funding"); pattern: "^[1-9][0-9]{0,17}$"; optional: true; } }
+    when_eq(payer_fee_kind, binding) { [payer_fee] { type: payer_fee; description: concat("Immutable exact ", payer, " fee in ", C, " minor units; charged on top at funding"); pattern: "^[1-9][0-9]{0,17}$"; } }
+    when(release_deadline) {
+      when_not(release_to) { [release_deadline] { type: date; description: concat("The date an undecided hold releases to the ", words(payee), " on; ", release, " and cancellation decide only before it"); } }
+      when(release_to) { [release_deadline] { type: date; description: concat("The date an undecided hold releases to the ", words(release_to), " on; ", release, " and cancellation decide only before it"); } }
+    }
+    when(derived_amount) { [derived_field] { type: money<C>; description: "Machine-computed {derived_rule} of {derived_source}; callers never supply it"; pattern: "^[1-9][0-9]{0,17}$"; optional: true; } }
+  }
+  lifecycle {
+    when_not(payee_fee) {
+      when_not(cancel_splits) {
+        states created funded released;
+        when(on_cancel) { states cancelled; }
+        states abandoned;
+      }
+      when(cancel_splits) { states created funding_1 funded releasing_1 released cancelling_1 cancelled abandoned; }
+    }
+    when(payee_fee) {
+      when_not(on_cancel) { states created funding_1 funded releasing_1 released abandoned; }
+      when(on_cancel) {
+        when_eq(payer_fee_kind, percent) { states created funding_1 funding_2 funding_3 funded releasing_1 releasing_2 released cancelling_1 cancelling_2 cancelled abandoning_1 abandoned abandoning_2; }
+        when_eq(payer_fee_kind, none) { states created funding_1 funding_2 funded releasing_1 releasing_2 released cancelling_1 cancelling_2 cancelled abandoning_1 abandoned; }
+        when_eq(payer_fee_kind, binding) { states created funding_1 funding_2 funded releasing_1 releasing_2 released cancelling_1 cancelling_2 cancelled abandoning_1 abandoned; }
+      }
+    }
+    initial created;
+    when_not(payee_fee) {
+      when_not(cancel_splits) {
+        on fund_piece_1: created -> funded;
+        on [release_name]: funded -> released;
+        when(release_deadline) { on release_on_deadline: funded -> released; }
+        when(on_cancel) { on cancel: funded -> cancelled; }
+      }
+      when(cancel_splits) {
+        on fund_piece_1: created -> funding_1;
+        on fund_piece_2: funding_1 -> funded;
+        on [release_name]: funded -> releasing_1;
+        on release_piece_2: releasing_1 -> released;
+        on cancel: funded -> cancelling_1;
+        on refund_piece_2: cancelling_1 -> cancelled;
+        on unfund_piece_1: funding_1 -> abandoned;
+      }
+    }
+    when(payee_fee) {
+      when_not(on_cancel) {
+        on fund_piece_1: created -> funding_1;
+        on fund_piece_2: funding_1 -> funded;
+        on [release_name]: funded -> releasing_1;
+        when(release_deadline) { on release_on_deadline: funded -> releasing_1; }
+        on release_piece_2: releasing_1 -> released;
+        on unfund_piece_1: funding_1 -> abandoned;
+      }
+      when(on_cancel) {
+        on fund_piece_1: created -> funding_1;
+        on fund_piece_2: funding_1 -> funding_2;
+        when_eq(payer_fee_kind, percent) {
+          on fund_piece_3: funding_2 -> funding_3;
+          on collect_service_fee: funding_3 -> funded;
+        }
+        when_eq(payer_fee_kind, none) { on fund_piece_3: funding_2 -> funded; }
+        when_eq(payer_fee_kind, binding) { on fund_piece_3: funding_2 -> funded; }
+        on [release_name]: funded -> releasing_1;
+        on release_piece_2: releasing_1 -> releasing_2;
+        on release_piece_3: releasing_2 -> released;
+        on cancel: funded -> cancelling_1;
+        on refund_piece_2: cancelling_1 -> cancelling_2;
+        on refund_piece_3: cancelling_2 -> cancelled;
+        when_eq(payer_fee_kind, percent) {
+          on unfund_piece_3: funding_3 -> abandoning_2;
+          on unfund_piece_2: funding_2 | abandoning_2 -> abandoning_1;
+        }
+        when_eq(payer_fee_kind, none) { on unfund_piece_2: funding_2 -> abandoning_1; }
+        when_eq(payer_fee_kind, binding) { on unfund_piece_2: funding_2 -> abandoning_1; }
+        on unfund_piece_1: funding_1 | abandoning_1 -> abandoned;
+      }
+    }
+    on abandon: created -> abandoned;
+  }
+  parties {
+    payer: payer;
+    beneficiary: payee;
+  }
+  when_eq(payer_fee_kind, percent) {
+    computes fees: { amount_field: serviceFeeAmount; base_field: amount; bearer_field: payer_account_field; position: on_top; rule: { kind: bps; bps: payer_bps; }; };
+  }
+  when_eq(payer_fee_kind, binding) {
+    computes fees: { amount_field: camel(payer_fee); base_field: amount; bearer_field: payer_account_field; position: on_top; rule: { kind: exact; field: camel(payer_fee); currency_field: currency; }; };
+  }
+  when(payee_fee) {
+    when(on_cancel) {
+      action fund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Move piece 2 of the split amount from the ", words(payer), " into escrow. Piece 1 must be in escrow first. It debits the ", words(payer), " for real, and the hold is still short of funded until piece 3 lands.");
+        summary: "Fund piece 2 of the held amount into escrow";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action fund_piece_3 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Move piece 3 of the split amount from the ", words(payer), " into escrow. Pieces 1 and 2 must be in escrow first. It debits the ", words(payer), " for real. Where the product charges a percentage payer fee, one more call collects that fee before the hold counts as funded.");
+        summary: "Fund piece 3 of the held amount into escrow";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece3Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_3; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece3TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      when_eq(payer_fee_kind, percent) {
+        action collect_service_fee {
+          let(metadata_instrument): "metadata.instrumentId";
+          let(metadata_instance): "metadata.instrumentInstanceId";
+          let(metadata_phase): "metadata.phase";
+          agent_description: concat("Charge the ", words(payer), " the percentage service fee on top of the held amount and pay it to the platform account. All three funding pieces must be in escrow first. It debits the ", words(payer), " for real and it is the last step of funding.");
+          summary: "Collect the payer-side service fee";
+          moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.serviceFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: collect_service_fee; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { collectServiceFeeTransferTransferId: transferId; }; }];
+          steps: [];
+        }
+      }
+      action release_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Pay piece 2 out of escrow once the release decision has run. Its destination follows the product fee split, either the platform account or the ", words(payee), ". Money leaves escrow on this call and does not come back.");
+        summary: "Release piece 2 of the held amount";
+        when(carved_spans) { let(release_piece_2_destination): "fields.platformAccountId"; }
+        when_not(carved_spans) { let(release_piece_2_destination): concat("fields.", payee_account_field); }
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: release_piece_2_destination; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releasePiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action release_piece_3 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Pay piece 3 out of escrow to the platform account, which closes the release. Piece 2 must be released first. Money leaves escrow on this call and does not come back.");
+        summary: "Release piece 3 of the held amount";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece3Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_piece_3; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releasePiece3TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action refund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 2 out of escrow once cancel has run. Its destination follows the product fee split, either the ", words(payer), " or the ", words(payee), ". Money leaves escrow on this call and does not come back.");
+        summary: "Return piece 2 on cancellation";
+        when(carved_spans) { let(refund_piece_2_destination): concat("fields.", payer_account_field); }
+        when_not(carved_spans) { let(refund_piece_2_destination): concat("fields.", payee_account_field); }
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refund_piece_2_destination; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: refund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { refundPiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action refund_piece_3 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 3 out of escrow to the ", words(payee), ", which closes the cancellation. Piece 2 must be returned first. Money leaves escrow on this call and does not come back.");
+        summary: "Return piece 3 on cancellation";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece3Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: refund_piece_3; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { refundPiece3TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action unfund_piece_1 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 1 from escrow to the ", words(payer), " and abandon the ", words(instrument), ". It runs when only piece 1 was ever funded, or after the later pieces have already gone back. The settlement ends abandoned.");
+        summary: "Return piece 1 to the {payer} on abandonment";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: unfund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { unfundPiece1TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action unfund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 2 from escrow to the ", words(payer), " while abandoning a part-funded ", words(instrument), ". Funding must have stopped at piece 2, or piece 3 must already be back. Piece 1 still has to be returned after this.");
+        summary: "Return piece 2 to the {payer} on abandonment";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: unfund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { unfundPiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      when_eq(payer_fee_kind, percent) {
+        action unfund_piece_3 {
+          let(metadata_instrument): "metadata.instrumentId";
+          let(metadata_instance): "metadata.instrumentInstanceId";
+          let(metadata_phase): "metadata.phase";
+          agent_description: concat("Return piece 3 from escrow to the ", words(payer), " while abandoning a ", words(instrument), " funded as far as piece 3. Pieces 2 and 1 still have to be returned after this, in that order.");
+          summary: "Return piece 3 to the {payer} on abandonment";
+          moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece3Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: unfund_piece_3; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { unfundPiece3TransferTransferId: transferId; }; }];
+          steps: [];
+        }
+      }
+    }
+    when_not(on_cancel) {
+      when_eq(payee_fee_kind, percent) {
+        computes fees: { amount_field: piece2Amount; base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: bps; bps: payee_bps; }; };
+        partitions: { total_field: amount; piece_fields: [piece1Amount, piece2Amount]; };
+      }
+      when_eq(payee_fee_kind, binding) {
+        computes fees: { amount_field: camel(payee_fee); base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: exact; field: camel(payee_fee); currency_field: currency; }; };
+        partitions: { total_field: amount; piece_fields: [piece1Amount, camel(payee_fee)]; };
+      }
+    }
+    when(on_cancel) {
+      when_eq(payee_fee_kind, percent) {
+        when(carved_spans) {
+          computes fees: { amount_field: carvedFeeAmount; base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: bps; bps: payee_bps; }; };
+        }
+        when_not(carved_spans) {
+          computes fees: { amount_field: piece3Amount; base_field: amount; bearer_field: payee_account_field; position: carved; rule: { kind: bps; bps: payee_bps; }; };
+        }
+      }
+      partitions: { total_field: amount; piece_fields: [piece1Amount, piece2Amount, piece3Amount]; };
+      when(carved_spans) { partitions: { total_field: carvedFeeAmount; piece_fields: [piece2Amount, piece3Amount]; }; }
+    }
+  }
+  when_not(payee_fee) {
+    when(cancel_splits) { partitions: { total_field: amount; piece_fields: [piece1Amount, piece2Amount]; }; }
+  }
+  when(derived_amount) {
+    computes derived: { field: derived_field; source_field: derived_source; rounding: floor; rule: { kind: percentage_of; bps: derived_rule; }; };
+  }
+  action create {
+    let(owner_id): "owner.id";
+    let(owner_type): "owner.type";
+    agent_description: concat("Open the ", words(instrument), " and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.");
+    summary: concat("Create a ", words(instrument), " settlement");
+    when_not(derived_amount) { moves: []; }
+    when(derived_amount) {
+      let(metadata_instrument): "metadata.instrumentId";
+      let(metadata_instance): "metadata.instrumentInstanceId";
+      let(metadata_phase): "metadata.phase";
+      moves: [{ key: "derived_amount"; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", derived_field); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: create; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", camel(derived_bearer), "AccountId"); }; }; capture: { createDerivedAmountTransferId: transferId; }; }];
+    }
+    steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: fields.currency; }; [owner_id]: { from: instance; path: productId; }; [owner_type]: { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { escrowAccountId: accountId; }; }];
+  }
+  action fund_piece_1 {
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    agent_description: concat("Move the ", words(payer), "'s money into this settlement's escrow. Call it after create and before any release. It debits the ", words(payer), " for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.");
+    summary: "Fund piece 1 of the held amount into escrow";
+    when_not(payee_fee) {
+      when_not(cancel_splits) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1TransferTransferId: transferId; }; }]; }
+      when(cancel_splits) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1TransferTransferId: transferId; }; }]; }
+    }
+    when(payee_fee) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1TransferTransferId: transferId; }; }]; }
+    when_eq(payer_fee_kind, percent) {
+      when_not(payee_fee) { moves: [{ key: service_fee; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.serviceFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1ServiceFeeTransferId: transferId; }; }]; }
+      when(payee_fee) {
+        when_not(on_cancel) { moves: [{ key: service_fee; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.serviceFeeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1ServiceFeeTransferId: transferId; }; }]; }
+      }
+    }
+    when_eq(payer_fee_kind, binding) { moves: [{ key: service_fee; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", payer_fee); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece1ServiceFeeTransferId: transferId; }; }]; }
+    steps: [];
+  }
+  action [release_name] {
+    let(metadata_instrument): "metadata.instrumentId";
+    let(metadata_instance): "metadata.instrumentInstanceId";
+    let(metadata_phase): "metadata.phase";
+    let(release_capture): camel(concat(release_name, "_transfer_transfer_id"));
+    agent_description: concat("Confirm ", release, " and start paying the held money out of escrow. The ", words(instrument), " must be funded first, and the caller must be ", release_actor_text, ". Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.");
+    summary: concat("Confirm through ", release, " and start the release payout");
+    when(release_deadline) { deadline { field: release_deadline; }; }
+    when(release_fields) {
+      input {
+        type: object;
+        additional_properties: false;
+        properties {
+          for input_name in keys(release_fields) {
+            [input_name] { type: string; description: "Required decision reference retained in the operation receipt"; max_length: 180; min_length: 1; }
+          }
+        }
+        required: keys(release_fields);
+      }
+    }
+    when_not(release_multiple) { port { allowed_parties: [release_role]; }; }
+    when(release_multiple) { port { allowed_parties: [release_role, release_role_2]; }; }
+    when_not(payee_fee) {
+      when_not(cancel_splits) {
+        when_not(release_to) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { [release_capture]: transferId; }; }]; }
+        when(release_to) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", release_to_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { [release_capture]: transferId; }; }]; }
+      }
+      when(cancel_splits) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { [release_capture]: transferId; }; }]; }
+    }
+    when(payee_fee) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { [release_capture]: transferId; }; }]; }
+    steps: [];
+  }
+  when(release_deadline) {
+    action release_on_deadline {
+      let(metadata_instrument): "metadata.instrumentId";
+      let(metadata_instance): "metadata.instrumentInstanceId";
+      let(metadata_phase): "metadata.phase";
+      when_not(release_to) { summary: "Release to the {payee} when {release_deadline} arrives undecided"; }
+      when(release_to) { summary: "Release to the {release_to} when {release_deadline} arrives undecided"; }
+      due { field: release_deadline; };
+      when_not(payee_fee) {
+        when_not(release_to) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_on_deadline; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releaseOnDeadlineTransferTransferId: transferId; }; }]; }
+        when(release_to) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", release_to_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_on_deadline; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releaseOnDeadlineTransferTransferId: transferId; }; }]; }
+      }
+      when(payee_fee) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_on_deadline; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releaseOnDeadlineTransferTransferId: transferId; }; }]; }
+      steps: [];
+    }
+  }
+  when(on_cancel) {
+    action cancel {
+      let(metadata_instrument): "metadata.instrumentId";
+      let(metadata_instance): "metadata.instrumentInstanceId";
+      let(metadata_phase): "metadata.phase";
+      agent_description: concat("Cancel the ", words(instrument), " and start returning the held money to the ", words(payer), ". It must be funded and not yet released. Cancellation is final, and a cancelled settlement never releases. Where the product sets a release deadline, this call is refused once that date passes.");
+      summary: "Cancel the settlement and start the unwind";
+      when(release_deadline) { deadline { field: release_deadline; }; }
+      when_not(payee_fee) {
+        when_not(cancel_splits) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: cancel; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { cancelTransferTransferId: transferId; }; }]; }
+        when(cancel_splits) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: cancel; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { cancelTransferTransferId: transferId; }; }]; }
+      }
+      when(payee_fee) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: cancel; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { cancelTransferTransferId: transferId; }; }]; }
+      steps: [];
+    }
+  }
+  when(payee_fee) {
+    when_not(on_cancel) {
+      action fund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Move the carved platform fee piece from the ", words(payer), " into escrow, which completes funding. Piece 1 must be in escrow first. It debits the ", words(payer), " for real, and the whole held amount then sits in escrow.");
+        summary: "Fund piece 2 of the held amount into escrow";
+        when_eq(payee_fee_kind, percent) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece2TransferTransferId: transferId; }; }]; }
+        when_eq(payee_fee_kind, binding) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", payee_fee); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece2TransferTransferId: transferId; }; }]; }
+        steps: [];
+      }
+      action release_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Pay the carved platform fee out of escrow to the platform account, which closes the release. The release decision must have run first. Money leaves escrow on this call and does not come back.");
+        summary: "Release piece 2 of the held amount";
+        when_eq(payee_fee_kind, percent) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releasePiece2TransferTransferId: transferId; }; }]; }
+        when_eq(payee_fee_kind, binding) { moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", payee_fee); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releasePiece2TransferTransferId: transferId; }; }]; }
+        steps: [];
+      }
+      action unfund_piece_1 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 1 from escrow to the ", words(payer), " and abandon the ", words(instrument), ". It runs only while funding stopped after piece 1, before the release. The settlement ends abandoned.");
+        summary: "Return piece 1 to the {payer} on abandonment";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: unfund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { unfundPiece1TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+    }
+  }
+  when_not(payee_fee) {
+    when(cancel_splits) {
+      action fund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Move piece 2 of the split amount from the ", words(payer), " into escrow, which completes funding. Piece 1 must be in escrow first. It debits the ", words(payer), " for real, and the whole held amount then sits in escrow.");
+        summary: "Fund piece 2 of the held amount into escrow";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: fund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundPiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action release_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Pay piece 2 out of escrow to the ", words(payee), ", which closes the release. The release decision must have run first. Money leaves escrow on this call and does not come back.");
+        summary: "Release piece 2 of the held amount";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: release_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releasePiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action refund_piece_2 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 2 out of escrow to the ", words(payee), ", which closes the cancellation. Cancel must have run first. Money leaves escrow on this call and does not come back.");
+        summary: "Return piece 2 on cancellation";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece2Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: refund_piece_2; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { refundPiece2TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+      action unfund_piece_1 {
+        let(metadata_instrument): "metadata.instrumentId";
+        let(metadata_instance): "metadata.instrumentInstanceId";
+        let(metadata_phase): "metadata.phase";
+        agent_description: concat("Return piece 1 from escrow to the ", words(payer), " and abandon the ", words(instrument), ". It runs only while funding stopped after piece 1, before the release. The settlement ends abandoned.");
+        summary: "Return piece 1 to the {payer} on abandonment";
+        moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: fields.piece1Amount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: unfund_piece_1; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { unfundPiece1TransferTransferId: transferId; }; }];
+        steps: [];
+      }
+    }
+  }
+  action abandon {
+    agent_description: concat("Close a ", words(instrument), " that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.");
+    summary: "Abandon the settlement before any money is held";
+    requires drained: { path: refs.escrowAccountId; };
+    moves: [];
+    steps: [];
+  }
+  }
+  when(whole_amount) {
+    let(fee_collection_key): "x-hyperscale-fee-collection-port";
+    let(reference_filter_key): "x-hyperscale-reference-filter";
+    let(whole_fee_field): camel(whole_fee);
+    title: sentence(instrument);
+    id_prefix: if_eq(id_prefix_override, false, prefix(instrument), id_prefix_override);
+    summary: concat("Escrow-held payment from ", words(payer), " to ", words(payee));
+    description: concat("Held payment: the ", words(payer), " funds ", amount, " into this settlement's own escrow; ", release_actor_text, " confirms through ", release, " to release");
+    distinct_parties: true;
+    caller_parked_states: { created: "The tenant either funds the hold or abandons it before any money moves."; };
+    fields {
+      currency { type: text; description: "One currency for the hold and its fee"; const: C; }
+      amount { type: money<C>; description: "Amount held in custody, in {C} minor units"; }
+      [payee]AccountId { type: account<C>; description: "Party the hold protects and pays on release"; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+      [payer]AccountId { type: account<C>; description: "Party whose money is held until the hold resolves"; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+      platformAccountId { type: account<C>; description: "Product revenue or customer balance account collecting the custody fee"; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [fee_collection_key]: true; [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; }; }
+      when(reference) { reference { type: text; description: "The tenant's own identifier for what is held: invoice number, project code, contract reference"; optional: true; max_length: 180; min_length: 1; } }
+      [release_deadline] { type: date; description: "Date the hold releases to the payee on its own; fixed at creation and the cutoff for both the release port and cancellation"; }
+      whole_fee { type: money<C>; description: "Custody fee charged on top at funding and never placed in escrow"; }
+      when(upstream) { upstream { type: ref<instrument>; description: "Hold this one is carved out of, when a chain of holds passes the same money down"; optional: true; pattern: concat("^", id_prefix_override, "_(sandbox|live)_[a-z0-9]{8,64}$"); } }
+    }
+    lifecycle {
+      states created funded released cancelled abandoned;
+      initial created;
+      on abandon: created -> abandoned;
+      on cancel: funded -> cancelled;
+      on fund: created -> funded;
+      on [release_action]: funded -> released;
+      on release_on_deadline: funded -> released;
+    }
+    parties { beneficiary: payee_account_field; payer: payer_account_field; }
+    required: [payer_account_field, payee_account_field, platformAccountId, amount, whole_fee_field, currency, release_deadline];
+    action create {
+      let(owner_id): "owner.id";
+      let(owner_type): "owner.type";
+      agent_description: concat("Open the ", words(instrument), " and provision the escrow account that holds the money. No money moves on this call. ", release_deadline, " is fixed here and never moves again, so one date governs the early release, the cancellation, and the automatic payout.");
+      summary: concat("Create a ", words(instrument), " settlement");
+      moves: [];
+      steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: fields.currency; }; [owner_id]: { from: instance; path: productId; }; [owner_type]: { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { escrowAccountId: accountId; }; }];
+    }
+    action fund {
+      agent_description: concat("Move ", amount, " from the ", words(payer), " into escrow and charge ", whole_fee_field, " on top to the platform account, as one linked batch. This moves money and the ", words(payer), " pays both. Only a created hold funds. The fee never enters escrow, so it is non-refundable however the hold ends.");
+      summary: "Fund the hold and collect the custody fee";
+      moves: [
+        { key: principal; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.escrowAccountId; }; "metadata.instrumentId": { from: const; value: instrument; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: fund; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { fundingTransferId: transferId; }; },
+        { key: service_fee; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", whole_fee_field); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: fields.platformAccountId; }; "metadata.instrumentId": { from: const; value: instrument; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: service_fee; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", payer_account_field); }; }; capture: { serviceFeeTransferId: transferId; }; }
+      ];
+      sandbox_failure_point: funding;
+      steps: [];
+    }
+    action [release_action] {
+      agent_description: concat("Pay the ", words(payee), " the whole ", amount, " out of escrow ahead of ", release_deadline, ". This moves money and does not reverse. Only a funded hold releases, the caller must act as the ", release_actor_text, ", and the call is refused once ", release_deadline, " passes. The custody fee stays posted.");
+      summary: concat("Release the hold to the ", words(payee), " early");
+      deadline: { field: release_deadline; };
+      port: { allowed_parties: [release_role]; };
+      moves: [{ key: release_action; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; "metadata.instrumentId": { from: const; value: instrument; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: release_action; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { releaseTransferId: transferId; }; }];
+      sandbox_failure_point: "release";
+      steps: [];
+    }
+    action release_on_deadline {
+      summary: concat("Release the hold to the ", words(payee), " on its release date");
+      due: { field: release_deadline; };
+      event_name: concat(instrument, ".released_on_deadline");
+      moves: [{ key: release_action; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; "metadata.instrumentId": { from: const; value: instrument; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: deadline_release; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { deadlineReleaseTransferId: transferId; }; }];
+      steps: [];
+    }
+    action cancel {
+      agent_description: concat("Return the whole ", amount, " from escrow to the ", words(payer), " and end the hold. This moves money and does not reverse. Only a funded hold cancels, and only before ", release_deadline, " passes. The custody fee stays posted because the custody it paid for was already provided.");
+      summary: "Cancel the hold and return the held amount";
+      deadline: { field: release_deadline; };
+      event_name: concat(instrument, ".cancelled");
+      moves: [{ key: refund; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payer_account_field); }; "metadata.instrumentId": { from: const; value: instrument; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: cancel_refund; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { cancelRefundTransferId: transferId; }; }];
+      steps: [];
+    }
+    action abandon {
+      agent_description: concat("Close a ", words(instrument), " that was opened and never funded. No money has moved and the escrow must be empty, so this is a lifecycle transition only. A funded hold refuses. Release it to the ", words(payee), " or cancel it back to the ", words(payer), " instead.");
+      summary: "Abandon the hold before it is funded";
+      moves: [];
+      requires_drained: { path: refs.escrowAccountId; };
+      steps: [];
+    }
+  }
+}

@@ -6,7 +6,7 @@
 
 program corner_shop "Corner shop"
 
-import { held_payment } from "settlement"
+import { held_payment } from "std/settlements"
 
 party shopper: person
 

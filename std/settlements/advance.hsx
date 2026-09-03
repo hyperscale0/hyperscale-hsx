@@ -1,0 +1,177 @@
+module std.settlements.advance
+
+export instrument advance<C>(
+  funder: party,
+  to: party,
+  amount: money<C>,
+  fee: optional<percent>,
+  count: optional<integer>,
+  every: optional<text>,
+  first_due: optional<date>,
+  against: optional<ref>,
+) {
+  let(amount_path): concat("fields.", amount);
+  let(currency_path): "fields.currency";
+  let(funder_field): camel(concat(funder, "_account_id"));
+  let(to_field): camel(concat(to, "_account_id"));
+
+  agent_description: "Reach for advance when the {funder} pays the {to} up front and is repaid afterwards, either out of a carved hold release or over scheduled repayments. Pick deposit for a refundable reservation and instant transfer when nobody repays the payer.";
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  parties {
+    payer: funder;
+    beneficiary: to;
+  }
+
+  when(against) {
+    let(hold_name): owner(against);
+    summary: "Advance to the {to} repaid by carving the {hold_name} release";
+    description: "Advance: the {funder} disburses {amount} to the {to} and is repaid out of the {hold_name} release, which pays the {funder} in the {to}'s place";
+    fields {
+      amount {
+        type: money<C>;
+        description: "The advanced amount in {C} minor units, disbursed to the {to} up front";
+      }
+      carve_hold_id {
+        type: ref<hold_name>;
+        description: "The {hold_name} bound to this advance";
+        pattern: concat("^", prefix(hold_name), "_(sandbox|live)_[a-z0-9]{8,64}$");
+      }
+      carve_recourse_1_id {
+        type: ref<recourse>;
+        description: "The recourse bound to this advance";
+        pattern: "^reco_(sandbox|live)_[a-z0-9]{8,64}$";
+      }
+    }
+    required: [to_field, funder_field, amount, carveHoldId, carveRecourse1Id, currency];
+    lifecycle {
+      states created advanced repaid;
+      initial created;
+      on disburse: created -> advanced;
+      on settle: advanced -> repaid;
+    }
+    action create {
+      agent_description: "Open the advance row before any money moves. The caller supplies the {amount}, both party accounts, and the ids of the {hold_name} and the recourse that back repayment. Nothing is disbursed here.";
+      summary: concat("Create a ", words(instrument));
+      steps: [];
+      moves: [];
+    }
+    action disburse {
+      agent_description: "Pay the {amount} from the {funder} to the {to}. The advance must be created, the bound {hold_name} funded, and the recourse active, both matching this amount and currency. The transfer posts straight out and does not unwind.";
+      summary: "Disburse the {amount} to the {to}";
+      requires refs: [{
+        field: carveHoldId;
+        match: {
+          [currency_path]: currency_path;
+          [amount_path]: amount_path;
+        };
+        statuses: [funded];
+      }, {
+        field: carveRecourse1Id;
+        match: {
+          [currency_path]: currency_path;
+          [amount_path]: amount_path;
+        };
+        statuses: [active];
+      }];
+      moves: [{ amount: amount; from: payer; to: beneficiary; key: transfer; operation: create; }];
+      steps: [];
+    }
+    action settle {
+      agent_description: "Close the advance once the {hold_name} has released to the {funder} in the {to}'s place. The advance must already be disbursed. No money moves here, the release did the repaying.";
+      summary: concat("Close the advance once the ", hold_name, " has released to the ", funder);
+      steps: [];
+      moves: [];
+    }
+  }
+
+  when_not(against) {
+    let(repayment_fields): names("repayment", count, "Amount");
+    let(first_target): if_eq(count, 1, "repaid", "repaying_1");
+    let(states_key): "states";
+    let(first_due_field): camel(first_due);
+    summary: concat("Advance to ", to, " repaid over ", count, " anchors");
+    description: concat("Advance: the ", funder, " disburses ", amount, " to the ", to, ", repaid over ", count, " scheduled repayments plus the funder's discount");
+    fields {
+      amount {
+        type: money<C>;
+        description: "The advanced amount in {C} minor units, disbursed to the {to} up front";
+      }
+      fee_amount {
+        type: money<C>;
+        description: concat(fee, " of ", amount, ", the funder's discount repaid on top of the advance");
+      }
+      repayable_amount {
+        type: money<C>;
+        description: concat(amount, " + feeAmount: the total the repayment fields below partition exactly");
+      }
+      [first_due_field] {
+        type: date;
+        description: concat("Due date of the first repayment; repayment k falls ", every, " after its predecessor");
+      }
+      repayment_1_amount {
+        type: money<C>;
+        description: concat("Repayment 1 of ", count, " (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor");
+      }
+      for repayment in sub(count, 1) {
+        let(index): add(repayment, 1);
+        repayment[index]Amount {
+          type: money<C>;
+          description: concat("Repayment ", index, " of ", count, ": about 33.33% of repayableAmount, collected on its own stored-date anchor");
+        }
+      }
+    }
+    lifecycle {
+      states created advanced;
+      [states_key]: [first_target];
+      initial created;
+      on disburse: created -> advanced;
+      on collect_repayment_1: advanced -> [first_target];
+      for repayment in sub(count, 1) {
+        let(index): add(repayment, 1);
+        let(previous): concat("repaying_", repayment);
+        let(target): if_eq(index, count, "repaid", concat("repaying_", index));
+        [states_key]: [target];
+        on collect_repayment_[index]: [previous] -> [target];
+      }
+    }
+    partitions: [{
+      piece_fields: repayment_fields;
+      total_field: repayableAmount;
+    }, {
+      piece_fields: [amount, feeAmount];
+      total_field: repayableAmount;
+    }];
+    action create {
+      agent_description: "Open the advance row before any money moves. The caller supplies the {amount}, the fee amount, the repayable total, and the first repayment date. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.";
+      summary: concat("Create a ", words(instrument));
+      steps: [];
+      moves: [];
+    }
+    action disburse {
+      agent_description: "Pay the {amount} from the {funder} to the {to} and start the repayment schedule. The advance must be created. The transfer posts straight out and does not unwind. Each repayment is collected on its own stored date anchor.";
+      summary: "Disburse the {amount} to the {to}";
+      moves: [{ amount: amount; from: payer; to: beneficiary; key: transfer; operation: create; }];
+      steps: [];
+    }
+    action collect_repayment_1 {
+      summary: concat("Collect repayment 1 of ", count);
+      due: { field: first_due_field; };
+      moves: [{ amount: repayment1Amount; from: beneficiary; to: payer; key: transfer; operation: create; }];
+      steps: [];
+    }
+    for repayment in sub(count, 1) {
+      let(index): add(repayment, 1);
+      let(repayment_field): concat("repayment", index, "Amount");
+      action collect_repayment_[index] {
+        summary: concat("Collect repayment ", index, " of ", count);
+        due: {
+          field: first_due_field;
+          offset: scale_duration(every, sub(index, 1));
+        };
+        moves: [{ amount: repayment_field; from: beneficiary; to: payer; key: transfer; operation: create; }];
+        steps: [];
+      }
+    }
+  }
+}

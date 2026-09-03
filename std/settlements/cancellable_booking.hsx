@@ -1,0 +1,87 @@
+module std.settlements.cancellable_booking
+
+export instrument cancellable_booking<C>(
+  guest: party,
+  host: party,
+  amount: money<C>,
+  starts_at: date,
+  late_penalty_bps: integer,
+  late_within: text,
+  early_penalty_bps: integer,
+  offer_life: text,
+) {
+  let(guest_account_field): camel(concat(guest, "_account_id"));
+  let(host_account_field): camel(concat(host, "_account_id"));
+  let(reference_filter_key): "x-hyperscale-reference-filter";
+  let(owner_id_key): "owner.id";
+  let(owner_type_key): "owner.type";
+  fields {
+    amount { type: money<C>; description: concat("Booking price in minor units, held away from both the ", words(guest), " and the ", words(host), " until the booking ends"); }
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    starts_at { type: date; description: "When the booking starts; the cancellation penalty is priced against the time left before it"; }
+    [guest_account_field] { type: account<C>; description: concat("The ", words(guest), " account the booking is taken from and the refund returns to"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+    [host_account_field] { type: account<C>; description: concat("The ", words(host), " account the booking and any penalty end up in"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+  }
+  lifecycle {
+    states created held cancellation_quoted canceled settled completed;
+    initial created;
+    on take: created -> held;
+    on complete: held | cancellation_quoted -> completed;
+    on cancel: held -> cancellation_quoted;
+    on confirm: cancellation_quoted -> canceled;
+    on retain: canceled -> settled;
+  }
+  parties { beneficiary: host_account_field; payer: guest_account_field; }
+  required: [amount, currency, guest_account_field, host_account_field, starts_at];
+  title: sentence(instrument);
+  agent_description: concat("Reach for cancellable booking when the ", words(guest), " pays up front and can back out at a price they see before they agree to it. The money sits in a holding account, the penalty is priced against the time left before the start, and the quote is frozen until it expires. Pick held payment when there is no cancellation price to quote.");
+  id_prefix: prefix(instrument);
+  summary: concat("Booking the ", words(guest), " can cancel at a price they see before they agree to it");
+  description: "A booking whose cancellation is quoted rather than argued: the penalty is priced against the time left before the start, frozen with the terms it was read from, and paid only if the guest confirms while the offer is still alive";
+  action create {
+    agent_description: concat("Open the booking and provision the holding account the price sits in. No money moves. The price, the currency, the start moment, and both party accounts are fixed here. Call take next to collect from the ", words(guest), ".");
+    summary: concat("Open a ", words(instrument), " and its holding account");
+    moves: [];
+    steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: fields.currency; }; [owner_id_key]: { from: instance; path: productId; }; [owner_type_key]: { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { bookingHoldingAccountId: accountId; }; }];
+  }
+  action take {
+    agent_description: concat("Move the whole booking price out of the ", words(guest), " account into the holding account. This moves money. Only a created booking takes. Neither party can spend the money until the booking completes or a cancellation is confirmed.");
+    summary: concat("Take the booking price from the ", words(guest), " into the holding account");
+    moves: [{ key: booking; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: refs.bookingHoldingAccountId; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", guest_account_field); }; }; capture: { bookingTransferId: transferId; }; }];
+    steps: [];
+  }
+  action complete {
+    summary: concat("Release the whole booking to the ", words(host), " once the stay has started, even with a cancellation quote parked un-acted");
+    due { field: starts_at; }
+    moves: [{ key: release; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", amount); }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", host_account_field); }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.bookingHoldingAccountId; }; }; capture: { releaseTransferId: transferId; }; }];
+    steps: [];
+  }
+  action cancel {
+    agent_description: "Price the cancellation and freeze that price. No money moves. The penalty is computed from the time left before the start, and the quote expires on its own, after which a new cancel prices it again. Call confirm to spend the quote.";
+    summary: "Price the cancellation and hold that price open";
+    quote {
+      anchorField: starts_at;
+      baseField: amount;
+      chargeRef: cancellationPenaltyAmount;
+      charges: [{ bps: late_penalty_bps; withinOffset: late_within; }, { bps: early_penalty_bps; }];
+      expires { offset: offer_life; }
+      fixes: [amount, guest_account_field];
+      netDestinationField: guest_account_field;
+      netRef: cancellationRefundAmount;
+    }
+    moves: []; steps: [];
+  }
+  action confirm {
+    agent_description: concat("Spend the frozen quote and return the net refund to the ", words(guest), ". This moves money and does not reverse. It requires an un-expired quote from cancel, and the penalty the refund left behind is paid to the ", words(host), " by retain.");
+    summary: concat("Spend the quoted cancellation and return the net to the ", words(guest));
+    commit: cancel;
+    moves: [{ key: refund; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.cancellationRefundAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", guest_account_field); }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.bookingHoldingAccountId; }; }; capture: { cancellationTransferId: transferId; }; }];
+    steps: [];
+  }
+  action retain {
+    agent_description: concat("Pay the quoted cancellation penalty out of the holding account to the ", words(host), ". This moves money and does not reverse. The booking must already be canceled, so the penalty figure is the one the quote fixed.");
+    summary: concat("Pay the quoted penalty that the refund left behind to the ", words(host));
+    moves: [{ key: penalty; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.cancellationPenaltyAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", host_account_field); }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.bookingHoldingAccountId; }; }; capture: { penaltyTransferId: transferId; }; }];
+    steps: [];
+  }
+}

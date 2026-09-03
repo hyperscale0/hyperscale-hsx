@@ -14,7 +14,7 @@ hsx build tip-jar.hsx     # the compiled IR
 name is `snake_case` and becomes the IR document's `product`; the title is
 optional and is what people read.
 
-**`import { instant_transfer } from "settlement"`** brings in one settlement brick.
+**`import { instant_transfer } from "std/settlements"`** brings in one settlement brick.
 `"settlement"` is the only module there is, and it holds seventeen settlement
 bricks. A brick you have not imported cannot be instantiated, so the imports
 at the top tell you what shape of company this is before you read a line of it.
@@ -34,7 +34,7 @@ generated API, and `amount` is HSX's word, not your product's.
 
 ## What it compiles to
 
-One noun with one verb that moves money, and one money event, `tip_pay_1`.
+One instrument with one action that moves money, and one money event, `tip_pay_1`.
 Notice what is NOT there: no escrow flag, because nothing is held. Compare
 that with example 2, where the money waits for someone to decide.
 

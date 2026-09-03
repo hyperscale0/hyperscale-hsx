@@ -1,0 +1,21 @@
+program deposit_example "Deposit example"
+import { security_deposit } from "std/settlements"
+party renter: person
+party owner: business
+settlement security_deposit = security_deposit {
+  payer: renter
+  holder: owner
+  amount: depositAmount: money(SAR)
+  claim: port assess_damage
+  claim_amount: decided {
+    field: damageAmount
+    bound: depositAmount
+    remainder: return
+  }
+  return: port return_deposit
+}
+port assess_damage {
+  allowed: [owner]
+  shape: { damageAmount: money(SAR), evidence: text }
+}
+port return_deposit { allowed: [owner] }

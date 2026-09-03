@@ -1,0 +1,1261 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "confirm_handover",
+        "fund_piece_2",
+        "release_piece_2",
+        "unfund_piece_1",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a sale that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonSale",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "confirm_handover": {
+          "agentDescription": "Confirm confirm_handover and start paying the held money out of escrow. The sale must be funded first, and the caller must be buyer. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "vehicleId": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "vehicleId"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_handover"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmHandoverTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "confirmHandoverSale",
+          "steps": [],
+          "summary": "Confirm through confirm_handover and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the sale and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createSale",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a sale settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the buyer's money into this settlement's escrow. Call it after create and before any release. It debits the buyer for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Sale",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move the carved platform fee piece from the buyer into escrow, which completes funding. Piece 1 must be in escrow first. It debits the buyer for real, and the whole held amount then sits in escrow.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Sale",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "release_piece_2": {
+          "agentDescription": "Pay the carved platform fee out of escrow to the platform account, which closes the release. The release decision must have run first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releasePiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releasePiece2Sale",
+          "steps": [],
+          "summary": "Release piece 2 of the held amount"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return piece 1 from escrow to the buyer and abandon the sale. It runs only while funding stopped after piece 1, before the release. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "sale"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Sale",
+          "steps": [],
+          "summary": "Return piece 1 to the buyer on abandonment"
+        }
+      },
+      "agentDescription": "Reach for sale when the buyer must commit money up front and nobody is paid until confirm_handover fires. Funding moves price into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the buyer funds price into this settlement's own escrow; buyer confirms through confirm_handover to release",
+      "feeRules": [
+        {
+          "amountField": "piece2Amount",
+          "baseField": "price",
+          "bearerField": "sellerAccountId",
+          "position": "carved",
+          "rule": {
+            "bps": 200,
+            "kind": "bps"
+          }
+        }
+      ],
+      "fields": {
+        "buyerAccountId": {
+          "description": "The buyer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "piece1Amount": {
+          "description": "98% of price (carries the integer-division remainder): released to the seller. Computed as floor(price * 9800 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "2% of price: released to the platform. Computed as floor(price * 200 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "price": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "sale",
+      "idPrefix": "sale",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funded",
+          "releasing_1",
+          "released",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "confirm_handover": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funded"
+          },
+          "release_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "released"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "abandoned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "buyerAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "price"
+        }
+      ],
+      "required": [
+        "buyerAccountId",
+        "sellerAccountId",
+        "platformAccountId",
+        "price",
+        "piece1Amount",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from buyer to seller",
+      "title": "Sale"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "fund_piece_2",
+        "confirm_policy",
+        "forward_piece_2",
+        "unfund_piece_1",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a coverage that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here.",
+          "moves": [],
+          "publicAction": "abandonCoverage",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "confirm_policy": {
+          "agentDescription": "Bind the policy through confirm_policy and forward the insurer's share out of escrow. The premium must be fully funded first, and the call carries the decision reference the product asks for. Money leaves escrow here and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "policyNumber": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "policyNumber"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.insurerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "coverage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_policy"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmPolicyTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "confirmPolicyCoverage",
+          "steps": [],
+          "summary": "Confirm through confirm_policy and start the forward payout"
+        },
+        "create": {
+          "agentDescription": "Open the coverage and provision the escrow account that holds the funds. This is the first call on the settlement, and funding refuses until it lands. It moves no money.",
+          "moves": [],
+          "publicAction": "createCoverage",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a coverage settlement"
+        },
+        "forward_piece_2": {
+          "agentDescription": "Pay the platform commission out of escrow to the fee collection account, which closes the forward. confirm_policy must have run first. Money leaves escrow here and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "coverage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "forward_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "forwardPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "forwardPiece2Coverage",
+          "steps": [],
+          "summary": "Forward piece 2 of the held amount"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the insurer's share of the premium from the buyer into escrow. The settlement must exist and be unfunded. It debits the buyer for real, and piece 2 still has to fund before the policy can bind.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "coverage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Coverage",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move the platform commission piece from the buyer into escrow, which completes funding. Piece 1 must be in escrow first. It debits the buyer for real, and the premium is then held whole.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "coverage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Coverage",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return the insurer's share from escrow to the buyer and abandon the forward. It runs only while funding stopped after piece 1, before the policy binds. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "coverage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Coverage",
+          "steps": [],
+          "summary": "Return piece 1 to the buyer on abandonment"
+        }
+      },
+      "agentDescription": "Reach for coverage when the buyer pays an insurance premium ahead of cover and the insurer must not be paid until the policy binds. The premium sits in this settlement's own escrow until confirm_policy fires. Binding then forwards 95% to the insurer and 5% to the platform.",
+      "description": "Premium forward: the buyer funds the premium into this settlement's own escrow; binding through confirm_policy forwards it to the insurer exactly once, minus the platform commission",
+      "fields": {
+        "buyerAccountId": {
+          "description": "The buyer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "insurerAccountId": {
+          "description": "The insurer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "piece1Amount": {
+          "description": "95% of premium (carries the integer-division remainder): released to the insurer. Computed as floor(premium * 9500 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "5% of premium: released to the platform. Computed as floor(premium * 500 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "premium": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "coverage",
+      "idPrefix": "cove",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funded",
+          "releasing_1",
+          "released",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "confirm_policy": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "forward_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "released"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funded"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "abandoned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "insurerAccountId",
+        "payer": "buyerAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "premium"
+        }
+      ],
+      "required": [
+        "buyerAccountId",
+        "insurerAccountId",
+        "platformAccountId",
+        "premium",
+        "piece1Amount",
+        "piece2Amount",
+        "currency"
+      ],
+      "summary": "Premium held for the insurer until the policy binds",
+      "title": "Coverage"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "place_deposit",
+        "assess_vehicle",
+        "return_deposit"
+      ],
+      "actions": {
+        "assess_vehicle": {
+          "agentDescription": "Claim the held deposit for the seller. The deposit must be in held. The reservation settles here, whole or up to the decided amount with the exact remainder released back to the buyer. There is no return afterwards.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "assessVehicleTestDriveDeposit",
+          "steps": [],
+          "summary": "Claim the deposit for the seller through assess_vehicle"
+        },
+        "create": {
+          "agentDescription": "Open the deposit row before anything is reserved. The caller supplies the depositAmount, the currency, and the buyer and seller accounts. Nothing is reserved yet, call place deposit next.",
+          "moves": [],
+          "publicAction": "createTestDriveDeposit",
+          "steps": [],
+          "summary": "Create a test drive deposit"
+        },
+        "place_deposit": {
+          "agentDescription": "Reserve the depositAmount against the buyer's account in the seller's favor. The deposit must be created. The money is held, not paid: the claim posts it to the seller and the return releases it back.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.depositAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.sellerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "test_drive_deposit"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "place_deposit"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.buyerAccountId"
+                }
+              },
+              "capture": {
+                "placeDepositReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "placeDepositTestDriveDeposit",
+          "steps": [],
+          "summary": "Reserve the depositAmount against the buyer's account"
+        },
+        "return_deposit": {
+          "agentDescription": "Return the held deposit to the buyer. The deposit must be in held and unclaimed. This releases the reservation whole and the seller receives nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "returnDepositTestDriveDeposit",
+          "steps": [],
+          "summary": "Return the deposit to the buyer through return_deposit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the buyer in the seller's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "description": "Deposit: the depositAmount is reserved against the buyer's account in the seller's favor, then claimed or returned in full",
+      "fields": {
+        "buyerAccountId": {
+          "description": "The buyer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "depositAmount": {
+          "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "sellerAccountId": {
+          "description": "The seller account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "test_drive_deposit",
+      "idPrefix": "tdd",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned"
+        ],
+        "transitions": {
+          "assess_vehicle": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "place_deposit": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "return_deposit": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "sellerAccountId",
+        "payer": "buyerAccountId"
+      },
+      "required": [
+        "buyerAccountId",
+        "sellerAccountId",
+        "depositAmount",
+        "currency"
+      ],
+      "summary": "Refundable deposit from buyer held for seller",
+      "title": "Test drive deposit"
+    }
+  ],
+  "product": "insured_car_marketplace",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "vehicle",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Vehicle",
+      "version": 1
+    }
+  ],
+  "title": "Insured car marketplace",
+  "udl": 1,
+  "version": 1
+}

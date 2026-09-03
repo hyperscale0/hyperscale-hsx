@@ -1,0 +1,252 @@
+module std.settlements.rotating_pool
+
+export instrument rotating_pool<C>(members: optional<list<party>>, contribution: money<C>, count: integer, every: optional<text>, first_due: date, payout_order: optional<list<party>>, default_policy: optional<text>, guarantee_policy: optional<text>, guarantor: optional<party>, exit_policy: optional<text>, memo: optional<text>, membership: optional<block>) {
+  when_not(membership) {
+  let(member_fields): suffix_each(members, "AccountId");
+  let(guarantor_field): concat(camel(guarantor), "AccountId");
+  let(contribution_field): camel(contribution);
+  let(first_due_field): camel(first_due);
+  let(parent_ref_field): concat(camel(instrument), "Id");
+  let(reference_filter): "x-hyperscale-reference-filter";
+  fields {
+    for member in members { [member]AccountId { type: account<C>; description: concat("The ", words(member), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter]: { column: role; values: [customer_balance]; }; } }
+    [guarantor_field] { type: account<C>; description: concat("The ", words(guarantor), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter]: { column: role; values: [customer_balance]; }; }
+    [contribution_field] { type: money<C>; description: "Exact contribution in {C} minor units"; }
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    [first_due_field] { type: date; description: "Stored first contribution due date"; }
+    one { type: integer; description: "Exact fixed member-row count"; const: 1; }
+  }
+  lifecycle {
+    states forming cancelled;
+    for cycle in count {
+      let(active_state): concat("active_cycle_", cycle);
+      let(ready_state): concat("cycle_", cycle, "_ready");
+      let(states_key): "states";
+      [states_key]: [active_state, ready_state];
+    }
+    states completed;
+    initial forming;
+    on cancel: forming -> cancelled;
+    on activate: forming -> active_cycle_1;
+    for cycle in count {
+      let(active_state): concat("active_cycle_", cycle);
+      let(ready_state): concat("cycle_", cycle, "_ready");
+      on ready_cycle_[cycle]: active_state -> ready_state;
+      let(next_state): if_eq(cycle, count, "completed", concat("active_cycle_", add(cycle, 1)));
+      on advance_cycle_[cycle]: ready_state -> next_state;
+    }
+  }
+  parties { payer: guarantor_field; }
+  required: concat_lists(member_fields, [guarantor_field, "currency", contribution_field, first_due_field, "one"]);
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  agent_description: "Reach for rotating pool when a fixed group pays the same contribution every cycle and one member takes the whole pot each cycle, in a declared order. The roster freezes at creation, one contribution row per member, and the pot rotates until every member has been paid. Scheduled is the one payer, one payee shape on a calendar.";
+  summary: concat(count, "-member rotating pool");
+  description: "Fixed rotating contribution and payout order";
+  action create { agent_description: "Create the pool with its frozen roster, cycle count, contribution amount, and payout order. No money moves. Each member's contribution row is created separately, and the pool cannot activate until every row exists."; summary: "Create the fixed roster before activation"; moves: []; steps: []; }
+  action cancel { agent_description: "Cancel the pool before it activates. Only a forming pool cancels, no money has moved yet, and there is nothing to refund. Once the pool activates this exit is gone."; summary: "Cancel before activation without moving money"; moves: []; steps: []; }
+  action activate {
+    agent_description: "Start cycle one. Refused unless every member on the roster has exactly one contribution row waiting at the first cycle, so a pool can never run a member short. No money moves.";
+    summary: "Activate only after every fixed member row exists once";
+    for member in members { requires aggregate { instrumentId: concat(instrument, "_", member, "_contribution"); over: children; refField: parent_ref_field; statuses: [cycle_1_due]; check: { kind: count_equals_field; field: one; }; } }
+    moves: [];
+    steps: [];
+  }
+  for cycle in count {
+    action ready_cycle_[cycle] {
+      agent_description: concat("Lock cycle ", cycle, " once every member row is funded or covered by the guarantor. Refused while any row is still due or defaulted. No money moves here. Locking the cycle is what lets its payouts run.");
+      summary: concat("Lock cycle ", cycle, " only after every member row is funded or guaranteed");
+      let(funded_state): concat("cycle_", cycle, "_funded");
+      let(guaranteed_state): concat("cycle_", cycle, "_guaranteed");
+      for member in members { requires aggregate { instrumentId: concat(instrument, "_", member, "_contribution"); over: children; refField: parent_ref_field; statuses: [funded_state, guaranteed_state]; check: { kind: all_in; }; } }
+      moves: [];
+      steps: [];
+    }
+    action advance_cycle_[cycle] {
+      let(target_status): if_eq(cycle, count, "completed", concat("cycle_", add(cycle, 1), "_due"));
+      agent_description: concat("Close cycle ", cycle, " once every member row has paid into that cycle pot, moving the pool to the next cycle or to completed on the last one. Refused while any row is unpaid. No money moves here. The money moved on the member rows.");
+      summary: if_eq(cycle, count, "Complete after the final shared pot pays", concat("Advance after every cycle ", cycle, " contribution pays"));
+      for member in members { requires aggregate { instrumentId: concat(instrument, "_", member, "_contribution"); over: children; refField: parent_ref_field; statuses: [target_status]; check: { kind: all_in; }; } }
+      moves: [];
+      steps: [];
+    }
+  }
+  instruments {
+    for member in members {
+      instrument {
+        let(parent_name): instrument;
+        let(child_id): concat(parent_name, "_", member, "_contribution");
+        id: child_id;
+        generatedPrefix: true;
+        title: concat(sentence(parent_name), " ", sentence(member), " Contribution");
+        agent_description: concat("One seat in the pool. The ", words(member), " pays the same contribution every cycle and takes the whole pot on their turn. Every contribution, default, guarantee, and payout for that member happens on this row, never on the pool itself.");
+        summary: concat(words(member), " contribution row");
+        description: concat("Fixed contribution row for ", words(member));
+        fields {
+          for roster_member in payout_order { [roster_member]AccountId { type: account<C>; description: concat("The ", words(roster_member), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter]: { column: role; values: [customer_balance]; }; } }
+          [guarantor_field] { type: account<C>; description: concat("The ", words(guarantor), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter]: { column: role; values: [customer_balance]; }; }
+          [contribution_field] { type: money<C>; description: "Exact contribution amount shared by every cycle"; }
+          currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+          [first_due_field] { type: date; description: "First due anchor derived from the pool"; }
+          [parent_ref_field] { type: ref<parent_name>; description: concat("The exact ", parent_name); pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+        }
+        lifecycle {
+          for cycle in count {
+            let(states_key): "states";
+            let(due_state): concat("cycle_", cycle, "_due");
+            let(funded_state): concat("cycle_", cycle, "_funded");
+            let(defaulted_state): concat("cycle_", cycle, "_defaulted");
+            let(guaranteed_state): concat("cycle_", cycle, "_guaranteed");
+            [states_key]: [due_state, funded_state, defaulted_state, guaranteed_state];
+          }
+          states final_paid completed;
+          initial cycle_1_due;
+          for cycle in count {
+            let(due_state): concat("cycle_", cycle, "_due");
+            let(funded_state): concat("cycle_", cycle, "_funded");
+            let(defaulted_state): concat("cycle_", cycle, "_defaulted");
+            let(guaranteed_state): concat("cycle_", cycle, "_guaranteed");
+            on contribute_cycle_[cycle]: due_state -> funded_state;
+            on mark_default_cycle_[cycle]: due_state -> defaulted_state;
+            on guarantee_cycle_[cycle]: defaulted_state -> guaranteed_state;
+            let(next_state): if_eq(cycle, count, "final_paid", concat("cycle_", add(cycle, 1), "_due"));
+            on pay_cycle_[cycle]: funded_state -> next_state;
+            on pay_guaranteed_cycle_[cycle]: guaranteed_state -> next_state;
+          }
+          on close: final_paid -> completed;
+        }
+        parties { beneficiary: concat(camel(member), "AccountId"); payer: guarantor_field; }
+        action create {
+          agent_description: concat("Create the contribution row for the ", words(member), " and provision its escrow account. The pool must still be forming, and every member needs exactly one row before the pool can activate. No money moves.");
+          summary: concat("Create the fixed contribution row for ", words(member));
+          requires refs { field: parent_ref_field; statuses: [forming]; unique: true; bind: { [contribution_field]: concat("fields.", contribution_field); currency: "fields.currency"; [first_due_field]: concat("fields.", first_due_field); [guarantor_field]: concat("fields.", guarantor_field); for roster_member in members { let(roster_field): concat(camel(roster_member), "AccountId"); [roster_field]: concat("fields.", roster_field); } }; }
+          moves: [];
+          steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { escrowAccountId: accountId; }; }];
+        }
+        for cycle in count {
+          let(active_state): concat("active_cycle_", cycle);
+          let(ready_state): concat("cycle_", cycle, "_ready");
+          let(due_offset): scale_duration(every, sub(cycle, 1));
+          let(contribute_name): concat("contribute_cycle_", cycle);
+          let(guarantee_name): concat("guarantee_cycle_", cycle);
+          let(pay_name): concat("pay_cycle_", cycle);
+          let(pay_guaranteed_name): concat("pay_guaranteed_cycle_", cycle);
+          let(contribute_capture): concat("contributeCycle", cycle, "ContributionTransferId");
+          let(guarantee_capture): concat("guaranteeCycle", cycle, "GuaranteeTransferId");
+          let(pay_capture): concat("payCycle", cycle, "PayoutTransferId");
+          let(pay_guaranteed_capture): concat("payGuaranteedCycle", cycle, "PayoutTransferId");
+          let(payout_member): at(payout_order, cycle);
+          let(payout_field): concat(camel(payout_member), "AccountId");
+          action contribute_cycle_[cycle] {
+            summary: concat("Fund ", words(member), "'s cycle ", cycle, " contribution");
+            let(first): if_eq(cycle, 1, true, false);
+            when(first) { due: { field: first_due_field; }; }
+            when_not(first) { due: { field: first_due_field; offset: due_offset; }; }
+            requires refs { field: parent_ref_field; statuses: [active_state]; }
+            moves: [{ key: "contribution"; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", contribution_field); }; currency: { from: instance; path: "fields.currency"; }; destinationAccountId: { from: instance; path: "refs.escrowAccountId"; }; "metadata.instrumentId": { from: const; value: child_id; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: contribute_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", camel(member), "AccountId"); }; }; capture: { [contribute_capture]: transferId; }; }];
+            steps: [];
+          }
+          action mark_default_cycle_[cycle] {
+            summary: concat("Mark the stored cycle ", cycle, " due condition");
+            let(first): if_eq(cycle, 1, true, false);
+            when(first) { due: { field: first_due_field; }; }
+            when_not(first) { due: { field: first_due_field; offset: due_offset; }; }
+            requires refs { field: parent_ref_field; statuses: [active_state]; }
+            moves: [];
+            steps: [];
+          }
+          action guarantee_cycle_[cycle] {
+            agent_description: concat("Have the guarantor fund cycle ", cycle, " for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.");
+            summary: concat("Fund the defaulted cycle ", cycle, " amount before payout");
+            requires refs { field: parent_ref_field; statuses: [active_state]; }
+            moves: [{ key: guarantee; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", contribution_field); }; currency: { from: instance; path: "fields.currency"; }; destinationAccountId: { from: instance; path: "refs.escrowAccountId"; }; "metadata.instrumentId": { from: const; value: child_id; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: guarantee_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", guarantor_field); }; }; capture: { [guarantee_capture]: transferId; }; }];
+            steps: [];
+          }
+          action pay_cycle_[cycle] {
+            agent_description: concat("Pay this row's funded cycle ", cycle, " contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.");
+            summary: concat("Pay this member's stored contribution into cycle ", cycle, "'s shared pot recipient");
+            requires refs { field: parent_ref_field; statuses: [ready_state]; }
+            moves: [{ key: payout; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", contribution_field); }; currency: { from: instance; path: "fields.currency"; }; destinationAccountId: { from: instance; path: concat("fields.", payout_field); }; "metadata.instrumentId": { from: const; value: child_id; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: pay_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: "refs.escrowAccountId"; }; }; capture: { [pay_capture]: transferId; }; }];
+            steps: [];
+          }
+          action pay_guaranteed_cycle_[cycle] {
+            agent_description: concat("Pay this row's guarantor-funded cycle ", cycle, " contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.");
+            summary: concat("Pay the funded default into cycle ", cycle, "'s stored recipient");
+            requires refs { field: parent_ref_field; statuses: [ready_state]; }
+            moves: [{ key: payout; operation: internal_transfer.create; bind: { amount: { from: instance; path: concat("fields.", contribution_field); }; currency: { from: instance; path: "fields.currency"; }; destinationAccountId: { from: instance; path: concat("fields.", payout_field); }; "metadata.instrumentId": { from: const; value: child_id; }; "metadata.instrumentInstanceId": { from: instance; path: instrumentInstanceId; }; "metadata.phase": { from: const; value: pay_guaranteed_name; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: "refs.escrowAccountId"; }; }; capture: { [pay_guaranteed_capture]: transferId; }; }];
+            steps: [];
+          }
+        }
+        action close { agent_description: "Retire this member row after its final payout. Refused while the row escrow account still holds anything, so a row can never close over stranded money. No money moves."; summary: "Complete after the final payout drains this member custody"; requires drained: { path: "refs.escrowAccountId"; }; moves: []; steps: []; }
+      }
+    }
+  }
+  }
+
+  when(membership) {
+    let(membership_instrument): get(membership, "instrument");
+    let(membership_ref_field): get(membership, "ref_field");
+    let(joined_status): get(membership, "joined_status");
+    let(active_status): get(membership, "active_status");
+    let(paid_status): get(membership, "paid_status");
+    let(custody_ref): get(membership, "custody_ref");
+    let(instrument_id_prefix): get(membership, "id_prefix");
+    let(active_parked): get(membership, "active_parked");
+    let(min_members): get(membership, "min_members");
+    let(max_members): get(membership, "max_members");
+    let(contribution_description): get(membership, "contribution_description");
+    let(currency_description): get(membership, "currency_description");
+    let(create_examples): get(membership, "create_examples");
+    let(activate_examples): get(membership, "activate_examples");
+    let(disband_examples): get(membership, "disband_examples");
+    let(close_examples): get(membership, "close_examples");
+    let(contribution_field): camel(contribution);
+    let(count_field): camel(count);
+    let(first_due_field): camel(first_due);
+
+    fields {
+      [contribution_field] { type: money<C>; description: contribution_description; }
+      currency { type: text; description: currency_description; maxLength: 3; minLength: 3; pattern: "^[A-Z]{3}$"; }
+      [count_field] { type: integer; maximum: max_members; minimum: min_members; }
+      when(memo) { [memo] { type: text; optional: true; maxLength: 180; minLength: 1; } }
+      [first_due_field] { type: date; }
+    }
+    lifecycle {
+      states forming active completed disbanded;
+      initial forming;
+      on activate: forming -> active;
+      on close: active -> completed;
+      on disband: forming -> disbanded;
+    }
+    required: [count_field, contribution_field, currency, first_due_field];
+    aggregate_invariants { childInstrumentId: membership_instrument; childRefField: membership_ref_field; childStatuses: [joined_status, active_status, paid_status]; count: true; parentField: count_field; }
+    caller_parked_states { active: active_parked; }
+    agent_description: concat("Reach for ", words(instrument), " when a fixed group pays the same contribution every cycle and one member takes the whole pot each cycle, and the product publishes its own membership rows. This shape owns the pot account and the seat count. Every contribution and payout happens on the membership row that references it, never here.");
+    id_prefix: instrument_id_prefix;
+    action create {
+      public: none;
+      agent_description: concat("Open the ", words(instrument), " and provision the pot account every contribution lands in. No money moves. The roster is still empty, so the pool stays forming until one membership row exists per seat.");
+      examples: create_examples;
+      moves: [];
+      steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { [custody_ref]: accountId; }; }];
+    }
+    action activate {
+      public: none;
+      due { field: first_due_field; }
+      examples: activate_examples;
+      requires aggregate { instrumentId: membership_instrument; over: children; refField: membership_ref_field; statuses: [joined_status]; check: { kind: count_equals_field; field: count_field; }; }
+      moves: [];
+      steps: [];
+    }
+    action disband { public: none; agent_description: concat("Close a ", words(instrument), " that never filled its roster. Only a forming pool disbands, no money has moved, and there is nothing to refund. Once the pool activates this exit is gone."); examples: disband_examples; moves: []; steps: []; }
+    action close {
+      public: none;
+      agent_description: concat("Retire the ", words(instrument), " after every membership row has been paid. Refused while any row is unpaid or while the pot account still holds anything, so a pool can never close over stranded money. No money moves.");
+      examples: close_examples;
+      requires aggregate { instrumentId: membership_instrument; over: children; refField: membership_ref_field; statuses: [paid_status]; check: { kind: all_in; }; }
+      requires drained { path: concat("refs.", custody_ref); }
+      moves: [];
+      steps: [];
+    }
+  }
+}

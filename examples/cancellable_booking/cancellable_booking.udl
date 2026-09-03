@@ -1,0 +1,391 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "take",
+        "complete",
+        "cancel",
+        "confirm",
+        "retain"
+      ],
+      "actions": {
+        "cancel": {
+          "agentDescription": "Price the cancellation and freeze that price. No money moves. The penalty is computed from the time left before the start, and the quote expires on its own, after which a new cancel prices it again. Call confirm to spend the quote.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.quote",
+                "source": "quote"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.expiry",
+                "source": "quote"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "cancelStudioSession",
+          "quote": {
+            "anchorField": "startsAt",
+            "baseField": "sessionPrice",
+            "chargeRef": "cancellationPenaltyAmount",
+            "charges": [
+              {
+                "bps": 5000,
+                "withinOffset": "P2D"
+              },
+              {
+                "bps": 1000
+              }
+            ],
+            "expires": {
+              "offset": "PT30M"
+            },
+            "fixes": [
+              "sessionPrice",
+              "guestAccountId"
+            ],
+            "netDestinationField": "guestAccountId",
+            "netRef": "cancellationRefundAmount"
+          },
+          "steps": [],
+          "summary": "Price the cancellation and hold that price open"
+        },
+        "complete": {
+          "due": {
+            "field": "startsAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sessionPrice"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.studioAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.bookingHoldingAccountId"
+                }
+              },
+              "capture": {
+                "releaseTransferId": "transferId"
+              },
+              "key": "release",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Release the whole booking to the studio once the stay has started, even with a cancellation quote parked un-acted"
+        },
+        "confirm": {
+          "agentDescription": "Spend the frozen quote and return the net refund to the guest. This moves money and does not reverse. It requires an un-expired quote from cancel, and the penalty the refund left behind is paid to the studio by retain.",
+          "commit": "cancel",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.cancellationRefundAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.guestAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.bookingHoldingAccountId"
+                }
+              },
+              "capture": {
+                "cancellationTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "confirmStudioSession",
+          "steps": [],
+          "summary": "Spend the quoted cancellation and return the net to the guest"
+        },
+        "create": {
+          "agentDescription": "Open the booking and provision the holding account the price sits in. No money moves. The price, the currency, the start moment, and both party accounts are fixed here. Call take next to collect from the guest.",
+          "moves": [],
+          "publicAction": "createStudioSession",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "bookingHoldingAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Open a studio session and its holding account"
+        },
+        "retain": {
+          "agentDescription": "Pay the quoted cancellation penalty out of the holding account to the studio. This moves money and does not reverse. The booking must already be canceled, so the penalty figure is the one the quote fixed.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.cancellationPenaltyAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.studioAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.bookingHoldingAccountId"
+                }
+              },
+              "capture": {
+                "penaltyTransferId": "transferId"
+              },
+              "key": "penalty",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "retainStudioSession",
+          "steps": [],
+          "summary": "Pay the quoted penalty that the refund left behind to the studio"
+        },
+        "take": {
+          "agentDescription": "Move the whole booking price out of the guest account into the holding account. This moves money. Only a created booking takes. Neither party can spend the money until the booking completes or a cancellation is confirmed.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.sessionPrice"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.bookingHoldingAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guestAccountId"
+                }
+              },
+              "capture": {
+                "bookingTransferId": "transferId"
+              },
+              "key": "booking",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "takeStudioSession",
+          "steps": [],
+          "summary": "Take the booking price from the guest into the holding account"
+        }
+      },
+      "agentDescription": "Reach for cancellable booking when the guest pays up front and can back out at a price they see before they agree to it. The money sits in a holding account, the penalty is priced against the time left before the start, and the quote is frozen until it expires. Pick held payment when there is no cancellation price to quote.",
+      "description": "A booking whose cancellation is quoted rather than argued: the penalty is priced against the time left before the start, frozen with the terms it was read from, and paid only if the guest confirms while the offer is still alive",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "guestAccountId": {
+          "description": "The guest account the booking is taken from and the refund returns to",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "sessionPrice": {
+          "description": "Booking price in minor units, held away from both the guest and the studio until the booking ends",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "startsAt": {
+          "description": "When the booking starts; the cancellation penalty is priced against the time left before it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "studioAccountId": {
+          "description": "The studio account the booking and any penalty end up in",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "studio_session",
+      "idPrefix": "ss",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "cancellation_quoted",
+          "canceled",
+          "settled",
+          "completed"
+        ],
+        "transitions": {
+          "cancel": {
+            "from": [
+              "held"
+            ],
+            "to": "cancellation_quoted"
+          },
+          "complete": {
+            "from": [
+              "held",
+              "cancellation_quoted"
+            ],
+            "to": "completed"
+          },
+          "confirm": {
+            "from": [
+              "cancellation_quoted"
+            ],
+            "to": "canceled"
+          },
+          "retain": {
+            "from": [
+              "canceled"
+            ],
+            "to": "settled"
+          },
+          "take": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "studioAccountId",
+        "payer": "guestAccountId"
+      },
+      "required": [
+        "sessionPrice",
+        "currency",
+        "guestAccountId",
+        "studioAccountId",
+        "startsAt"
+      ],
+      "summary": "Booking the guest can cancel at a price they see before they agree to it",
+      "title": "Studio session"
+    }
+  ],
+  "product": "cancellable_booking_example",
+  "subjects": [],
+  "title": "Cancellable booking example",
+  "udl": 1,
+  "version": 1
+}

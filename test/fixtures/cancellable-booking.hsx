@@ -1,0 +1,16 @@
+program studio_booking "Studio booking"
+import { cancellable_booking } from "std/settlements"
+
+party guest: person
+party studio: business
+
+settlement studio_session = cancellable_booking {
+  guest: guest
+  host: studio
+  amount: sessionPrice: money(SAR)
+  starts_at: startsAt
+  late_penalty_bps: 5000
+  late_within: "P2D"
+  early_penalty_bps: 1000
+  offer_life: "PT30M"
+}

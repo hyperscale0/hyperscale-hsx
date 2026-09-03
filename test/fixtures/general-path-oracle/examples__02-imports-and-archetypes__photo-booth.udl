@@ -1,0 +1,1089 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "fund_piece_2",
+        "fund_piece_3",
+        "collect_service_fee",
+        "release_piece_2",
+        "release_piece_3",
+        "refund_piece_2",
+        "refund_piece_3",
+        "unfund_piece_1",
+        "unfund_piece_2",
+        "unfund_piece_3",
+        "create",
+        "fund_piece_1",
+        "confirm_delivery",
+        "cancel",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a booking that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonBooking",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "cancel": {
+          "agentDescription": "Cancel the booking and start returning the held money to the renter. It must be funded and not yet released. Cancellation is final, and a cancelled settlement never releases. Where the product sets a release deadline, this call is refused once that date passes.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelBooking",
+          "steps": [],
+          "summary": "Cancel the settlement and start the unwind"
+        },
+        "collect_service_fee": {
+          "agentDescription": "Charge the renter the percentage service fee on top of the held amount and pay it to the platform account. All three funding pieces must be in escrow first. It debits the renter for real and it is the last step of funding.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.serviceFeeAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_service_fee"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                }
+              },
+              "capture": {
+                "collectServiceFeeTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectServiceFeeBooking",
+          "steps": [],
+          "summary": "Collect the payer-side service fee"
+        },
+        "confirm_delivery": {
+          "agentDescription": "Confirm confirm_delivery and start paying the held money out of escrow. The booking must be funded first, and the caller must be company. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "boothId": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "deliveredOn": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "boothId",
+              "deliveredOn"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.companyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_delivery"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmDeliveryTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "confirmDeliveryBooking",
+          "steps": [],
+          "summary": "Confirm through confirm_delivery and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the booking and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createBooking",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a booking settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the renter's money into this settlement's escrow. Call it after create and before any release. It debits the renter for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Booking",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move piece 2 of the split amount from the renter into escrow. Piece 1 must be in escrow first. It debits the renter for real, and the hold is still short of funded until piece 3 lands.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Booking",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "fund_piece_3": {
+          "agentDescription": "Move piece 3 of the split amount from the renter into escrow. Pieces 1 and 2 must be in escrow first. It debits the renter for real. Where the product charges a percentage payer fee, one more call collects that fee before the hold counts as funded.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece3Booking",
+          "steps": [],
+          "summary": "Fund piece 3 of the held amount into escrow"
+        },
+        "refund_piece_2": {
+          "agentDescription": "Return piece 2 out of escrow once cancel has run. Its destination follows the product fee split, either the renter or the company. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.companyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "refundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundPiece2Booking",
+          "steps": [],
+          "summary": "Return piece 2 on cancellation"
+        },
+        "refund_piece_3": {
+          "agentDescription": "Return piece 3 out of escrow to the company, which closes the cancellation. Piece 2 must be returned first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.companyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund_piece_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "refundPiece3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundPiece3Booking",
+          "steps": [],
+          "summary": "Return piece 3 on cancellation"
+        },
+        "release_piece_2": {
+          "agentDescription": "Pay piece 2 out of escrow once the release decision has run. Its destination follows the product fee split, either the platform account or the company. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.companyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releasePiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releasePiece2Booking",
+          "steps": [],
+          "summary": "Release piece 2 of the held amount"
+        },
+        "release_piece_3": {
+          "agentDescription": "Pay piece 3 out of escrow to the platform account, which closes the release. Piece 2 must be released first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_piece_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releasePiece3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releasePiece3Booking",
+          "steps": [],
+          "summary": "Release piece 3 of the held amount"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return piece 1 from escrow to the renter and abandon the booking. It runs when only piece 1 was ever funded, or after the later pieces have already gone back. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Booking",
+          "steps": [],
+          "summary": "Return piece 1 to the renter on abandonment"
+        },
+        "unfund_piece_2": {
+          "agentDescription": "Return piece 2 from escrow to the renter while abandoning a part-funded booking. Funding must have stopped at piece 2, or piece 3 must already be back. Piece 1 still has to be returned after this.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece2Booking",
+          "steps": [],
+          "summary": "Return piece 2 to the renter on abandonment"
+        },
+        "unfund_piece_3": {
+          "agentDescription": "Return piece 3 from escrow to the renter while abandoning a booking funded as far as piece 3. Pieces 2 and 1 still have to be returned after this, in that order.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece3Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "booking"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece3TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece3Booking",
+          "steps": [],
+          "summary": "Return piece 3 to the renter on abandonment"
+        }
+      },
+      "agentDescription": "Reach for booking when the renter must commit money up front and nobody is paid until confirm_delivery fires. Funding moves bookingFee into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the renter funds bookingFee into this settlement's own escrow; company confirms through confirm_delivery to release",
+      "feeRules": [
+        {
+          "amountField": "serviceFeeAmount",
+          "baseField": "bookingFee",
+          "bearerField": "renterAccountId",
+          "position": "on_top",
+          "rule": {
+            "bps": 100,
+            "kind": "bps"
+          }
+        },
+        {
+          "amountField": "piece3Amount",
+          "baseField": "bookingFee",
+          "bearerField": "companyAccountId",
+          "position": "carved",
+          "rule": {
+            "bps": 300,
+            "kind": "bps"
+          }
+        }
+      ],
+      "fields": {
+        "bookingFee": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "companyAccountId": {
+          "description": "The company account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "piece1Amount": {
+          "description": "90% of bookingFee (carries the integer-division remainder): released to the company; on cancellation to the renter. Computed as floor(bookingFee * 9000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "7% of bookingFee: released to the company; on cancellation to the company. Computed as floor(bookingFee * 700 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece3Amount": {
+          "description": "3% of bookingFee: released to the platform; on cancellation to the company. Computed as floor(bookingFee * 300 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "renterAccountId": {
+          "description": "The renter account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "serviceFeeAmount": {
+          "description": "Machine-owned 1% service fee computed from bookingFee; charged on top at funding",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "booking",
+      "idPrefix": "book",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funding_2",
+          "funding_3",
+          "funded",
+          "releasing_1",
+          "releasing_2",
+          "released",
+          "cancelling_1",
+          "cancelling_2",
+          "cancelled",
+          "abandoning_1",
+          "abandoned",
+          "abandoning_2"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "cancel": {
+            "from": [
+              "funded"
+            ],
+            "to": "cancelling_1"
+          },
+          "collect_service_fee": {
+            "from": [
+              "funding_3"
+            ],
+            "to": "funded"
+          },
+          "confirm_delivery": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funding_2"
+          },
+          "fund_piece_3": {
+            "from": [
+              "funding_2"
+            ],
+            "to": "funding_3"
+          },
+          "refund_piece_2": {
+            "from": [
+              "cancelling_1"
+            ],
+            "to": "cancelling_2"
+          },
+          "refund_piece_3": {
+            "from": [
+              "cancelling_2"
+            ],
+            "to": "cancelled"
+          },
+          "release_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "releasing_2"
+          },
+          "release_piece_3": {
+            "from": [
+              "releasing_2"
+            ],
+            "to": "released"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1",
+              "abandoning_1"
+            ],
+            "to": "abandoned"
+          },
+          "unfund_piece_2": {
+            "from": [
+              "funding_2",
+              "abandoning_2"
+            ],
+            "to": "abandoning_1"
+          },
+          "unfund_piece_3": {
+            "from": [
+              "funding_3"
+            ],
+            "to": "abandoning_2"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "companyAccountId",
+        "payer": "renterAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount",
+            "piece3Amount"
+          ],
+          "totalField": "bookingFee"
+        }
+      ],
+      "required": [
+        "renterAccountId",
+        "companyAccountId",
+        "platformAccountId",
+        "bookingFee",
+        "piece1Amount",
+        "piece2Amount",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from renter to company",
+      "title": "Booking"
+    }
+  ],
+  "product": "photo_booth",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "booth",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Booth",
+      "version": 1
+    }
+  ],
+  "title": "Photo booth rentals",
+  "udl": 1,
+  "version": 1
+}

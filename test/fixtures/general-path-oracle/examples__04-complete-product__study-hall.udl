@@ -1,0 +1,1264 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "confirm_lesson",
+        "release_on_deadline",
+        "fund_piece_2",
+        "release_piece_2",
+        "unfund_piece_1",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a lesson that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonLesson",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "confirm_lesson": {
+          "agentDescription": "Confirm confirm_lesson and start paying the held money out of escrow. The lesson must be funded first, and the caller must be tutor. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "deadline": {
+            "field": "lessonEndsAt"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "kitId": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "lessonNotes": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kitId",
+              "lessonNotes"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.tutorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_lesson"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmLessonTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "confirmLessonLesson",
+          "steps": [],
+          "summary": "Confirm through confirm_lesson and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the lesson and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createLesson",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a lesson settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the student's money into this settlement's escrow. Call it after create and before any release. It debits the student for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.studentAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Lesson",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        },
+        "fund_piece_2": {
+          "agentDescription": "Move the carved platform fee piece from the student into escrow, which completes funding. Piece 1 must be in escrow first. It debits the student for real, and the whole held amount then sits in escrow.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.studentAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece2Lesson",
+          "steps": [],
+          "summary": "Fund piece 2 of the held amount into escrow"
+        },
+        "release_on_deadline": {
+          "due": {
+            "field": "lessonEndsAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.tutorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_on_deadline"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseOnDeadlineTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Release to the tutor when lessonEndsAt arrives undecided"
+        },
+        "release_piece_2": {
+          "agentDescription": "Pay the carved platform fee out of escrow to the platform account, which closes the release. The release decision must have run first. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release_piece_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releasePiece2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releasePiece2Lesson",
+          "steps": [],
+          "summary": "Release piece 2 of the held amount"
+        },
+        "unfund_piece_1": {
+          "agentDescription": "Return piece 1 from escrow to the student and abandon the lesson. It runs only while funding stopped after piece 1, before the release. The settlement ends abandoned.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.piece1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.studentAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "lesson"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "unfund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "unfundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "unfundPiece1Lesson",
+          "steps": [],
+          "summary": "Return piece 1 to the student on abandonment"
+        }
+      },
+      "agentDescription": "Reach for lesson when the student must commit money up front and nobody is paid until confirm_lesson fires. Funding moves lessonFee into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the student funds lessonFee into this settlement's own escrow; tutor confirms through confirm_lesson to release",
+      "feeRules": [
+        {
+          "amountField": "piece2Amount",
+          "baseField": "lessonFee",
+          "bearerField": "tutorAccountId",
+          "position": "carved",
+          "rule": {
+            "bps": 800,
+            "kind": "bps"
+          }
+        }
+      ],
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "lessonEndsAt": {
+          "description": "The date an undecided hold releases to the tutor on; confirm_lesson and cancellation decide only before it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "lessonFee": {
+          "description": "The gross held amount in SAR minor units; the piece fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece1Amount": {
+          "description": "92% of lessonFee (carries the integer-division remainder): released to the tutor. Computed as floor(lessonFee * 9200 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "piece2Amount": {
+          "description": "8% of lessonFee: released to the platform. Computed as floor(lessonFee * 800 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "studentAccountId": {
+          "description": "The student account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tutorAccountId": {
+          "description": "The tutor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "lesson",
+      "idPrefix": "less",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funding_1",
+          "funded",
+          "releasing_1",
+          "released",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "confirm_lesson": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funding_1"
+          },
+          "fund_piece_2": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "funded"
+          },
+          "release_on_deadline": {
+            "from": [
+              "funded"
+            ],
+            "to": "releasing_1"
+          },
+          "release_piece_2": {
+            "from": [
+              "releasing_1"
+            ],
+            "to": "released"
+          },
+          "unfund_piece_1": {
+            "from": [
+              "funding_1"
+            ],
+            "to": "abandoned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "tutorAccountId",
+        "payer": "studentAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "piece1Amount",
+            "piece2Amount"
+          ],
+          "totalField": "lessonFee"
+        }
+      ],
+      "required": [
+        "studentAccountId",
+        "tutorAccountId",
+        "platformAccountId",
+        "lessonFee",
+        "piece1Amount",
+        "lessonEndsAt",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from student to tutor",
+      "title": "Lesson"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "place_deposit",
+        "assess_kit",
+        "release_kit"
+      ],
+      "actions": {
+        "assess_kit": {
+          "agentDescription": "Claim the held deposit for the tutor. The deposit must be in held. The reservation settles here, whole or up to the decided amount with the exact remainder released back to the student. There is no return afterwards.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "assessKitKitDeposit",
+          "steps": [],
+          "summary": "Claim the deposit for the tutor through assess_kit"
+        },
+        "create": {
+          "agentDescription": "Open the deposit row before anything is reserved. The caller supplies the kitDeposit, the currency, and the student and tutor accounts. Nothing is reserved yet, call place deposit next.",
+          "moves": [],
+          "publicAction": "createKitDeposit",
+          "steps": [],
+          "summary": "Create a kit deposit"
+        },
+        "place_deposit": {
+          "agentDescription": "Reserve the kitDeposit against the student's account in the tutor's favor. The deposit must be created. The money is held, not paid: the claim posts it to the tutor and the return releases it back.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.kitDeposit"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.tutorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "kit_deposit"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "place_deposit"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.studentAccountId"
+                }
+              },
+              "capture": {
+                "placeDepositReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "placeDepositKitDeposit",
+          "steps": [],
+          "summary": "Reserve the kitDeposit against the student's account"
+        },
+        "release_kit": {
+          "agentDescription": "Return the held deposit to the student. The deposit must be in held and unclaimed. This releases the reservation whole and the tutor receives nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "releaseKitKitDeposit",
+          "steps": [],
+          "summary": "Return the deposit to the student through release_kit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the student in the tutor's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "description": "Deposit: the kitDeposit is reserved against the student's account in the tutor's favor, then claimed or returned in full",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "kitDeposit": {
+          "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "studentAccountId": {
+          "description": "The student account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tutorAccountId": {
+          "description": "The tutor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "kit_deposit",
+      "idPrefix": "kd",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned"
+        ],
+        "transitions": {
+          "assess_kit": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "place_deposit": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "release_kit": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "tutorAccountId",
+        "payer": "studentAccountId"
+      },
+      "required": [
+        "studentAccountId",
+        "tutorAccountId",
+        "kitDeposit",
+        "currency"
+      ],
+      "summary": "Refundable deposit from student held for tutor",
+      "title": "Kit deposit"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "fund_share_1",
+        "distribute_share_1",
+        "fund_share_2",
+        "distribute_share_2"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a tutor payout period and provision the escrow account the pool sits in. This is the first call on the period, and funding a share refuses until it lands. It moves no money.",
+          "moves": [],
+          "publicAction": "createTutorPayout",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Open a tutor payout period"
+        },
+        "distribute_share_1": {
+          "due": {
+            "field": "payoutDate"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.leadTutorShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.leadTutorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "tutor_payout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the lead tutor's share of the pool"
+        },
+        "distribute_share_2": {
+          "due": {
+            "field": "payoutDate"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.tutorShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.tutorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "tutor_payout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the tutor's share of the pool"
+        },
+        "fund_share_1": {
+          "agentDescription": "Move share 1 of the period total, the lead tutor's cut, from the school into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the school for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.leadTutorShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "tutor_payout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.schoolAccountId"
+                }
+              },
+              "capture": {
+                "fundShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare1TutorPayout",
+          "steps": [],
+          "summary": "Pool share 1 of the period total"
+        },
+        "fund_share_2": {
+          "agentDescription": "Move share 2 of the period total, the tutor's cut, from the school into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the school for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.tutorShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "tutor_payout"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.schoolAccountId"
+                }
+              },
+              "capture": {
+                "fundShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare2TutorPayout",
+          "steps": [],
+          "summary": "Pool share 2 of the period total"
+        }
+      },
+      "agentDescription": "Reach for tutor payout when the school funds one period total that is then split across 2 fixed recipients by stored share amounts. Callers fund the pool one share at a time. Each recipient's payout fires from the stored payout date, not from a call.",
+      "description": "Pooled split: the school pools the period's weeklyPool share by share; the pool distributes to every recipient in full on the stored payout date",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "leadTutorAccountId": {
+          "description": "The lead tutor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "leadTutorShareAmount": {
+          "description": "55% of weeklyPool (carries the integer-division remainder): the lead tutor's share. Computed as floor(weeklyPool * 5500 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "payoutDate": {
+          "description": "The period's payout date; the pool distributes from it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "schoolAccountId": {
+          "description": "The school account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tutorAccountId": {
+          "description": "The tutor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "tutorShareAmount": {
+          "description": "45% of weeklyPool: the tutor's share. Computed as floor(weeklyPool * 4500 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "weeklyPool": {
+          "description": "The pooled period total in SAR minor units; the share fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "tutor_payout",
+      "idPrefix": "tp",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "pooling_1",
+          "pooled",
+          "distributing_1",
+          "distributed"
+        ],
+        "transitions": {
+          "distribute_share_1": {
+            "from": [
+              "pooled"
+            ],
+            "to": "distributing_1"
+          },
+          "distribute_share_2": {
+            "from": [
+              "distributing_1"
+            ],
+            "to": "distributed"
+          },
+          "fund_share_1": {
+            "from": [
+              "created"
+            ],
+            "to": "pooling_1"
+          },
+          "fund_share_2": {
+            "from": [
+              "pooling_1"
+            ],
+            "to": "pooled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "leadTutorAccountId",
+        "payer": "schoolAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "leadTutorShareAmount",
+            "tutorShareAmount"
+          ],
+          "totalField": "weeklyPool"
+        }
+      ],
+      "required": [
+        "schoolAccountId",
+        "leadTutorAccountId",
+        "tutorAccountId",
+        "weeklyPool",
+        "payoutDate",
+        "leadTutorShareAmount",
+        "tutorShareAmount",
+        "currency"
+      ],
+      "summary": "Period pool from school split 2 ways",
+      "title": "Tutor payout"
+    }
+  ],
+  "product": "study_hall",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "lesson_kit",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Lesson kit",
+      "version": 1
+    }
+  ],
+  "title": "Study hall",
+  "udl": 1,
+  "version": 1
+}

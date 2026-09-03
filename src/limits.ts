@@ -1,7 +1,6 @@
 /**
  * What the compiler refuses to read, as opposed to what it refuses to emit.
- * `MONEY_EVENT_BUDGET` in lower.ts bounds the OUTPUT; these bound the INPUT,
- * which is the side an attacker controls.
+ * These bounds cap the input side an attacker controls.
  *
  * Both numbers are set against the 34 real programs this compiler is tested
  * on. The deepest nests 5 levels; the largest is 13,934 bytes.
@@ -16,6 +15,6 @@ export const HSX_LIMITS = Object.freeze({
    * 12x the deepest real program and 144x below that measured crash.
    */
   maxNestingDepth: 64,
-  /** Matches `UDL_LIMITS.maxSourceBytes`. 18x the largest real program. */
+  /** 18x the largest real HSX program. */
   maxSourceBytes: 256 * 1_024,
 });

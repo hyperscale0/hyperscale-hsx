@@ -1,0 +1,77 @@
+module std.settlements.reconciled_payout
+
+export instrument reconciled_payout<C>(
+  payer: party,
+  beneficiary: party,
+  amount: money<C>,
+  beneficiary_ref: text,
+  settle_by: date,
+  matched_within: integer,
+  matched_ceiling: integer,
+) {
+  let(payer_account_field): camel(concat(payer, "_account_id"));
+  let(beneficiary_account_field): camel(concat(beneficiary, "_account_id"));
+  let(reference_filter_key): "x-hyperscale-reference-filter";
+  fields {
+    amount { type: money<C>; description: concat("Amount instructed to the ", words(beneficiary), " in minor units"); }
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    settle_by { type: date; description: "Instant the expectation stops waiting and the unmatched amount becomes a break"; }
+    beneficiary_ref { type: text; description: "Beneficiary ID for the payout instruction"; pattern: "^ben_(sandbox|live)_[a-z0-9]{8,64}$"; }
+    [beneficiary_account_field] { type: account<C>; description: concat("The ", words(beneficiary), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+    [payer_account_field] { type: account<C>; description: concat("The ", words(payer), " account the payout leaves"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; [reference_filter_key]: { column: role; values: [customer_balance]; }; }
+  }
+  lifecycle {
+    states created instructed settled;
+    initial created;
+    on instruct: created -> instructed;
+    on settle: instructed -> settled;
+  }
+  parties { beneficiary: beneficiary_account_field; payer: payer_account_field; }
+  required: [amount, beneficiary_account_field, beneficiary_ref, currency, payer_account_field, settle_by];
+  title: sentence(instrument);
+  agent_description: concat("Reach for reconciled payout when a payment to the ", words(beneficiary), " is not finished until the bank confirms the debit. The instruction goes out, the expectation waits for a matching statement line, and anything still unmatched at the settle date becomes a break row instead of disappearing. Pick instant transfer when no bank confirmation is involved.");
+  id_prefix: prefix(instrument);
+  summary: concat("Payout from ", words(payer), " to ", words(beneficiary), " that is not done until the bank agrees");
+  description: "A payout the instrument owns end to end: one instruction, one expectation about the debit it will produce, and one break when the debit never matches";
+  dials: [{ key: settlement_tolerance; kind: reconcile_tolerance; maxMinorUnits: matched_ceiling; summary: "Largest difference between the instructed amount and the settled debit that still counts as matched."; title: "Settlement tolerance"; }];
+  action create { summary: concat("Create a ", words(instrument)); agent_description: concat("Open the payout row with the ", words(payer), " and ", words(beneficiary), " accounts, the amount, the beneficiary reference, and the settle date. No money moves and no instruction goes out yet. Call instruct next."); moves: []; steps: []; }
+  action instruct {
+    agent_description: concat("Send the payout instruction and start the expectation clock. This commits the amount to the ", words(beneficiary), " and the payout is not reversible from here. The bank debit is matched later by settle, which runs on its own at the settle date.");
+    summary: concat("Instruct the payout to the ", words(beneficiary));
+    payout { amount: concat("fields.", amount); beneficiaryField: beneficiary_ref; beneficiaryPartyField: beneficiary_account_field; capture: payoutId; currencyField: currency; sourceAccountField: payer_account_field; speed: standard; }
+    moves: []; steps: [];
+  }
+  action settle {
+    summary: "Match the bank's debit against what the instruction promised";
+    due { field: settle_by; }
+    reconcile {
+      amount: concat("fields.", amount); capture: settlementEvidenceId; counterpartyRef: payoutId;
+      currencyField: currency; direction: debit; evidence: statement_line;
+      exception { amountField: unmatchedAmount; childInstrumentId: concat(instrument, "_break"); maxOpen: 1; reasonField: breakReason; refField: concat(camel(instrument), "Id"); }
+      match { law: tolerance; dial: settlement_tolerance; minorUnits: matched_within; }
+      within { field: settle_by; }
+    }
+    moves: []; steps: [];
+  }
+  instruments {
+    instrument {
+      let(parent_name): instrument;
+      id: concat(parent_name, "_break");
+      id_prefix: concat(prefix(parent_name), "bk");
+      fields {
+        unmatchedAmount { type: money<C>; description: "Difference between the instructed amount and the evidence, in minor units"; }
+        currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+        breakReason { type: text; description: "Why the expectation went unmatched"; minLength: 1; maxLength: 180; }
+        [parent_name]Id { type: ref<parent_name>; description: "Payout whose expectation broke"; pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+      }
+      lifecycle { states created carried; initial created; on carry: created -> carried; }
+      required: [breakReason, currency, unmatchedAmount, concat(camel(parent_name), "Id")];
+      title: concat(sentence(parent_name), " Break");
+      agent_description: concat("Reach for this child row when a ", words(parent_name), " expectation reached its window with no matching bank debit. The break carries the unmatched amount and the reason so the difference is owned by someone rather than silently dropped.");
+      summary: "Unmatched settlement expectation carried as its own row";
+      description: "One break raised when a payout expectation reached its window with no matching debit; it is carried, never silently dropped";
+      action create { summary: "Raise a break against an instructed payout"; agent_description: "Raise a break against an instructed payout, recording the unmatched amount and why the expectation went unmatched. No money moves. The payout must still be instructed, and only one open break exists per payout."; requires refs { field: concat(camel(parent_name), "Id"); statuses: [instructed]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+      action carry { summary: "Carry the break to whoever owns it"; agent_description: "Hand the break to whoever owns resolving it. No money moves. The payout must still be instructed. This is the only exit from a raised break, so a break is never closed by dropping it."; requires refs { field: concat(camel(parent_name), "Id"); statuses: [instructed]; match: { "fields.currency": "fields.currency"; }; } moves: []; steps: []; }
+    }
+  }
+}

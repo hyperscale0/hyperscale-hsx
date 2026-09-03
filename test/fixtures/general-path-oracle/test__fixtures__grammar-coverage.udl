@@ -1,0 +1,572 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_piece_1",
+        "confirm_access",
+        "abandon"
+      ],
+      "actions": {
+        "abandon": {
+          "agentDescription": "Close a dues that was never funded. The escrow account must be empty, so this refuses once any piece is in it. It moves no money and the settlement ends here with no way back.",
+          "moves": [],
+          "publicAction": "abandonDues",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Abandon the settlement before any money is held"
+        },
+        "confirm_access": {
+          "agentDescription": "Confirm confirm_access and start paying the held money out of escrow. The dues must be funded first, and the caller must be club. Where the product requires a decision reference, supply it here. Money leaves escrow on this call and does not come back.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "depositHeld": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "grantedOn": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "lockerId": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "grantedOn",
+              "depositHeld",
+              "lockerId"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.duesAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.clubAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "dues"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "confirm_access"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "confirmAccessTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "confirmAccessDues",
+          "steps": [],
+          "summary": "Confirm through confirm_access and start the release payout"
+        },
+        "create": {
+          "agentDescription": "Open the dues and provision the escrow account that holds the funds. This is the first call, and every funding and release action moves money through that account. It does not move the held amount itself.",
+          "moves": [],
+          "publicAction": "createDues",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create a dues settlement"
+        },
+        "fund_piece_1": {
+          "agentDescription": "Move the member's money into this settlement's escrow. Call it after create and before any release. It debits the member for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.duesAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "dues"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "fundPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundPiece1Dues",
+          "steps": [],
+          "summary": "Fund piece 1 of the held amount into escrow"
+        }
+      },
+      "agentDescription": "Reach for dues when the member must commit money up front and nobody is paid until confirm_access fires. Funding moves duesAmount into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
+      "description": "Held payment: the member funds duesAmount into this settlement's own escrow; club confirms through confirm_access to release",
+      "fields": {
+        "clubAccountId": {
+          "description": "The club account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "duesAmount": {
+          "description": "The held amount in SAR minor units, funded and paid out whole",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        }
+      },
+      "id": "dues",
+      "idPrefix": "dues",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "funded",
+          "released",
+          "abandoned"
+        ],
+        "transitions": {
+          "abandon": {
+            "from": [
+              "created"
+            ],
+            "to": "abandoned"
+          },
+          "confirm_access": {
+            "from": [
+              "funded"
+            ],
+            "to": "released"
+          },
+          "fund_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "funded"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "clubAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "memberAccountId",
+        "clubAccountId",
+        "platformAccountId",
+        "duesAmount",
+        "currency"
+      ],
+      "summary": "Escrow-held payment from member to club",
+      "title": "Dues"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "pay_installment_1",
+        "pay_installment_2"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Create the installment plan. No money moves. The total and its per-installment amounts are fixed here, and each installment collects on its own stored due date from then on.",
+          "moves": [],
+          "publicAction": "createNextSeason",
+          "steps": [],
+          "summary": "Create a next season plan"
+        },
+        "pay_installment_1": {
+          "due": {
+            "field": "firstSeasonDue"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.clubAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "next_season"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 1 of 2"
+        },
+        "pay_installment_2": {
+          "due": {
+            "field": "firstSeasonDue",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.installment2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.clubAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "next_season"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_installment_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "payInstallment2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect installment 2 of 2"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "description": "Scheduled payment: the member pays seasonAmount to the club in 2 installments, one every P30D",
+      "fields": {
+        "clubAccountId": {
+          "description": "The club account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstSeasonDue": {
+          "description": "Due date of the first installment; installment k falls P30D after its predecessor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "installment1Amount": {
+          "description": "Installment 1 of 2 (carries the integer-division remainder): about 50% of seasonAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "installment2Amount": {
+          "description": "Installment 2 of 2: about 50% of seasonAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "seasonAmount": {
+          "description": "The total scheduled amount in SAR minor units; the installment fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "next_season",
+      "idPrefix": "ns",
+      "lifecycle": {
+        "initial": "active",
+        "states": [
+          "active",
+          "collecting_1",
+          "settled"
+        ],
+        "transitions": {
+          "pay_installment_1": {
+            "from": [
+              "active"
+            ],
+            "to": "collecting_1"
+          },
+          "pay_installment_2": {
+            "from": [
+              "collecting_1"
+            ],
+            "to": "settled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "clubAccountId",
+        "payer": "memberAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "installment1Amount",
+            "installment2Amount"
+          ],
+          "totalField": "seasonAmount"
+        }
+      ],
+      "required": [
+        "memberAccountId",
+        "clubAccountId",
+        "seasonAmount",
+        "firstSeasonDue",
+        "installment1Amount",
+        "installment2Amount",
+        "currency"
+      ],
+      "summary": "2-installment schedule from member to club",
+      "title": "Next season"
+    }
+  ],
+  "product": "plain_header",
+  "subjects": [
+    {
+      "declaredValue": "optional",
+      "kind": "locker",
+      "schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "title": "Locker",
+      "version": 1
+    }
+  ],
+  "title": "Plain header",
+  "udl": 1,
+  "version": 1
+}

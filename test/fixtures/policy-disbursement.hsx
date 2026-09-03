@@ -1,5 +1,5 @@
 program policy_disbursement "Policy and disbursement"
-import { conditional_disbursement, premium_forward } from "settlement"
+import { conditional_disbursement, premium_forward } from "std/settlements"
 
 party payer: person
 party carrier: business
@@ -14,10 +14,7 @@ settlement premium = premium_forward {
   commission: 2%
   policy_ref: policyReference
   renewal_due: renewalDueAt
-  renewal_policy: explicit_new_forward
   endorsement: port endorsement_evidence
-  endorsement_policy: non_money_only
-  lapse_policy: due_condition
 }
 
 settlement disbursement = conditional_disbursement {

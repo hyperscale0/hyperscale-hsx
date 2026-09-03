@@ -1,0 +1,124 @@
+// A watch club whose money rules remain explicit from member checkout through
+// seller payout. Each item owns its sale, deposit, and trade lifecycle. The
+// club membership schedule opens periods but never moves money on a timeout.
+
+program watch_club "Watch club"
+
+import {
+  security_deposit,
+  instant_transfer,
+  recurring_collection,
+  scheduled,
+  settlement_batch,
+  swap
+} from "std/settlements"
+
+party member: person
+party seller: business
+party club: business
+party payout_destination: business
+
+asset watch: good { title_transfer: on_platform }
+
+settlement purchase = instant_transfer {
+  payer: member
+  payee: seller
+  amount: purchasePrice: money(SAR)
+  fees {
+    member: checkoutFee: money(SAR)
+    seller {
+      tier {
+        from: 0
+        to: 10000
+        fee: 1%
+      }
+      tier {
+        from: 10000
+        fee: highValueFee: money(SAR)
+      }
+    }
+  }
+}
+
+settlement inspection_deposit = security_deposit {
+  payer: member
+  holder: seller
+  amount: depositAmount: money(SAR)
+  claim: port assess_watch
+  claim_amount: decided {
+    field: damageAmount
+    bound: depositAmount
+    remainder: return
+  }
+  return: port return_deposit
+}
+
+settlement membership = scheduled {
+  mode: obligation
+  payer: member
+  payee: club
+  debtor: member
+  amount: monthlyFee: money(SAR)
+  every: P1M
+  first_due: firstPeriodAt
+  until: port cancel_membership
+  month_end: clamp_to_last_day
+  period_liability: one_open
+  termination_drain: cancel_membership
+  mandate: port collect_membership
+}
+
+settlement member_trade = swap {
+  between: [member, seller]
+  amounts {
+    member: memberPays: money(SAR)
+    seller: sellerPays: money(SAR)
+  }
+  fees {
+    member: memberTradeFee: money(SAR)
+    seller: sellerTradeFee: money(SAR)
+  }
+  release: port confirm_trade
+  dispute: port resolve_trade within P14D
+}
+
+settlement seller_payout = settlement_batch {
+  settlement_account: club
+  source_capture_refs: captureReference
+  fee_entries: feeReference
+  external_reversal_offsets: externalReversalReference
+  close_trigger: closeAt
+  payout_destination: payout_destination
+  negative_position: reject
+  payout_acknowledgement: port acknowledge_payout
+  payout_beneficiary_ref: payoutBeneficiaryId
+}
+
+port assess_watch {
+  allowed: [seller]
+  shape {
+    damageAmount: money(SAR)
+    evidence: text
+  }
+}
+
+port return_deposit { allowed: [seller] }
+
+port collect_membership {
+  allowed: [member]
+  shape { evidenceReference: text }
+}
+
+port cancel_membership {
+  allowed: [member]
+  shape { reason: text }
+}
+
+port confirm_trade { allowed: [member, seller] }
+
+port resolve_trade { allowed: [member, seller] }
+
+port acknowledge_payout {
+  allowed: [payout_destination]
+  shape { acknowledgementReference: text }
+}

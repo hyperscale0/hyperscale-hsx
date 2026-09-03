@@ -1,0 +1,27 @@
+module std.settlements.recurring_collection
+
+export instrument recurring_collection(marker: optional<text>) {
+  agent_description: concat("Reach for ", words(instrument), " to track a bounded run of scheduled collections, one call per recorded installment. It carries no amount and no account, and every action only advances its own state. A settlement that debits an account on a schedule is a different shape.");
+  fields {}
+  lifecycle {
+    states active ended;
+    initial active;
+    on collect: active -> active;
+    on end: active -> ended;
+  }
+  action create {
+    agent_description: "Open the collection so installments can be recorded against it. This is the first call and the collection starts active. It moves no money.";
+    summary: "Create a bounded recurring collection";
+    steps: [];
+  }
+  action collect {
+    agent_description: "Record one due installment as collected. The collection must still be active, and it stays active afterwards so the next installment can follow. It moves no money.";
+    summary: "Collect one due installment";
+    steps: [];
+  }
+  action end {
+    agent_description: "Close the collection so no further installment can be recorded. Only an active collection can end, and ended is final. It moves no money.";
+    summary: "End future collections";
+    steps: [];
+  }
+}

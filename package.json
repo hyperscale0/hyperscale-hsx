@@ -1,7 +1,7 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.0-beta.1",
-  "description": "The HSX authoring language: compile settlement bricks into HSX-JSON IR and a congruent Business Frame.",
+  "version": "1.0.0-rc.1",
+  "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
     "compiler",
@@ -33,8 +33,9 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./spec/hsx-ir.schema.json": "./spec/hsx-ir.schema.json",
-    "./package.json": "./package.json"
+    "./cost": "./src/cost.ts",
+    "./package.json": "./package.json",
+    "./std/*": "./std/*"
   },
   "files": [
     "AUTHORS",
@@ -46,7 +47,10 @@
     "TRADEMARKS.md",
     "bin",
     "dist",
-    "spec",
+    "docs",
+    "examples",
+    "skills",
+    "std",
     "src"
   ],
   "engines": {
@@ -57,11 +61,17 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "bun test && tsc -p tsconfig.json && bun run build && bun scripts/check-bin.ts",
+    "check": "bun test && bun run docs:check && tsc -p tsconfig.json && bun run build && bun scripts/check-bin.ts",
+    "docs:build": "bun scripts/docs/build.ts",
+    "docs:check": "bun scripts/docs/check.ts",
+    "examples:build": "bun scripts/examples/build.ts",
     "postpack": "bun scripts/pack-exports.ts restore",
     "prepack": "bun run build && bun scripts/pack-exports.ts apply",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hyperscale0/udl": "1.0.0-rc.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

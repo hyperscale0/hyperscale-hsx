@@ -1,35 +1,25 @@
 # HSX for VS Code
 
-Syntax highlighting for `.hsx` files: a TextMate grammar, a language
-configuration, and the manifest that binds them. Nothing else: no language
-server, no diagnostics in the editor. For diagnostics, run `hsx check`.
+This extension adds syntax highlighting and standard-library snippets for
+`.hsx` files. It has no language server. Run `hsx check` for diagnostics.
 
-The grammar's token classes come from the compiler's lexer and checker, so
-what the editor colours and what the compiler recognises stay the same set:
-the seven keywords, the seventeen bricks the `settlement` module exports, the
-party and asset kinds, the four port field types, currency codes, fixed
-durations, percents, and comments.
+The documentation generator reads `KEYWORDS`, `PUNCT`, the UDL clause
+vocabulary, and the current `std/settlements` files. It writes the TextMate
+grammar and snippets from those sources.
 
-## Install it locally
+## Install the CI artifact
 
-```bash
-ln -s "$(pwd)/editors/vscode" ~/.vscode/extensions/hsx
+Download `hsx.vsix` from the Editor workflow artifact, then run:
+
+```sh
+code --install-extension hsx.vsix
 ```
 
-Then restart VS Code and open any file under `examples/`.
+You can also package the extension from this directory:
 
-## Package it
-
-```bash
-cd editors/vscode
-npx @vscode/vsce package
+```sh
+bunx @vscode/vsce package --no-dependencies --out hsx.vsix
 ```
 
-This extension is not published to the marketplace yet, which is why the
-manifest is marked `private`.
-
-## Changing the grammar
-
-The grammar is not the language. If the two disagree, the compiler is right:
-`src/lex.ts` for tokens, `src/check.ts` for the archetype and kind names.
-Change the compiler first, then the grammar, in that order.
+The team has no `hyperscale0` Visual Studio Marketplace publisher account, so
+CI builds the file but does not publish it.

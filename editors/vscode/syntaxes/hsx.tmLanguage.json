@@ -1,115 +1,66 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "HSX",
-  "scopeName": "source.hsx",
   "fileTypes": ["hsx"],
+  "name": "HSX",
   "patterns": [
-    { "include": "#comment" },
-    { "include": "#string" },
-    { "include": "#declaration" },
-    { "include": "#import" },
-    { "include": "#port-reference" },
-    { "include": "#archetype" },
-    { "include": "#type-constructor" },
-    { "include": "#scalar-type" },
-    { "include": "#kind" },
-    { "include": "#constant" },
-    { "include": "#contextual-keyword" },
-    { "include": "#duration" },
-    { "include": "#percent" },
-    { "include": "#number" },
-    { "include": "#currency" },
-    { "include": "#entry-key" },
-    { "include": "#punctuation" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#percents"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#clauses"
+    },
+    {
+      "include": "#modules"
+    },
+    {
+      "include": "#punctuation"
+    }
   ],
   "repository": {
-    "comment": {
-      "comment": "The lexer has one comment form: // to end of line. There is no block comment.",
+    "clauses": {
+      "match": "\\b(?:agent_description|capture_input|commit|quote|decided_amount|deadline|decision|computes_distribute|description|due|earnable|event_name|examples|input|moves|payout|port|principal|public_action|reconcile|computes_remainder|requires_aggregate|requires_checks|requires_drained|requires_exposure|requires_refs|sandbox_failure_point|sets_at|computes_signed_sum|steps|summary|updates|notify|agent_description|aggregate_invariants|caller_parked_states|description|dials|distinct_parties|computes_derived|computes_fees|id_prefix|nav|partitions|subject|summary|surface_visibility|template_id|title|update)\\b",
+      "name": "support.function.clause.hsx"
+    },
+    "comments": {
       "match": "//.*$",
       "name": "comment.line.double-slash.hsx"
     },
-    "string": {
-      "comment": "Strings have no escape sequences and cannot span a line, so the match is deliberately simple.",
-      "match": "\"[^\"\\n]*\"",
-      "name": "string.quoted.double.hsx"
+    "keywords": {
+      "match": "\\b(?:action|as|asset|commit|const|expect|expose|expires|export|from|import|instrument|module|party|port|program|quote|rate|reconcile|settlement|subject|type|use)\\b",
+      "name": "keyword.control.hsx"
     },
-    "declaration": {
-      "comment": "The five keywords that introduce a declaration, each followed by the name it declares.",
-      "match": "\\b(program|party|asset|settlement|port)\\s+([A-Za-z][A-Za-z0-9_]*)",
-      "captures": {
-        "1": { "name": "keyword.other.declaration.hsx" },
-        "2": { "name": "entity.name.type.hsx" }
-      }
+    "modules": {
+      "match": "\\b(?:advance|cancellable_booking|captured_payment|conditional_disbursement|credit_facility|held_payment|instant_transfer|metered|pooled_split|premium_forward|reconciled_payout|recurring_collection|rotating_pool|scheduled|security_deposit|settlement_batch|swap|threshold_pool|weighted_distribution)\\b",
+      "name": "support.class.module.hsx"
     },
-    "import": {
-      "match": "\\b(import|from)\\b",
-      "name": "keyword.control.import.hsx"
-    },
-    "port-reference": {
-      "comment": "`port` in value position: release: port confirm_handover",
-      "match": "\\b(port)\\b",
-      "name": "keyword.other.port.hsx"
-    },
-    "archetype": {
-      "comment": "Every name the settlement standard library exports.",
-      "match": "\\b(advance|captured_payment|conditional_disbursement|credit_facility|deposit|funding_round|held_payment|instant_transfer|metered|pooled_split|premium_forward|recurring_collection|rotating_pool|scheduled|settlement_batch|swap|weighted_distribution)\\b",
-      "name": "support.class.archetype.hsx"
-    },
-    "type-constructor": {
-      "comment": "money(SAR) and id(vehicle): applied types, so only before an open paren.",
-      "match": "\\b(money|id)\\b(?=\\s*\\()",
-      "name": "support.function.type.hsx"
-    },
-    "scalar-type": {
-      "comment": "The two port field types that take no argument.",
-      "match": "\\b(text|date)\\b",
-      "name": "support.type.hsx"
-    },
-    "kind": {
-      "comment": "Party kinds and asset kinds.",
-      "match": "\\b(person|business|access|claim|good|service|ticket)\\b",
-      "name": "support.constant.kind.hsx"
-    },
-    "constant": {
-      "match": "\\b(on_platform|off_platform|funded)\\b",
-      "name": "constant.language.hsx"
-    },
-    "contextual-keyword": {
-      "comment": "Identifiers the checker gives meaning to in one position each.",
-      "match": "\\b(within|at|remainder_to|against)\\b",
-      "name": "keyword.other.hsx"
-    },
-    "duration": {
-      "comment": "Fixed ISO-8601 durations. Days and weeks only; calendar months are refused by the compiler.",
-      "match": "\\bP[0-9]+[DW]\\b",
-      "name": "constant.other.duration.hsx"
-    },
-    "percent": {
-      "comment": "Exact to a basis point: at most two fraction digits.",
-      "match": "\\b[0-9]+(\\.[0-9]+)?%",
-      "name": "constant.numeric.percentage.hsx"
-    },
-    "number": {
-      "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+    "numbers": {
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b",
       "name": "constant.numeric.hsx"
     },
-    "currency": {
-      "comment": "Three capital letters is a currency code everywhere the language accepts one.",
-      "match": "\\b[A-Z]{3}\\b",
-      "name": "support.constant.currency.hsx"
-    },
-    "entry-key": {
-      "comment": "An identifier introducing an entry: `payer: buyer`, `fees { ... }`, `on_cancel(funded) { ... }`.",
-      "match": "\\b([a-z][A-Za-z0-9_]*)\\s*(?=[:{(])",
-      "name": "variable.other.member.hsx"
+    "percents": {
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?%",
+      "name": "constant.numeric.percentage.hsx"
     },
     "punctuation": {
-      "patterns": [
-        { "match": "=", "name": "keyword.operator.assignment.hsx" },
-        { "match": "\\|", "name": "keyword.operator.fallback.hsx" },
-        { "match": "[:,.]", "name": "punctuation.separator.hsx" },
-        { "match": "[{}\\[\\]()]", "name": "punctuation.section.hsx" }
-      ]
+      "match": "(?:->|[{}()\\[\\]:,;=|.<>?])",
+      "name": "punctuation.hsx"
+    },
+    "strings": {
+      "match": "\"[^\"\\n]*\"",
+      "name": "string.quoted.double.hsx"
     }
-  }
+  },
+  "scopeName": "source.hsx"
 }

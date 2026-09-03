@@ -1,6 +1,6 @@
 program captured_payment_program "Captured payment program"
 
-import { captured_payment } from "settlement"
+import { captured_payment } from "std/settlements"
 
 party payer: person
 party payee: business

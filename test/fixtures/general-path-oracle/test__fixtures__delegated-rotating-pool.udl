@@ -1,0 +1,571 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "activate",
+        "contribute",
+        "payout"
+      ],
+      "actions": {
+        "activate": {
+          "agentDescription": "Follow the parent circle into the contributing state once the roster is full and the circle has activated. Refused while the circle is still forming. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "activateCommunityMembership",
+          "requiresRefs": [
+            {
+              "field": "communityCircleId",
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Activate instrument"
+        },
+        "contribute": {
+          "due": {
+            "field": "contributionDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.monthlyAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.potAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "community_membership"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "contributeContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "communityCircleId",
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Contribute instrument"
+        },
+        "create": {
+          "agentDescription": "Take a seat in a circle that is still forming. The circle must be forming and it supplies the currency, the monthly amount, and the pot account. No money moves at join.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createCommunityMembership",
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "monthlyAmount": "fields.monthlyAmount",
+                "potAccountId": "refs.potAccountId"
+              },
+              "field": "communityCircleId",
+              "statuses": [
+                "forming"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create instrument"
+        },
+        "payout": {
+          "due": {
+            "field": "payoutDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.monthlyAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.turnRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "community_membership"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "payout"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.potAccountId"
+                }
+              },
+              "capture": {
+                "payoutPayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "communityCircleId",
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Payout instrument"
+        }
+      },
+      "agentDescription": "Reach for community membership to take one seat in a community circle that is still forming. Joining is the only caller action here. The monthly contribution and the payout at this seat's turn both fire from the schedule under the machine principal. Circle-wide setup lives on community circle.",
+      "fields": {
+        "communityCircleId": {
+          "pattern": "^circle_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "contributionDueAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "monthlyAmount": {
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "payoutDueAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "potAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "turnRecipientAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "community_membership",
+      "idPrefix": "cm",
+      "lifecycle": {
+        "initial": "enrolled",
+        "states": [
+          "enrolled",
+          "contributing",
+          "funded",
+          "paid"
+        ],
+        "transitions": {
+          "activate": {
+            "from": [
+              "enrolled"
+            ],
+            "to": "contributing"
+          },
+          "contribute": {
+            "from": [
+              "contributing"
+            ],
+            "to": "funded"
+          },
+          "payout": {
+            "from": [
+              "funded"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "turnRecipientAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "communityCircleId",
+        "contributionDueAt",
+        "currency",
+        "memberAccountId",
+        "monthlyAmount",
+        "payoutDueAt",
+        "potAccountId",
+        "turnRecipientAccountId"
+      ],
+      "summary": "Community Membership instrument",
+      "title": "Community Membership"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "activate",
+        "disband",
+        "close"
+      ],
+      "actions": {
+        "activate": {
+          "due": {
+            "field": "startsAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "examples": [
+            {
+              "input": {
+                "communityCircleId": "circle_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "activate_community_circle"
+            }
+          ],
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "field": "seatCount",
+                "kind": "count_equals_field"
+              },
+              "instrumentId": "community_membership",
+              "over": "children",
+              "refField": "communityCircleId",
+              "statuses": [
+                "enrolled"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Activate the full circle"
+        },
+        "close": {
+          "agentDescription": "Retire the community circle after every membership row has been paid. Refused while any row is unpaid or while the pot account still holds anything, so a pool can never close over stranded money. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "examples": [
+            {
+              "input": {
+                "communityCircleId": "circle_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "close_community_circle"
+            }
+          ],
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "community_membership",
+              "over": "children",
+              "refField": "communityCircleId",
+              "statuses": [
+                "paid"
+              ]
+            }
+          ],
+          "requiresDrainedAccount": {
+            "path": "refs.potAccountId"
+          },
+          "steps": [],
+          "summary": "Close the paid circle"
+        },
+        "create": {
+          "agentDescription": "Open the community circle and provision the pot account every contribution lands in. No money moves. The roster is still empty, so the pool stays forming until one membership row exists per seat.",
+          "examples": [
+            {
+              "input": {
+                "currency": "SAR",
+                "monthlyAmount": "5000",
+                "productId": "prd_sandbox_community1",
+                "seatCount": 4,
+                "startsAt": "2026-10-01T00:00:00.000Z",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "create_community_circle"
+            }
+          ],
+          "moves": [],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "potAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create the circle"
+        },
+        "disband": {
+          "agentDescription": "Close a community circle that never filled its roster. Only a forming pool disbands, no money has moved, and there is nothing to refund. Once the pool activates this exit is gone.",
+          "examples": [
+            {
+              "input": {
+                "communityCircleId": "circle_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "disband_community_circle"
+            }
+          ],
+          "moves": [],
+          "steps": [],
+          "summary": "Disband an unfilled circle"
+        }
+      },
+      "agentDescription": "Reach for community circle when a fixed group pays the same contribution every cycle and one member takes the whole pot each cycle, and the product publishes its own membership rows. This shape owns the pot account and the seat count. Every contribution and payout happens on the membership row that references it, never here.",
+      "aggregateInvariants": [
+        {
+          "childInstrumentId": "community_membership",
+          "childRefField": "communityCircleId",
+          "childStatuses": [
+            "enrolled",
+            "contributing",
+            "paid"
+          ],
+          "count": true,
+          "parentField": "seatCount"
+        }
+      ],
+      "callerParkedStates": {
+        "active": "members contribute and receive the pot through their published membership rows"
+      },
+      "description": "Each membership owns its contribution and payout schedule.",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "monthlyAmount": {
+          "description": "The contribution each member pays per cycle",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "seatCount": {
+          "maximum": 24,
+          "minimum": 2,
+          "type": "integer"
+        },
+        "startsAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "community_circle",
+      "idPrefix": "circle",
+      "lifecycle": {
+        "initial": "forming",
+        "states": [
+          "forming",
+          "active",
+          "completed",
+          "disbanded"
+        ],
+        "transitions": {
+          "activate": {
+            "from": [
+              "forming"
+            ],
+            "to": "active"
+          },
+          "close": {
+            "from": [
+              "active"
+            ],
+            "to": "completed"
+          },
+          "disband": {
+            "from": [
+              "forming"
+            ],
+            "to": "disbanded"
+          }
+        }
+      },
+      "required": [
+        "seatCount",
+        "monthlyAmount",
+        "currency",
+        "startsAt"
+      ],
+      "summary": "A rotating pool with published membership rows",
+      "title": "Community circle"
+    }
+  ],
+  "product": "community_circle",
+  "subjects": [],
+  "title": "Community circle",
+  "udl": 1,
+  "version": 1
+}

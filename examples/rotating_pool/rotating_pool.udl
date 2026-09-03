@@ -1,0 +1,4352 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "cancel",
+        "activate",
+        "ready_cycle_1",
+        "advance_cycle_1",
+        "ready_cycle_2",
+        "advance_cycle_2",
+        "ready_cycle_3",
+        "advance_cycle_3"
+      ],
+      "actions": {
+        "activate": {
+          "agentDescription": "Start cycle one. Refused unless every member on the roster has exactly one contribution row waiting at the first cycle, so a pool can never run a member short. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "activatePool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "field": "one",
+                "kind": "count_equals_field"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_due"
+              ]
+            },
+            {
+              "check": {
+                "field": "one",
+                "kind": "count_equals_field"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_due"
+              ]
+            },
+            {
+              "check": {
+                "field": "one",
+                "kind": "count_equals_field"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_due"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Activate only after every fixed member row exists once"
+        },
+        "advance_cycle_1": {
+          "agentDescription": "Close cycle 1 once every member row has paid into that cycle pot, moving the pool to the next cycle or to completed on the last one. Refused while any row is unpaid. No money moves here. The money moved on the member rows.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "advanceCycle1Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_due"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_due"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_due"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Advance after every cycle 1 contribution pays"
+        },
+        "advance_cycle_2": {
+          "agentDescription": "Close cycle 2 once every member row has paid into that cycle pot, moving the pool to the next cycle or to completed on the last one. Refused while any row is unpaid. No money moves here. The money moved on the member rows.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "advanceCycle2Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_due"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_due"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_due"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Advance after every cycle 2 contribution pays"
+        },
+        "advance_cycle_3": {
+          "agentDescription": "Close cycle 3 once every member row has paid into that cycle pot, moving the pool to the next cycle or to completed on the last one. Refused while any row is unpaid. No money moves here. The money moved on the member rows.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "advanceCycle3Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "completed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "completed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "completed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Complete after the final shared pot pays"
+        },
+        "cancel": {
+          "agentDescription": "Cancel the pool before it activates. Only a forming pool cancels, no money has moved yet, and there is nothing to refund. Once the pool activates this exit is gone.",
+          "moves": [],
+          "publicAction": "cancelPool",
+          "steps": [],
+          "summary": "Cancel before activation without moving money"
+        },
+        "create": {
+          "agentDescription": "Create the pool with its frozen roster, cycle count, contribution amount, and payout order. No money moves. Each member's contribution row is created separately, and the pool cannot activate until every row exists.",
+          "moves": [],
+          "publicAction": "createPool",
+          "steps": [],
+          "summary": "Create the fixed roster before activation"
+        },
+        "ready_cycle_1": {
+          "agentDescription": "Lock cycle 1 once every member row is funded or covered by the guarantor. Refused while any row is still due or defaulted. No money moves here. Locking the cycle is what lets its payouts run.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "readyCycle1Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_funded",
+                "cycle_1_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_funded",
+                "cycle_1_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_1_funded",
+                "cycle_1_guaranteed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Lock cycle 1 only after every member row is funded or guaranteed"
+        },
+        "ready_cycle_2": {
+          "agentDescription": "Lock cycle 2 once every member row is funded or covered by the guarantor. Refused while any row is still due or defaulted. No money moves here. Locking the cycle is what lets its payouts run.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "readyCycle2Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_funded",
+                "cycle_2_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_funded",
+                "cycle_2_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_2_funded",
+                "cycle_2_guaranteed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Lock cycle 2 only after every member row is funded or guaranteed"
+        },
+        "ready_cycle_3": {
+          "agentDescription": "Lock cycle 3 once every member row is funded or covered by the guarantor. Refused while any row is still due or defaulted. No money moves here. Locking the cycle is what lets its payouts run.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "readyCycle3Pool",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_a_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_funded",
+                "cycle_3_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_b_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_funded",
+                "cycle_3_guaranteed"
+              ]
+            },
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "pool_member_c_contribution",
+              "over": "children",
+              "refField": "poolId",
+              "statuses": [
+                "cycle_3_funded",
+                "cycle_3_guaranteed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Lock cycle 3 only after every member row is funded or guaranteed"
+        }
+      },
+      "agentDescription": "Reach for rotating pool when a fixed group pays the same contribution every cycle and one member takes the whole pot each cycle, in a declared order. The roster freezes at creation, one contribution row per member, and the pot rotates until every member has been paid. Scheduled is the one payer, one payee shape on a calendar.",
+      "description": "Fixed rotating contribution and payout order",
+      "fields": {
+        "contributionAmount": {
+          "description": "Exact contribution in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstContributionAt": {
+          "description": "Stored first contribution due date",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "guarantorAccountId": {
+          "description": "The guarantor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberAAccountId": {
+          "description": "The member a account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberBAccountId": {
+          "description": "The member b account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberCAccountId": {
+          "description": "The member c account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "one": {
+          "const": 1,
+          "description": "Exact fixed member-row count",
+          "type": "integer"
+        }
+      },
+      "id": "pool",
+      "idPrefix": "pool",
+      "lifecycle": {
+        "initial": "forming",
+        "states": [
+          "forming",
+          "cancelled",
+          "active_cycle_1",
+          "cycle_1_ready",
+          "active_cycle_2",
+          "cycle_2_ready",
+          "active_cycle_3",
+          "cycle_3_ready",
+          "completed"
+        ],
+        "transitions": {
+          "activate": {
+            "from": [
+              "forming"
+            ],
+            "to": "active_cycle_1"
+          },
+          "advance_cycle_1": {
+            "from": [
+              "cycle_1_ready"
+            ],
+            "to": "active_cycle_2"
+          },
+          "advance_cycle_2": {
+            "from": [
+              "cycle_2_ready"
+            ],
+            "to": "active_cycle_3"
+          },
+          "advance_cycle_3": {
+            "from": [
+              "cycle_3_ready"
+            ],
+            "to": "completed"
+          },
+          "cancel": {
+            "from": [
+              "forming"
+            ],
+            "to": "cancelled"
+          },
+          "ready_cycle_1": {
+            "from": [
+              "active_cycle_1"
+            ],
+            "to": "cycle_1_ready"
+          },
+          "ready_cycle_2": {
+            "from": [
+              "active_cycle_2"
+            ],
+            "to": "cycle_2_ready"
+          },
+          "ready_cycle_3": {
+            "from": [
+              "active_cycle_3"
+            ],
+            "to": "cycle_3_ready"
+          }
+        }
+      },
+      "parties": {
+        "payer": "guarantorAccountId"
+      },
+      "required": [
+        "memberAAccountId",
+        "memberBAccountId",
+        "memberCAccountId",
+        "guarantorAccountId",
+        "currency",
+        "contributionAmount",
+        "firstContributionAt",
+        "one"
+      ],
+      "summary": "3-member rotating pool",
+      "title": "Pool"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "contribute_cycle_1",
+        "mark_default_cycle_1",
+        "guarantee_cycle_1",
+        "pay_cycle_1",
+        "pay_guaranteed_cycle_1",
+        "contribute_cycle_2",
+        "mark_default_cycle_2",
+        "guarantee_cycle_2",
+        "pay_cycle_2",
+        "pay_guaranteed_cycle_2",
+        "contribute_cycle_3",
+        "mark_default_cycle_3",
+        "guarantee_cycle_3",
+        "pay_cycle_3",
+        "pay_guaranteed_cycle_3",
+        "close"
+      ],
+      "actions": {
+        "close": {
+          "agentDescription": "Retire this member row after its final payout. Refused while the row escrow account still holds anything, so a row can never close over stranded money. No money moves.",
+          "moves": [],
+          "publicAction": "closePoolMemberAContribution",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Complete after the final payout drains this member custody"
+        },
+        "contribute_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle1ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member a's cycle 1 contribution"
+        },
+        "contribute_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle2ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member a's cycle 2 contribution"
+        },
+        "contribute_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle3ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member a's cycle 3 contribution"
+        },
+        "create": {
+          "agentDescription": "Create the contribution row for the member a and provision its escrow account. The pool must still be forming, and every member needs exactly one row before the pool can activate. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "bind": {
+                "contributionAmount": "fields.contributionAmount",
+                "currency": "fields.currency",
+                "firstContributionAt": "fields.firstContributionAt",
+                "guarantorAccountId": "fields.guarantorAccountId",
+                "memberAAccountId": "fields.memberAAccountId",
+                "memberBAccountId": "fields.memberBAccountId",
+                "memberCAccountId": "fields.memberCAccountId"
+              },
+              "field": "poolId",
+              "statuses": [
+                "forming"
+              ],
+              "unique": true
+            }
+          ],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create the fixed contribution row for member a"
+        },
+        "guarantee_cycle_1": {
+          "agentDescription": "Have the guarantor fund cycle 1 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle1GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle1PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 1 amount before payout"
+        },
+        "guarantee_cycle_2": {
+          "agentDescription": "Have the guarantor fund cycle 2 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle2GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle2PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 2 amount before payout"
+        },
+        "guarantee_cycle_3": {
+          "agentDescription": "Have the guarantor fund cycle 3 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle3GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle3PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 3 amount before payout"
+        },
+        "mark_default_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 1 due condition"
+        },
+        "mark_default_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 2 due condition"
+        },
+        "mark_default_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 3 due condition"
+        },
+        "pay_cycle_1": {
+          "agentDescription": "Pay this row's funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle1PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
+        },
+        "pay_cycle_2": {
+          "agentDescription": "Pay this row's funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle2PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 2's shared pot recipient"
+        },
+        "pay_cycle_3": {
+          "agentDescription": "Pay this row's funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle3PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 3's shared pot recipient"
+        },
+        "pay_guaranteed_cycle_1": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle1PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 1's stored recipient"
+        },
+        "pay_guaranteed_cycle_2": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle2PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 2's stored recipient"
+        },
+        "pay_guaranteed_cycle_3": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_a_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle3PoolMemberAContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 3's stored recipient"
+        }
+      },
+      "agentDescription": "One seat in the pool. The member a pays the same contribution every cycle and takes the whole pot on their turn. Every contribution, default, guarantee, and payout for that member happens on this row, never on the pool itself.",
+      "description": "Fixed contribution row for member a",
+      "fields": {
+        "contributionAmount": {
+          "description": "Exact contribution amount shared by every cycle",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstContributionAt": {
+          "description": "First due anchor derived from the pool",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "guarantorAccountId": {
+          "description": "The guarantor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberAAccountId": {
+          "description": "The member a account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberBAccountId": {
+          "description": "The member b account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberCAccountId": {
+          "description": "The member c account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "poolId": {
+          "description": "The exact pool",
+          "pattern": "^pool_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "pool_member_a_contribution",
+      "idPrefix": "zzaa",
+      "lifecycle": {
+        "initial": "cycle_1_due",
+        "states": [
+          "cycle_1_due",
+          "cycle_1_funded",
+          "cycle_1_defaulted",
+          "cycle_1_guaranteed",
+          "cycle_2_due",
+          "cycle_2_funded",
+          "cycle_2_defaulted",
+          "cycle_2_guaranteed",
+          "cycle_3_due",
+          "cycle_3_funded",
+          "cycle_3_defaulted",
+          "cycle_3_guaranteed",
+          "final_paid",
+          "completed"
+        ],
+        "transitions": {
+          "close": {
+            "from": [
+              "final_paid"
+            ],
+            "to": "completed"
+          },
+          "contribute_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_funded"
+          },
+          "contribute_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_funded"
+          },
+          "contribute_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_funded"
+          },
+          "guarantee_cycle_1": {
+            "from": [
+              "cycle_1_defaulted"
+            ],
+            "to": "cycle_1_guaranteed"
+          },
+          "guarantee_cycle_2": {
+            "from": [
+              "cycle_2_defaulted"
+            ],
+            "to": "cycle_2_guaranteed"
+          },
+          "guarantee_cycle_3": {
+            "from": [
+              "cycle_3_defaulted"
+            ],
+            "to": "cycle_3_guaranteed"
+          },
+          "mark_default_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_defaulted"
+          },
+          "mark_default_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_defaulted"
+          },
+          "mark_default_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_defaulted"
+          },
+          "pay_cycle_1": {
+            "from": [
+              "cycle_1_funded"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_cycle_2": {
+            "from": [
+              "cycle_2_funded"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_cycle_3": {
+            "from": [
+              "cycle_3_funded"
+            ],
+            "to": "final_paid"
+          },
+          "pay_guaranteed_cycle_1": {
+            "from": [
+              "cycle_1_guaranteed"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_guaranteed_cycle_2": {
+            "from": [
+              "cycle_2_guaranteed"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_guaranteed_cycle_3": {
+            "from": [
+              "cycle_3_guaranteed"
+            ],
+            "to": "final_paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "memberAAccountId",
+        "payer": "guarantorAccountId"
+      },
+      "required": [
+        "memberAAccountId",
+        "guarantorAccountId",
+        "memberBAccountId",
+        "memberCAccountId",
+        "contributionAmount",
+        "currency",
+        "firstContributionAt",
+        "poolId"
+      ],
+      "summary": "member a contribution row",
+      "title": "Pool Member a Contribution"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "contribute_cycle_1",
+        "mark_default_cycle_1",
+        "guarantee_cycle_1",
+        "pay_cycle_1",
+        "pay_guaranteed_cycle_1",
+        "contribute_cycle_2",
+        "mark_default_cycle_2",
+        "guarantee_cycle_2",
+        "pay_cycle_2",
+        "pay_guaranteed_cycle_2",
+        "contribute_cycle_3",
+        "mark_default_cycle_3",
+        "guarantee_cycle_3",
+        "pay_cycle_3",
+        "pay_guaranteed_cycle_3",
+        "close"
+      ],
+      "actions": {
+        "close": {
+          "agentDescription": "Retire this member row after its final payout. Refused while the row escrow account still holds anything, so a row can never close over stranded money. No money moves.",
+          "moves": [],
+          "publicAction": "closePoolMemberBContribution",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Complete after the final payout drains this member custody"
+        },
+        "contribute_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle1ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member b's cycle 1 contribution"
+        },
+        "contribute_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle2ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member b's cycle 2 contribution"
+        },
+        "contribute_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle3ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member b's cycle 3 contribution"
+        },
+        "create": {
+          "agentDescription": "Create the contribution row for the member b and provision its escrow account. The pool must still be forming, and every member needs exactly one row before the pool can activate. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "bind": {
+                "contributionAmount": "fields.contributionAmount",
+                "currency": "fields.currency",
+                "firstContributionAt": "fields.firstContributionAt",
+                "guarantorAccountId": "fields.guarantorAccountId",
+                "memberAAccountId": "fields.memberAAccountId",
+                "memberBAccountId": "fields.memberBAccountId",
+                "memberCAccountId": "fields.memberCAccountId"
+              },
+              "field": "poolId",
+              "statuses": [
+                "forming"
+              ],
+              "unique": true
+            }
+          ],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create the fixed contribution row for member b"
+        },
+        "guarantee_cycle_1": {
+          "agentDescription": "Have the guarantor fund cycle 1 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle1GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle1PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 1 amount before payout"
+        },
+        "guarantee_cycle_2": {
+          "agentDescription": "Have the guarantor fund cycle 2 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle2GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle2PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 2 amount before payout"
+        },
+        "guarantee_cycle_3": {
+          "agentDescription": "Have the guarantor fund cycle 3 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle3GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle3PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 3 amount before payout"
+        },
+        "mark_default_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 1 due condition"
+        },
+        "mark_default_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 2 due condition"
+        },
+        "mark_default_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 3 due condition"
+        },
+        "pay_cycle_1": {
+          "agentDescription": "Pay this row's funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle1PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
+        },
+        "pay_cycle_2": {
+          "agentDescription": "Pay this row's funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle2PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 2's shared pot recipient"
+        },
+        "pay_cycle_3": {
+          "agentDescription": "Pay this row's funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle3PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 3's shared pot recipient"
+        },
+        "pay_guaranteed_cycle_1": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle1PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 1's stored recipient"
+        },
+        "pay_guaranteed_cycle_2": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle2PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 2's stored recipient"
+        },
+        "pay_guaranteed_cycle_3": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_b_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle3PoolMemberBContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 3's stored recipient"
+        }
+      },
+      "agentDescription": "One seat in the pool. The member b pays the same contribution every cycle and takes the whole pot on their turn. Every contribution, default, guarantee, and payout for that member happens on this row, never on the pool itself.",
+      "description": "Fixed contribution row for member b",
+      "fields": {
+        "contributionAmount": {
+          "description": "Exact contribution amount shared by every cycle",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstContributionAt": {
+          "description": "First due anchor derived from the pool",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "guarantorAccountId": {
+          "description": "The guarantor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberAAccountId": {
+          "description": "The member a account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberBAccountId": {
+          "description": "The member b account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberCAccountId": {
+          "description": "The member c account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "poolId": {
+          "description": "The exact pool",
+          "pattern": "^pool_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "pool_member_b_contribution",
+      "idPrefix": "zzab",
+      "lifecycle": {
+        "initial": "cycle_1_due",
+        "states": [
+          "cycle_1_due",
+          "cycle_1_funded",
+          "cycle_1_defaulted",
+          "cycle_1_guaranteed",
+          "cycle_2_due",
+          "cycle_2_funded",
+          "cycle_2_defaulted",
+          "cycle_2_guaranteed",
+          "cycle_3_due",
+          "cycle_3_funded",
+          "cycle_3_defaulted",
+          "cycle_3_guaranteed",
+          "final_paid",
+          "completed"
+        ],
+        "transitions": {
+          "close": {
+            "from": [
+              "final_paid"
+            ],
+            "to": "completed"
+          },
+          "contribute_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_funded"
+          },
+          "contribute_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_funded"
+          },
+          "contribute_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_funded"
+          },
+          "guarantee_cycle_1": {
+            "from": [
+              "cycle_1_defaulted"
+            ],
+            "to": "cycle_1_guaranteed"
+          },
+          "guarantee_cycle_2": {
+            "from": [
+              "cycle_2_defaulted"
+            ],
+            "to": "cycle_2_guaranteed"
+          },
+          "guarantee_cycle_3": {
+            "from": [
+              "cycle_3_defaulted"
+            ],
+            "to": "cycle_3_guaranteed"
+          },
+          "mark_default_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_defaulted"
+          },
+          "mark_default_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_defaulted"
+          },
+          "mark_default_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_defaulted"
+          },
+          "pay_cycle_1": {
+            "from": [
+              "cycle_1_funded"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_cycle_2": {
+            "from": [
+              "cycle_2_funded"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_cycle_3": {
+            "from": [
+              "cycle_3_funded"
+            ],
+            "to": "final_paid"
+          },
+          "pay_guaranteed_cycle_1": {
+            "from": [
+              "cycle_1_guaranteed"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_guaranteed_cycle_2": {
+            "from": [
+              "cycle_2_guaranteed"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_guaranteed_cycle_3": {
+            "from": [
+              "cycle_3_guaranteed"
+            ],
+            "to": "final_paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "memberBAccountId",
+        "payer": "guarantorAccountId"
+      },
+      "required": [
+        "memberBAccountId",
+        "guarantorAccountId",
+        "memberCAccountId",
+        "memberAAccountId",
+        "contributionAmount",
+        "currency",
+        "firstContributionAt",
+        "poolId"
+      ],
+      "summary": "member b contribution row",
+      "title": "Pool Member b Contribution"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "contribute_cycle_1",
+        "mark_default_cycle_1",
+        "guarantee_cycle_1",
+        "pay_cycle_1",
+        "pay_guaranteed_cycle_1",
+        "contribute_cycle_2",
+        "mark_default_cycle_2",
+        "guarantee_cycle_2",
+        "pay_cycle_2",
+        "pay_guaranteed_cycle_2",
+        "contribute_cycle_3",
+        "mark_default_cycle_3",
+        "guarantee_cycle_3",
+        "pay_cycle_3",
+        "pay_guaranteed_cycle_3",
+        "close"
+      ],
+      "actions": {
+        "close": {
+          "agentDescription": "Retire this member row after its final payout. Refused while the row escrow account still holds anything, so a row can never close over stranded money. No money moves.",
+          "moves": [],
+          "publicAction": "closePoolMemberCContribution",
+          "requiresDrainedAccount": {
+            "path": "refs.escrowAccountId"
+          },
+          "steps": [],
+          "summary": "Complete after the final payout drains this member custody"
+        },
+        "contribute_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle1ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member c's cycle 1 contribution"
+        },
+        "contribute_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle2ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member c's cycle 2 contribution"
+        },
+        "contribute_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "contribute_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                }
+              },
+              "capture": {
+                "contributeCycle3ContributionTransferId": "transferId"
+              },
+              "key": "contribution",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund member c's cycle 3 contribution"
+        },
+        "create": {
+          "agentDescription": "Create the contribution row for the member c and provision its escrow account. The pool must still be forming, and every member needs exactly one row before the pool can activate. No money moves.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createPoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "bind": {
+                "contributionAmount": "fields.contributionAmount",
+                "currency": "fields.currency",
+                "firstContributionAt": "fields.firstContributionAt",
+                "guarantorAccountId": "fields.guarantorAccountId",
+                "memberAAccountId": "fields.memberAAccountId",
+                "memberBAccountId": "fields.memberBAccountId",
+                "memberCAccountId": "fields.memberCAccountId"
+              },
+              "field": "poolId",
+              "statuses": [
+                "forming"
+              ],
+              "unique": true
+            }
+          ],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Create the fixed contribution row for member c"
+        },
+        "guarantee_cycle_1": {
+          "agentDescription": "Have the guarantor fund cycle 1 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle1GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle1PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 1 amount before payout"
+        },
+        "guarantee_cycle_2": {
+          "agentDescription": "Have the guarantor fund cycle 2 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle2GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle2PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 2 amount before payout"
+        },
+        "guarantee_cycle_3": {
+          "agentDescription": "Have the guarantor fund cycle 3 for this member after the row defaulted. The row must be marked defaulted for that cycle. This moves the guarantor's money into the row escrow so the pot still pays in full.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "guarantee_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.guarantorAccountId"
+                }
+              },
+              "capture": {
+                "guaranteeCycle3GuaranteeTransferId": "transferId"
+              },
+              "key": "guarantee",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "guaranteeCycle3PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fund the defaulted cycle 3 amount before payout"
+        },
+        "mark_default_cycle_1": {
+          "due": {
+            "field": "firstContributionAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_1"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 1 due condition"
+        },
+        "mark_default_cycle_2": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_2"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 2 due condition"
+        },
+        "mark_default_cycle_3": {
+          "due": {
+            "field": "firstContributionAt",
+            "offset": "P60D"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "active_cycle_3"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Mark the stored cycle 3 due condition"
+        },
+        "pay_cycle_1": {
+          "agentDescription": "Pay this row's funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle1PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
+        },
+        "pay_cycle_2": {
+          "agentDescription": "Pay this row's funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle2PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 2's shared pot recipient"
+        },
+        "pay_cycle_3": {
+          "agentDescription": "Pay this row's funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be funded rather than guaranteed. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payCycle3PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay this member's stored contribution into cycle 3's shared pot recipient"
+        },
+        "pay_guaranteed_cycle_1": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 1 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberBAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle1PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle1PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_1_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 1's stored recipient"
+        },
+        "pay_guaranteed_cycle_2": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 2 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberCAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle2PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle2PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_2_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 2's stored recipient"
+        },
+        "pay_guaranteed_cycle_3": {
+          "agentDescription": "Pay this row's guarantor-funded cycle 3 contribution out of escrow to whoever holds the pot that cycle. The cycle must be locked first and the row must be guaranteed rather than funded. This moves money and does not reverse.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.contributionAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool_member_c_contribution"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_guaranteed_cycle_3"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "payGuaranteedCycle3PayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payGuaranteedCycle3PoolMemberCContribution",
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "cycle_3_ready"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the funded default into cycle 3's stored recipient"
+        }
+      },
+      "agentDescription": "One seat in the pool. The member c pays the same contribution every cycle and takes the whole pot on their turn. Every contribution, default, guarantee, and payout for that member happens on this row, never on the pool itself.",
+      "description": "Fixed contribution row for member c",
+      "fields": {
+        "contributionAmount": {
+          "description": "Exact contribution amount shared by every cycle",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstContributionAt": {
+          "description": "First due anchor derived from the pool",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "guarantorAccountId": {
+          "description": "The guarantor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberAAccountId": {
+          "description": "The member a account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberBAccountId": {
+          "description": "The member b account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "memberCAccountId": {
+          "description": "The member c account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "poolId": {
+          "description": "The exact pool",
+          "pattern": "^pool_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "pool_member_c_contribution",
+      "idPrefix": "zzac",
+      "lifecycle": {
+        "initial": "cycle_1_due",
+        "states": [
+          "cycle_1_due",
+          "cycle_1_funded",
+          "cycle_1_defaulted",
+          "cycle_1_guaranteed",
+          "cycle_2_due",
+          "cycle_2_funded",
+          "cycle_2_defaulted",
+          "cycle_2_guaranteed",
+          "cycle_3_due",
+          "cycle_3_funded",
+          "cycle_3_defaulted",
+          "cycle_3_guaranteed",
+          "final_paid",
+          "completed"
+        ],
+        "transitions": {
+          "close": {
+            "from": [
+              "final_paid"
+            ],
+            "to": "completed"
+          },
+          "contribute_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_funded"
+          },
+          "contribute_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_funded"
+          },
+          "contribute_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_funded"
+          },
+          "guarantee_cycle_1": {
+            "from": [
+              "cycle_1_defaulted"
+            ],
+            "to": "cycle_1_guaranteed"
+          },
+          "guarantee_cycle_2": {
+            "from": [
+              "cycle_2_defaulted"
+            ],
+            "to": "cycle_2_guaranteed"
+          },
+          "guarantee_cycle_3": {
+            "from": [
+              "cycle_3_defaulted"
+            ],
+            "to": "cycle_3_guaranteed"
+          },
+          "mark_default_cycle_1": {
+            "from": [
+              "cycle_1_due"
+            ],
+            "to": "cycle_1_defaulted"
+          },
+          "mark_default_cycle_2": {
+            "from": [
+              "cycle_2_due"
+            ],
+            "to": "cycle_2_defaulted"
+          },
+          "mark_default_cycle_3": {
+            "from": [
+              "cycle_3_due"
+            ],
+            "to": "cycle_3_defaulted"
+          },
+          "pay_cycle_1": {
+            "from": [
+              "cycle_1_funded"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_cycle_2": {
+            "from": [
+              "cycle_2_funded"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_cycle_3": {
+            "from": [
+              "cycle_3_funded"
+            ],
+            "to": "final_paid"
+          },
+          "pay_guaranteed_cycle_1": {
+            "from": [
+              "cycle_1_guaranteed"
+            ],
+            "to": "cycle_2_due"
+          },
+          "pay_guaranteed_cycle_2": {
+            "from": [
+              "cycle_2_guaranteed"
+            ],
+            "to": "cycle_3_due"
+          },
+          "pay_guaranteed_cycle_3": {
+            "from": [
+              "cycle_3_guaranteed"
+            ],
+            "to": "final_paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "memberCAccountId",
+        "payer": "guarantorAccountId"
+      },
+      "required": [
+        "memberCAccountId",
+        "guarantorAccountId",
+        "memberBAccountId",
+        "memberAAccountId",
+        "contributionAmount",
+        "currency",
+        "firstContributionAt",
+        "poolId"
+      ],
+      "summary": "member c contribution row",
+      "title": "Pool Member c Contribution"
+    }
+  ],
+  "product": "rotating_pool_example",
+  "subjects": [],
+  "title": "Rotating pool example",
+  "udl": 1,
+  "version": 1
+}

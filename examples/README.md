@@ -1,21 +1,18 @@
 # Examples
 
-Four programs, in the order they teach best. Every one of them is compiled by
-`test/examples.spec.ts`, so nothing here can drift away from the compiler.
+Each standard-library module has its own directory with an HSX program, a
+short lesson, and pinned canonical UDL bytes. The test suite reads the module
+list from `std/settlements`, compiles every program, and compares each emitted
+document byte for byte.
 
-|     |                                                               |                                               |
-| --- | ------------------------------------------------------------- | --------------------------------------------- |
-| 1   | [First program](./01-first-program/)                          | The smallest thing that moves money.          |
-| 2   | [Imports and settlement bricks](./02-imports-and-archetypes/) | Holding money, and the port that releases it. |
-| 3   | [Diagnostics](./03-diagnostics/)                              | A file that is wrong on purpose, and the fix. |
-| 4   | [A complete product](./04-complete-product/)                  | Three settlements doing three different jobs. |
+The numbered examples remain as longer lessons. They cover a first program,
+imports, diagnostic repair, a composed product, and a multi-instrument club.
 
-Run any of them:
+Run an example with the installed CLI:
 
-```bash
-hsx check examples/01-first-program/tip-jar.hsx
-hsx build examples/01-first-program/tip-jar.hsx --out ir.json
+```sh
+hsx check examples/instant_transfer/instant_transfer.hsx
+hsx build examples/instant_transfer/instant_transfer.hsx --out program.udl
 ```
 
-The companies are invented. Any resemblance to a real business is a
-coincidence and not an endorsement.
+Every company and person in these files is invented.

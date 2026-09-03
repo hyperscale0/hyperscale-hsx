@@ -17,13 +17,29 @@ type TokenKind =
   | "string";
 
 export const KEYWORDS = [
+  "action",
+  "as",
   "asset",
+  "commit",
+  "const",
+  "expect",
+  "expose",
+  "expires",
+  "export",
   "from",
   "import",
+  "instrument",
+  "module",
   "party",
   "port",
   "program",
+  "quote",
+  "rate",
+  "reconcile",
   "settlement",
+  "subject",
+  "type",
+  "use",
 ] as const;
 
 export interface Token {
@@ -35,7 +51,31 @@ export interface Token {
   readonly value: string;
 }
 
-const PUNCT = new Set(["{", "}", "(", ")", "[", "]", ":", ",", "=", "|", "."]);
+/** Source trivia retained for tools that must reproduce author comments. */
+export interface CommentTrivia {
+  readonly kind: "line_comment";
+  readonly span: Span;
+  readonly text: string;
+}
+
+export const PUNCT = [
+  "{",
+  "}",
+  "(",
+  ")",
+  "[",
+  "]",
+  ":",
+  ",",
+  ";",
+  "=",
+  "|",
+  ".",
+  "<",
+  ">",
+  "?",
+] as const;
+const PUNCT_SET: ReadonlySet<string> = new Set(PUNCT);
 const KEYWORD_SET: ReadonlySet<string> = new Set(KEYWORDS);
 
 // Case conventions (snake_case declarations, uppercase currency codes) are
@@ -45,12 +85,14 @@ const isIdentPart = (ch: string): boolean => /[A-Za-z0-9_]/.test(ch);
 const isDigit = (ch: string): boolean => ch >= "0" && ch <= "9";
 
 export interface LexResult {
+  readonly comments: readonly CommentTrivia[];
   readonly diagnostics: readonly Diagnostic[];
   readonly tokens: readonly Token[];
 }
 
 export function lex(source: string): LexResult {
   const tokens: Token[] = [];
+  const comments: CommentTrivia[] = [];
   const diagnostics: Diagnostic[] = [];
   let index = 0;
 
@@ -67,14 +109,27 @@ export function lex(source: string): LexResult {
     }
 
     if (ch === "/" && source[index + 1] === "/") {
+      const start = index;
       while (index < source.length && source[index] !== "\n") index += 1;
+      comments.push({
+        kind: "line_comment",
+        span: { end: index, start },
+        text: source.slice(start, index),
+      });
       continue;
     }
 
-    if (PUNCT.has(ch)) {
+    if (PUNCT_SET.has(ch)) {
       const start = index;
       index += 1;
       push("punct", start, ch);
+      continue;
+    }
+
+    if (ch === "-" && source[index + 1] === ">") {
+      const start = index;
+      index += 2;
+      push("punct", start, "->");
       continue;
     }
 
@@ -139,7 +194,7 @@ export function lex(source: string): LexResult {
     while (
       index < source.length &&
       !/[\sA-Za-z0-9_"]/.test(source[index] as string) &&
-      !PUNCT.has(source[index] as string) &&
+      !PUNCT_SET.has(source[index] as string) &&
       !(source[index] === "/" && source[index + 1] === "/")
     ) {
       index += 1;
@@ -157,5 +212,5 @@ export function lex(source: string): LexResult {
     text: "",
     value: "",
   });
-  return { diagnostics, tokens };
+  return { comments, diagnostics, tokens };
 }

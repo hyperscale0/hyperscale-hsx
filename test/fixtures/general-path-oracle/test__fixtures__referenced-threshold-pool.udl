@@ -1,0 +1,632 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "collect",
+        "release",
+        "refund"
+      ],
+      "actions": {
+        "collect": {
+          "agentDescription": "Move the pledged amount from the contributor into the raise escrow. This moves money and the contributor pays. Only an open raise collects. The money stays in escrow until the raise either releases or fails.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "community_pledge"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.contributorAccountId"
+                }
+              },
+              "capture": {
+                "collectCollectTransferId": "transferId"
+              },
+              "key": "collect",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectCommunityPledge",
+          "requiresRefs": [
+            {
+              "field": "communityRaiseId",
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Collect instrument"
+        },
+        "create": {
+          "agentDescription": "Record one pledge against a raise that is still open. The raise supplies the beneficiary account, the currency, and the escrow account. No money moves. A closed or failed raise refuses the pledge.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createCommunityPledge",
+          "requiresRefs": [
+            {
+              "bind": {
+                "beneficiaryAccountId": "fields.beneficiaryAccountId",
+                "currency": "fields.currency",
+                "escrowAccountId": "refs.escrowAccountId"
+              },
+              "field": "communityRaiseId",
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Create instrument"
+        },
+        "refund": {
+          "agentDescription": "Return this pledge from escrow to the contributor after the raise has failed its target. This moves money and does not reverse. Only a collected pledge refunds, and only once the raise has failed.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.contributorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "community_pledge"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.escrowAccountId"
+                }
+              },
+              "capture": {
+                "refundRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundCommunityPledge",
+          "requiresRefs": [
+            {
+              "field": "communityRaiseId",
+              "statuses": [
+                "failed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Refund instrument"
+        },
+        "release": {
+          "agentDescription": "Pay this pledge out of escrow to the beneficiary once the raise has met its target and gone active. This moves money and does not reverse. Only a collected pledge releases.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.beneficiaryAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "community_pledge"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "release"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.escrowAccountId"
+                }
+              },
+              "capture": {
+                "releaseReleaseTransferId": "transferId"
+              },
+              "key": "release",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "releaseCommunityPledge",
+          "requiresRefs": [
+            {
+              "field": "communityRaiseId",
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Release instrument"
+        }
+      },
+      "agentDescription": "Reach for community pledge to record one contributor's promise against an open community raise. Pledging moves no money. The collection into escrow, the release to the beneficiary, and the refund all depend on what the raise does with its target.",
+      "fields": {
+        "amount": {
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "beneficiaryAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "communityRaiseId": {
+          "pattern": "^raise_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "contributorAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "escrowAccountId": {
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "community_pledge",
+      "idPrefix": "cp",
+      "lifecycle": {
+        "initial": "pledged",
+        "states": [
+          "pledged",
+          "collected",
+          "released",
+          "refunded"
+        ],
+        "transitions": {
+          "collect": {
+            "from": [
+              "pledged"
+            ],
+            "to": "collected"
+          },
+          "refund": {
+            "from": [
+              "collected"
+            ],
+            "to": "refunded"
+          },
+          "release": {
+            "from": [
+              "collected"
+            ],
+            "to": "released"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "beneficiaryAccountId",
+        "payer": "contributorAccountId"
+      },
+      "required": [
+        "amount",
+        "beneficiaryAccountId",
+        "communityRaiseId",
+        "contributorAccountId",
+        "currency",
+        "escrowAccountId"
+      ],
+      "summary": "Community Pledge instrument",
+      "title": "Community Pledge"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "activate",
+        "fail",
+        "close"
+      ],
+      "actions": {
+        "activate": {
+          "due": {
+            "field": "closesAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "examples": [
+            {
+              "input": {
+                "communityRaiseId": "raise_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "activate_community_raise"
+            }
+          ],
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_at_least",
+                "targetField": "targetAmount"
+              },
+              "instrumentId": "community_pledge",
+              "over": "children",
+              "refField": "communityRaiseId",
+              "statuses": [
+                "collected"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Activate the funded raise"
+        },
+        "close": {
+          "agentDescription": "Settle the pool once every contribution has been collected into the beneficiary account. No money moves. Refused while any contribution is still uncollected, so wait for the per-contribution collections to run rather than retrying.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "examples": [
+            {
+              "input": {
+                "communityRaiseId": "raise_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "close_community_raise"
+            }
+          ],
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "community_pledge",
+              "over": "children",
+              "refField": "communityRaiseId",
+              "statuses": [
+                "released"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Close the collected raise"
+        },
+        "create": {
+          "agentDescription": "Open the pool before any contribution exists. The caller supplies the target, the currency, the beneficiary account, and the close anchor, and the pool provisions its escrow account. No money moves.",
+          "examples": [
+            {
+              "input": {
+                "beneficiaryAccountId": "acct_sandbox_beneficiary1",
+                "closesAt": "2026-10-01T00:00:00.000Z",
+                "currency": "SAR",
+                "productId": "prd_sandbox_community1",
+                "targetAmount": "100000",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "create_community_raise"
+            }
+          ],
+          "moves": [],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Open the raise"
+        },
+        "fail": {
+          "due": {
+            "field": "closesAt"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "examples": [
+            {
+              "input": {
+                "communityRaiseId": "raise_sandbox_community1",
+                "tenantId": "ten_sandbox_community1"
+              },
+              "name": "fail_community_raise"
+            }
+          ],
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_below",
+                "targetField": "targetAmount"
+              },
+              "instrumentId": "community_pledge",
+              "over": "children",
+              "refField": "communityRaiseId",
+              "statuses": [
+                "collected"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fail the short raise"
+        }
+      },
+      "agentDescription": "Reach for threshold pool when many contributors commit toward one target and nothing is collected unless the pool reaches it by the close date. Commitments sit in escrow until the pool activates or fails. Pick weighted distribution to pay a pool out and instant transfer for a single payment.",
+      "aggregateInvariants": [
+        {
+          "childField": "amount",
+          "childInstrumentId": "community_pledge",
+          "childRefField": "communityRaiseId",
+          "childStatuses": [
+            "collected",
+            "released"
+          ],
+          "parentField": "targetAmount"
+        }
+      ],
+      "callerParkedStates": {
+        "active": "published pledge rows collect after the target is met"
+      },
+      "description": "The pool releases pledged funds only after it reaches its target.",
+      "fields": {
+        "beneficiaryAccountId": {
+          "description": "The account that receives a successful raise",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "closesAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 180,
+          "minLength": 1,
+          "type": "string"
+        },
+        "targetAmount": {
+          "description": "The threshold that pledged contributions must meet",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "community_raise",
+      "idPrefix": "raise",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "active",
+          "failed",
+          "settled"
+        ],
+        "transitions": {
+          "activate": {
+            "from": [
+              "open"
+            ],
+            "to": "active"
+          },
+          "close": {
+            "from": [
+              "active"
+            ],
+            "to": "settled"
+          },
+          "fail": {
+            "from": [
+              "open"
+            ],
+            "to": "failed"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "beneficiaryAccountId"
+      },
+      "required": [
+        "beneficiaryAccountId",
+        "targetAmount",
+        "currency",
+        "closesAt"
+      ],
+      "summary": "A threshold pool with published pledge rows",
+      "title": "Community raise"
+    }
+  ],
+  "product": "community_raise",
+  "subjects": [],
+  "title": "Community raise",
+  "udl": 1,
+  "version": 1
+}

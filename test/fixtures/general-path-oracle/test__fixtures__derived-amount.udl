@@ -1,0 +1,228 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "pay_piece_1"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the payment row before anything moves. The caller supplies the transferAmount, the currency, and both party accounts. Fee and derived pieces are computed from the transferAmount, callers never supply them. Call pay piece 1 to move the money.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.platformAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.platformAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "transfer"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "create"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                }
+              },
+              "capture": {
+                "createDerivedAmountTransferId": "transferId"
+              },
+              "key": "derived_amount",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "createTransfer",
+          "steps": [],
+          "summary": "Create a transfer payment"
+        },
+        "pay_piece_1": {
+          "agentDescription": "Move the first piece from the payer to the payee. The payment must be created. This moves the whole amount unless the product carves a payee fee, in which case it moves the net share and pay piece 2 takes the fee.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.transferAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.payeeAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "transfer"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay_piece_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                }
+              },
+              "capture": {
+                "payPiece1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payPiece1Transfer",
+          "steps": [],
+          "summary": "Pay piece 1 of the amount through"
+        }
+      },
+      "agentDescription": "Reach for instant transfer when the payer pays the payee straight through with no custody step. The money leaves and lands in one call. Pick deposit when the money must be held first, and captured payment when the payee takes it in slices.",
+      "derivedAmounts": [
+        {
+          "field": "platformAmount",
+          "rounding": "floor",
+          "rule": {
+            "bps": 250,
+            "kind": "percentage_of"
+          },
+          "sourceField": "transferAmount"
+        }
+      ],
+      "description": "Instant transfer: the payer pays transferAmount straight through to the payee, no custody",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "payeeAccountId": {
+          "description": "The payee account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "payerAccountId": {
+          "description": "The payer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "platformAccountId": {
+          "description": "The product fee collection account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-fee-collection-port": true,
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance",
+              "product_revenue"
+            ]
+          }
+        },
+        "platformAmount": {
+          "description": "Machine-computed 2.5% of transferAmount; callers never supply it",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "transferAmount": {
+          "description": "The amount in SAR minor units, paid through whole",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "transfer",
+      "idPrefix": "tran",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "paid"
+        ],
+        "transitions": {
+          "pay_piece_1": {
+            "from": [
+              "created"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "payeeAccountId",
+        "payer": "payerAccountId"
+      },
+      "required": [
+        "payerAccountId",
+        "payeeAccountId",
+        "platformAccountId",
+        "transferAmount",
+        "currency"
+      ],
+      "summary": "Instant payment from payer to payee",
+      "title": "Transfer"
+    }
+  ],
+  "product": "derived_transfer",
+  "subjects": [],
+  "title": "Derived transfer",
+  "udl": 1,
+  "version": 1
+}

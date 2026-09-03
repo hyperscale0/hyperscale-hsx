@@ -1,0 +1,412 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "deny"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the capped disbursement before any amount is approved. The caller supplies the policyLimit, the currency, and the source and claimant accounts. No money moves and nothing is approved yet.",
+          "moves": [],
+          "publicAction": "createClaimPayment",
+          "steps": [],
+          "summary": "Submit the capped disbursement"
+        },
+        "deny": {
+          "agentDescription": "Refuse the whole disbursement without moving money. Every child amount under it must still be unapproved, so call this before any approval lands. The caller passes evidenceReference, which stays in the receipt. Denial is final.",
+          "captureInput": {
+            "decisionEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "denyClaimPayment",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "claim_payment_approved_amount",
+              "over": "children",
+              "refField": "claimPaymentId",
+              "statuses": [
+                "created"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Record a denial without moving money"
+        }
+      },
+      "agentDescription": "Reach for conditional disbursement when the source pays the claimant only against stored external evidence and the payouts must stay under policyLimit. Each approved amount is its own child row. Pick instant transfer when no evidence gates the payment.",
+      "description": "Capped disbursement controlled by stored external evidence",
+      "fields": {
+        "claimantAccountId": {
+          "description": "The claimant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "policyLimit": {
+          "description": "Disbursement cap in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "sourceAccountId": {
+          "description": "The source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "claim_payment",
+      "idPrefix": "cp",
+      "lifecycle": {
+        "initial": "submitted",
+        "states": [
+          "submitted",
+          "denied"
+        ],
+        "transitions": {
+          "deny": {
+            "from": [
+              "submitted"
+            ],
+            "to": "denied"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "claimantAccountId",
+        "payer": "sourceAccountId"
+      },
+      "required": [
+        "claimantAccountId",
+        "sourceAccountId",
+        "currency",
+        "policyLimit"
+      ],
+      "summary": "Capped disbursement to claimant",
+      "title": "Claim payment"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "approve",
+        "pay"
+      ],
+      "actions": {
+        "approve": {
+          "agentDescription": "Store one externally approved amount under the parent cap. The row must be created, the parent still submitted, and the already approved and paid amounts plus this one must stay within policyLimit. The caller passes evidenceReference. No money moves yet.",
+          "captureInput": {
+            "decisionEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "approveClaimPaymentApprovedAmount",
+          "requiresExposure": [
+            {
+              "amountField": "amount",
+              "anchorField": "claimPaymentId",
+              "capField": "policyLimit",
+              "capOnAnchor": true,
+              "childInstrumentId": "claim_payment_approved_amount",
+              "statuses": [
+                "approved",
+                "paid"
+              ]
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "claimPaymentId",
+              "match": {
+                "fields.claimantAccountId": "fields.claimantAccountId",
+                "fields.currency": "fields.currency",
+                "fields.sourceAccountId": "fields.sourceAccountId"
+              },
+              "statuses": [
+                "submitted"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Store one externally approved amount under the cap"
+        },
+        "create": {
+          "agentDescription": "Create one candidate amount under the parent claim payment. The parent must still be submitted and the currency and both accounts must match it. No money moves and the amount is not approved yet.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "createClaimPaymentApprovedAmount",
+          "requiresRefs": [
+            {
+              "bind": {
+                "claimantAccountId": "fields.claimantAccountId",
+                "currency": "fields.currency",
+                "sourceAccountId": "fields.sourceAccountId"
+              },
+              "field": "claimPaymentId",
+              "statuses": [
+                "submitted"
+              ],
+              "unique": true
+            }
+          ],
+          "steps": [],
+          "summary": "Create one candidate amount under the parent"
+        },
+        "pay": {
+          "agentDescription": "Pay the stored approved amount to the claimant once. The row must be approved and the parent still submitted. The transfer posts straight out of the source and does not unwind.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.claimantAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "claim_payment_approved_amount"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "pay"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.sourceAccountId"
+                }
+              },
+              "capture": {
+                "payPayoutTransferId": "transferId"
+              },
+              "key": "payout",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "payClaimPaymentApprovedAmount",
+          "requiresRefs": [
+            {
+              "field": "claimPaymentId",
+              "match": {
+                "fields.claimantAccountId": "fields.claimantAccountId",
+                "fields.currency": "fields.currency",
+                "fields.sourceAccountId": "fields.sourceAccountId"
+              },
+              "statuses": [
+                "submitted"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay the stored approved amount once"
+        }
+      },
+      "agentDescription": "Reach for this child row to hold one evidence-gated amount under a claim payment. The parent carries the policyLimit, this row carries one approved amount and pays it once.",
+      "description": "One evidence-gated amount under claim_payment",
+      "fields": {
+        "amount": {
+          "description": "Approved amount under the parent cap",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "claimPaymentId": {
+          "description": "The exact claim_payment",
+          "pattern": "^cp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "claimantAccountId": {
+          "description": "The claimant account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "sourceAccountId": {
+          "description": "The source account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "claim_payment_approved_amount",
+      "idPrefix": "zzaa",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "approved",
+          "paid"
+        ],
+        "transitions": {
+          "approve": {
+            "from": [
+              "created"
+            ],
+            "to": "approved"
+          },
+          "pay": {
+            "from": [
+              "approved"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "claimantAccountId",
+        "payer": "sourceAccountId"
+      },
+      "required": [
+        "claimantAccountId",
+        "sourceAccountId",
+        "amount",
+        "currency",
+        "claimPaymentId"
+      ],
+      "summary": "Approved amount under claim_payment",
+      "title": "Claim payment Approved Amount"
+    }
+  ],
+  "product": "conditional_disbursement_example",
+  "subjects": [],
+  "title": "Conditional disbursement example",
+  "udl": 1,
+  "version": 1
+}

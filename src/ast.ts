@@ -78,6 +78,8 @@ export function lineColIn(index: LineIndex, offset: number): LineCol {
 export interface IdentExpr {
   readonly kind: "ident";
   readonly name: string;
+  /** A literal quoted block key keeps its exact spelling during JSON lowering. */
+  readonly quoted?: boolean;
   readonly span: Span;
 }
 
@@ -87,11 +89,49 @@ export interface StringExpr {
   readonly value: string;
 }
 
-interface NumberExpr {
+export interface NumberExpr {
   readonly kind: "number";
   /** The literal exactly as written, e.g. "99.5". Interpretation is typed later. */
   readonly raw: string;
   readonly span: Span;
+}
+
+export interface BooleanExpr {
+  readonly kind: "boolean";
+  readonly span: Span;
+  readonly value: boolean;
+}
+
+/** A currency-indexed literal. The checker converts it to integer minor units. */
+export interface MoneyExpr {
+  readonly currency: IdentExpr;
+  readonly kind: "money";
+  readonly raw: string;
+  readonly span: Span;
+}
+
+/** A dotted name used for modules, UDL operations, and field paths. */
+export interface PathExpr {
+  readonly kind: "path";
+  readonly parts: readonly IdentExpr[];
+  readonly span: Span;
+}
+
+/** A nominal type application such as `money<SAR>` or `ref<invoice>`. */
+export interface TypeApplyExpr {
+  readonly args: readonly Expr[];
+  readonly callee: IdentExpr;
+  readonly kind: "type_apply";
+  readonly span: Span;
+}
+
+/** A general instrument or constant application, with optional type arguments. */
+export interface ApplyExpr {
+  readonly args: readonly Expr[];
+  readonly callee: PathExpr;
+  readonly kind: "apply";
+  readonly span: Span;
+  readonly typeArgs: readonly Expr[];
 }
 
 export interface PercentExpr {
@@ -107,6 +147,16 @@ export interface CallExpr {
   readonly args: readonly Expr[];
   readonly callee: IdentExpr;
   readonly kind: "call";
+  readonly span: Span;
+}
+
+/**
+ * An exit amount chosen by a decision port and bounded by stored money:
+ * `decided { field: damageAmount, bound: depositAmount, remainder: return }`.
+ */
+export interface DecidedAmountExpr {
+  readonly body: BlockExpr;
+  readonly kind: "decided_amount";
   readonly span: Span;
 }
 
@@ -155,7 +205,7 @@ export interface BlockExpr {
  * `amount: price: money(SAR)` binds the field name `price` to type
  * `money(SAR)`: the entry key is `amount`, the value is this binding.
  */
-interface BindingExpr {
+export interface BindingExpr {
   readonly kind: "binding";
   readonly name: IdentExpr;
   readonly span: Span;
@@ -163,16 +213,22 @@ interface BindingExpr {
 }
 
 export type Expr =
+  | ApplyExpr
   | BindingExpr
   | BlockExpr
+  | BooleanExpr
   | CallExpr
+  | DecidedAmountExpr
   | IdentExpr
   | ListExpr
+  | MoneyExpr
   | NumberExpr
+  | PathExpr
   | PercentExpr
   | PortRefExpr
   | SettlementRefExpr
-  | StringExpr;
+  | StringExpr
+  | TypeApplyExpr;
 
 // --- Entries ---------------------------------------------------------------
 
@@ -182,6 +238,11 @@ export type Expr =
  * and `on_cancel(funded) { ... }` (key + qualifiers + block value).
  */
 export interface Entry {
+  /** `for item in bound { ... }`, expanded before binding or UDL lowering. */
+  readonly iteration?: {
+    readonly binding: IdentExpr;
+    readonly bound: Expr;
+  };
   readonly key: IdentExpr;
   readonly qualifiers: readonly IdentExpr[];
   readonly span: Span;
@@ -198,7 +259,23 @@ export interface ProgramDecl {
   readonly title?: StringExpr;
 }
 
-/** `import { held_payment } from "settlement"`. */
+/** `use held_settlement` selects one published catalog instrument. */
+export interface UseDecl {
+  readonly instrument: IdentExpr;
+  readonly kind: "use";
+  readonly span: Span;
+}
+
+/** `expose held_settlement.release as releaseFunds` names a public action. */
+export interface ExposeDecl {
+  readonly action: IdentExpr;
+  readonly instrument: IdentExpr;
+  readonly kind: "expose";
+  readonly publicName: IdentExpr;
+  readonly span: Span;
+}
+
+/** `import { held_payment } from "std/settlements"`. */
 export interface ImportDecl {
   readonly from: StringExpr;
   readonly kind: "import";
@@ -224,11 +301,10 @@ export interface AssetDecl {
   readonly span: Span;
 }
 
-/** `settlement sale = held_payment { ... }`, an archetype instantiation. */
-export interface SettlementDecl {
-  readonly archetype: IdentExpr;
+/** A full UDL subject-kind declaration. `asset` remains shorthand for this form. */
+export interface SubjectDecl {
   readonly body: BlockExpr;
-  readonly kind: "settlement";
+  readonly kind: "subject";
   readonly name: IdentExpr;
   readonly span: Span;
 }
@@ -241,13 +317,89 @@ export interface PortDecl {
   readonly span: Span;
 }
 
+/** `module std.settlements` gives a file its importable module name. */
+export interface ModuleDecl {
+  readonly kind: "module";
+  readonly name: PathExpr;
+  readonly span: Span;
+}
+
+export interface TypeParameter {
+  readonly name: IdentExpr;
+  readonly span: Span;
+}
+
+export interface Parameter {
+  readonly name: IdentExpr;
+  readonly span: Span;
+  readonly type: Expr;
+}
+
+/** The single general instrument definition form. */
+export interface InstrumentDecl {
+  readonly body: BlockExpr;
+  /** Module-local declarations carried only while this template is bound. */
+  readonly declarationScope?: readonly ApplicationScopeDecl[];
+  readonly exported: boolean;
+  /** True when the source declared a parameter list, including an empty `()`. */
+  readonly hasParameterList: boolean;
+  readonly kind: "instrument";
+  readonly name: IdentExpr;
+  readonly parameters: readonly Parameter[];
+  readonly span: Span;
+  readonly typeParameters: readonly TypeParameter[];
+}
+
+/** Instantiation of an exported parameterized instrument. */
+export interface InstrumentApplyDecl {
+  readonly application: ApplyExpr;
+  /** Module-local declarations carried only while this application is bound. */
+  readonly declarationScope?: readonly ApplicationScopeDecl[];
+  readonly exported: boolean;
+  readonly kind: "instrument_apply";
+  readonly metadata?: BlockExpr;
+  readonly name: IdentExpr;
+  readonly span: Span;
+}
+
+export interface TypeDecl {
+  readonly exported: boolean;
+  readonly kind: "type";
+  readonly name: IdentExpr;
+  readonly span: Span;
+  readonly value: Expr;
+}
+
+export interface ConstDecl {
+  readonly exported: boolean;
+  readonly kind: "const";
+  readonly name: IdentExpr;
+  readonly span: Span;
+  readonly type?: Expr;
+  readonly value: Expr;
+}
+
+export type ApplicationScopeDecl =
+  | ConstDecl
+  | InstrumentDecl
+  | PartyDecl
+  | PortDecl
+  | TypeDecl;
+
 export type Decl =
   | AssetDecl
+  | ConstDecl
+  | ExposeDecl
   | ImportDecl
+  | InstrumentApplyDecl
+  | InstrumentDecl
+  | ModuleDecl
   | PartyDecl
   | PortDecl
   | ProgramDecl
-  | SettlementDecl;
+  | SubjectDecl
+  | TypeDecl
+  | UseDecl;
 
 // --- Program ---------------------------------------------------------------
 
@@ -263,6 +415,8 @@ export interface Program {
  * it never throws, it returns the best-effort tree plus these.
  */
 export interface Diagnostic {
+  readonly code?: string;
+  readonly fix?: string;
   readonly message: string;
   readonly span: Span;
 }

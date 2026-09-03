@@ -8,16 +8,16 @@ hsx check study-hall.hsx
 hsx build study-hall.hsx --out ir.json
 ```
 
-| Settlement     | Brick          | What it does                                                                                           |
-| -------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
-| `lesson`       | `held_payment` | Holds the student's payment until the tutor confirms the lesson, or until the stored end date arrives. |
-| `kit_deposit`  | `deposit`      | Reserves the equipment deposit on the student's own account. Claimed on damage, returned intact.       |
-| `tutor_payout` | `pooled_split` | Splits the weekly pool 55/45 between the two tutors, remainder to the lead.                            |
+| Settlement     | Brick              | What it does                                                                                           |
+| -------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `lesson`       | `held_payment`     | Holds the student's payment until the tutor confirms the lesson, or until the stored end date arrives. |
+| `kit_deposit`  | `security_deposit` | Reserves the equipment deposit on the student's own account. Claimed on damage, returned intact.       |
+| `tutor_payout` | `pooled_split`     | Splits the weekly pool 55/45 between the two tutors, remainder to the lead.                            |
 
 ## A deposit is not a payment
 
 ```hsx
-settlement kit_deposit = deposit {
+settlement kit_deposit = security_deposit {
   payer:  student
   holder: tutor
   amount: kitDeposit: money(SAR)
@@ -64,7 +64,7 @@ for that.
 
 ## What it compiles to
 
-Three nouns, `lesson`, `kit_deposit`, and `tutor_payout`, plus nine money events:
+Three instruments, `lesson`, `kit_deposit`, and `tutor_payout`, plus nine money events:
 
 ```
 lesson_fund

@@ -1,0 +1,339 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "disburse",
+        "collect_repayment_1",
+        "collect_repayment_2"
+      ],
+      "actions": {
+        "collect_repayment_1": {
+          "due": {
+            "field": "firstDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.repayment1Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.funderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "advance_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_repayment_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.recipientAccountId"
+                }
+              },
+              "capture": {
+                "collectRepayment1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect repayment 1 of 2"
+        },
+        "collect_repayment_2": {
+          "due": {
+            "field": "firstDueAt",
+            "offset": "P30D"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.repayment2Amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.funderAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "advance_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_repayment_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.recipientAccountId"
+                }
+              },
+              "capture": {
+                "collectRepayment2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Collect repayment 2 of 2"
+        },
+        "create": {
+          "agentDescription": "Open the advance row before any money moves. The caller supplies the principal, the fee amount, the repayable total, and the first repayment date. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.",
+          "moves": [],
+          "publicAction": "createAdvancePayment",
+          "steps": [],
+          "summary": "Create a advance payment"
+        },
+        "disburse": {
+          "agentDescription": "Pay the principal from the funder to the recipient and start the repayment schedule. The advance must be created. The transfer posts straight out and does not unwind. Each repayment is collected on its own stored date anchor.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.principal"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.recipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "advance_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "disburse"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.funderAccountId"
+                }
+              },
+              "capture": {
+                "disburseTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "disburseAdvancePayment",
+          "steps": [],
+          "summary": "Disburse the principal to the recipient"
+        }
+      },
+      "agentDescription": "Reach for advance when the funder pays the recipient up front and is repaid afterwards, either out of a carved hold release or over scheduled repayments. Pick deposit for a refundable reservation and instant transfer when nobody repays the payer.",
+      "description": "Advance: the funder disburses principal to the recipient, repaid over 2 scheduled repayments plus the funder's discount",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "feeAmount": {
+          "description": "2.5% of principal, the funder's discount repaid on top of the advance",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "firstDueAt": {
+          "description": "Due date of the first repayment; repayment k falls P30D after its predecessor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "funderAccountId": {
+          "description": "The funder account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "principal": {
+          "description": "The advanced amount in SAR minor units, disbursed to the recipient up front",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "recipientAccountId": {
+          "description": "The recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "repayableAmount": {
+          "description": "principal + feeAmount: the total the repayment fields below partition exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repayment1Amount": {
+          "description": "Repayment 1 of 2 (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "repayment2Amount": {
+          "description": "Repayment 2 of 2: about 33.33% of repayableAmount, collected on its own stored-date anchor",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "advance_payment",
+      "idPrefix": "ap",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "advanced",
+          "repaying_1",
+          "repaid"
+        ],
+        "transitions": {
+          "collect_repayment_1": {
+            "from": [
+              "advanced"
+            ],
+            "to": "repaying_1"
+          },
+          "collect_repayment_2": {
+            "from": [
+              "repaying_1"
+            ],
+            "to": "repaid"
+          },
+          "disburse": {
+            "from": [
+              "created"
+            ],
+            "to": "advanced"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "recipientAccountId",
+        "payer": "funderAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "repayment1Amount",
+            "repayment2Amount"
+          ],
+          "totalField": "repayableAmount"
+        },
+        {
+          "pieceFields": [
+            "principal",
+            "feeAmount"
+          ],
+          "totalField": "repayableAmount"
+        }
+      ],
+      "required": [
+        "funderAccountId",
+        "recipientAccountId",
+        "principal",
+        "feeAmount",
+        "repayableAmount",
+        "firstDueAt",
+        "repayment1Amount",
+        "repayment2Amount",
+        "currency"
+      ],
+      "summary": "Advance to recipient repaid over 2 anchors",
+      "title": "Advance payment"
+    }
+  ],
+  "product": "advance_example",
+  "subjects": [],
+  "title": "Advance example",
+  "udl": 1,
+  "version": 1
+}

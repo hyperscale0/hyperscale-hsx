@@ -1,0 +1,67 @@
+module std.settlements.metered
+
+export instrument metered(
+  payer: party,
+  payee: party,
+  close_by: date,
+  rates: unknown,
+) {
+  let(instrument_words): words(instrument);
+  title: sentence(instrument);
+  agent_description: "Reach for metered when the {payer} is billed per unit at a rate card fixed when the period opens, and the period closes on {close_by}. Every charge is its own transfer. Pick recurring collection for a flat repeating amount and instant transfer for a one-off payment.";
+  summary: "Metered charges from {payer} on a committed rate card";
+  description: "Metered usage: the {payer} is charged per unit at the committed rate card until the period closes on its stored end date";
+
+  fields {
+    close_by: {
+      type: date;
+      description: "End of this metering period; the close makes further charges unreachable";
+    }
+    for item in keys(rates) {
+      let(amount_binding): get(rates, item);
+      let(rate_words): words(item);
+      [amount_binding]: {
+        type: amount_binding;
+        description: "Per-unit price of {rate_words} in SAR minor units, committed at period open";
+      }
+    }
+  }
+
+  parties {
+    payer: payer;
+    beneficiary: payee;
+  }
+
+  lifecycle {
+    states open closed;
+    initial open;
+    for item in keys(rates) {
+      on charge_[item]: open -> open;
+    }
+    on close_period: open -> closed;
+  }
+
+  action create {
+    agent_description: "Open the metering period with its committed rate card. The caller supplies the {close_by} anchor and every per-unit price. The prices are fixed here and no later charge can change them. No money moves.";
+    summary: "Open a {instrument_words} period with its committed rate card";
+    steps: [];
+  }
+
+  for item in keys(rates) {
+    action charge_[item] {
+      let(amount_binding): get(rates, item);
+      let(amount_field): concat(amount_binding);
+      let(rate_words): words(item);
+      agent_description: "Charge one metered {rate_words} at the committed price. The period must still be open, so charge before {close_by}. The transfer posts from the {payer} to the {payee} at once and there is no reversal action.";
+      summary: "Charge one metered {rate_words}; the emission is the transfer itself";
+      moves: [{ amount: amount_field; from: payer; to: beneficiary; key: transfer; }];
+      steps: [];
+    }
+  }
+
+  action close_period {
+    summary: "Close the metering period; no further usage can be charged";
+    due: { field: close_by; };
+    steps: [];
+  }
+}

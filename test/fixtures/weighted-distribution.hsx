@@ -1,6 +1,6 @@
 program weighted_proceeds "Weighted proceeds"
 
-import { weighted_distribution } from "settlement"
+import { weighted_distribution } from "std/settlements"
 
 party distribution_source: business
 party recipient: business

@@ -1,0 +1,641 @@
+module std.settlements.scheduled
+
+export instrument scheduled<C>(
+  payer: party,
+  payee: party,
+  amount: money<C>,
+  count: optional<integer>,
+  every: text,
+  first_due: date,
+  mode: optional<text>,
+  debtor: optional<party>,
+  advance_to: optional<party>,
+  until: optional<condition>,
+  month_end: optional<text>,
+  period_liability: optional<text>,
+  termination_drain: optional<text>,
+  mandate: optional<condition>,
+  derived_amount: optional<unknown>
+) {
+  agent_description: "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.";
+  when_not(mode) {
+    let(instrument_words): words(instrument);
+    let(first_percent): if_eq(count, 3, "33.34%", if_eq(count, 2, "50%", "25%"));
+    let(other_percent): if_eq(count, 3, "33.33%", if_eq(count, 2, "50%", "25%"));
+
+    title: sentence(instrument);
+    summary: "{count}-installment schedule from {payer} to {payee}";
+    description: "Scheduled payment: the {payer} pays {amount} to the {payee} in {count} installments, one every {every}";
+    partitions: { totalField: amount; pieceFields: names("installment", count, "Amount"); };
+
+    fields {
+      amount: {
+        type: money<C>;
+        description: "The total scheduled amount in {C} minor units; the installment fields below partition it exactly";
+      }
+      first_due: {
+        type: date;
+        description: "Due date of the first installment; installment k falls {every} after its predecessor";
+      }
+      for i in count {
+        let(piece_percent): if_eq(i, 1, first_percent, other_percent);
+        let(remainder_words): if_eq(i, 1, " (carries the integer-division remainder)", "");
+        installment[i]Amount: {
+          type: money<C>;
+          description: "Installment {i} of {count}{remainder_words}: about {piece_percent} of {amount}, collected on its own stored-date anchor";
+        }
+      }
+    }
+
+    parties {
+      payer: payer;
+      beneficiary: payee;
+    }
+
+    lifecycle {
+      states active;
+      for i in sub(count, 1) { states collecting_[i]; }
+      states settled;
+      initial active;
+      for i in count {
+        let(from_state): if_eq(i, 1, "active", concat("collecting_", sub(i, 1)));
+        let(to_state): if_eq(i, count, "settled", concat("collecting_", i));
+        on pay_installment_[i]: from_state -> to_state;
+      }
+    }
+
+    action create {
+      agent_description: "Create the installment plan. No money moves. The total and its per-installment amounts are fixed here, and each installment collects on its own stored due date from then on.";
+      summary: "Create a {instrument_words} plan";
+      steps: [];
+    }
+
+    for i in count {
+      action pay_installment_[i] {
+        let(first): if_eq(i, 1, true, false);
+        let(offset): scale_duration(every, sub(i, 1));
+        let(installment_field): concat("installment", i, "Amount");
+        summary: "Collect installment {i} of {count}";
+        when(first) { due: { field: first_due; }; }
+        when_not(first) { due: { field: first_due; offset: offset; }; }
+        moves: [{ amount: installment_field; from: payer; to: beneficiary; key: transfer; }];
+        steps: [];
+      }
+    }
+  }
+
+  when_eq(mode, obligation) {
+    when(count) {
+      let(instrument_words): words(instrument);
+      let(amount_field): concat(amount);
+      let(first_due_field): concat(first_due);
+      let(payer_field): camel(concat(payer, "_account_id"));
+      let(payer_words): words(payer);
+      let(payee_field): camel(concat(payee, "_account_id"));
+      let(payee_words): words(payee);
+      let(debtor_field): camel(concat(debtor, "_account_id"));
+      let(debtor_words): words(debtor);
+      let(advance_field): camel(concat(advance_to, "_account_id"));
+      let(advance_words): words(advance_to);
+      let(parent_ref_field): camel(concat(instrument, "_id"));
+      let(has_advance): advance_to;
+      let(same_debtor): if_eq(payer, debtor, true, false);
+      let(parent_statuses): if_eq(count, 2,
+        ["active", "installment_1_delinquent", "installment_2_delinquent"],
+        if_eq(count, 3,
+          ["active", "installment_1_delinquent", "installment_2_delinquent", "installment_3_delinquent"],
+          ["active", "installment_1_delinquent", "installment_2_delinquent", "installment_3_delinquent", "installment_4_delinquent"]
+        )
+      );
+      let(delinquent_statuses): names("installment_", count, "_delinquent");
+      let(last_offset): scale_duration(every, sub(count, 1));
+      let(reference_filter_key): "x-hyperscale-reference-filter";
+      let(fee_port_key): "x-hyperscale-fee-collection-port";
+      let(derived_field): concat(get(derived_amount, "field"));
+      let(derived_source): concat(get(derived_amount, "source"));
+      let(derived_rule): get(derived_amount, "rule");
+      let(derived_bps): add(derived_rule, 0);
+      let(derived_percent): concat(derived_rule);
+      let(derived_bearer): get(derived_amount, "bearer");
+      let(derived_bearer_field): camel(concat(derived_bearer, "_account_id"));
+      let(metadata_instrument_key): "metadata.instrumentId";
+      let(metadata_instance_key): "metadata.instrumentInstanceId";
+      let(metadata_phase_key): "metadata.phase";
+
+      title: sentence(instrument);
+      summary: "{count}-anchor obligation for {debtor_words}";
+      description: "Installment obligation for {debtor_words}; {payer_words} pays {payee_words} against exact stored anchors";
+      partitions: { total_field: amount_field; piece_fields: names("installment", count, "Amount"); };
+      when(derived_amount) {
+        computes derived: {
+          field: derived_field;
+          source_field: derived_source;
+          rule: { kind: percentage_of; bps: derived_bps; };
+          rounding: floor;
+        };
+      }
+      for i in count {
+        aggregate_invariants: {
+          child_field: "amount";
+          child_instrument_id: concat(instrument, "_installment_", i, "_payment");
+          child_ref_field: parent_ref_field;
+          child_statuses: [paid];
+          parent_field: concat("installment", i, "Amount");
+        };
+      }
+      when(has_advance) {
+        when_not(same_debtor) {
+          required: if_eq(count, 2,
+            [advance_field, payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount"],
+            if_eq(count, 3,
+              [advance_field, payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount"],
+              [advance_field, payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount", "installment4Amount"]
+            )
+          );
+        }
+        when(same_debtor) {
+          when_not(derived_amount) {
+            required: if_eq(count, 3,
+              [advance_field, payee_field, payer_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount"],
+              [advance_field, payee_field, payer_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount", "installment4Amount"]
+            );
+          }
+          when(derived_amount) {
+            required: if_eq(count, 2,
+              [advance_field, payee_field, payer_field, "platformAccountId", "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount"],
+              [advance_field, payee_field, payer_field, "platformAccountId", "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount", "installment4Amount"]
+            );
+          }
+        }
+      }
+      when_not(has_advance) {
+        when_not(same_debtor) {
+          required: if_eq(count, 2,
+            [payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount"],
+            if_eq(count, 3,
+              [payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount"],
+              [payee_field, payer_field, debtor_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount", "installment4Amount"]
+            )
+          );
+        }
+        when(same_debtor) {
+          required: if_eq(count, 2,
+            [payee_field, payer_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount"],
+            if_eq(count, 3,
+              [payee_field, payer_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount"],
+              [payee_field, payer_field, "currency", amount_field, first_due_field, "installment1Amount", "installment2Amount", "installment3Amount", "installment4Amount"]
+            )
+          );
+        }
+      }
+
+      fields {
+        when(has_advance) {
+          [payee_field]: {
+            type: account;
+            description: "The {payee_words} account";
+            pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+            [reference_filter_key]: { column: role; values: [customer_balance]; };
+          }
+        }
+        when(same_debtor) {
+          [payer_field]: {
+            type: account;
+            description: "The {payer_words} account";
+            pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+            [reference_filter_key]: { column: role; values: [customer_balance]; };
+          }
+        }
+        when_not(same_debtor) {
+          [debtor_field]: {
+            type: account;
+            description: "The {debtor_words} account";
+            pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+            [reference_filter_key]: { column: role; values: [customer_balance]; };
+          }
+        }
+        when(derived_amount) {
+          platform_account_id: {
+            type: account;
+            description: "The product fee collection account";
+            pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
+            [fee_port_key]: true;
+            [reference_filter_key]: { column: role; values: [customer_balance, product_revenue]; };
+          }
+        }
+        currency: {
+          type: text;
+          description: "ISO 4217 currency code";
+          max_length: 3;
+          min_length: 3;
+          pattern: "^[A-Z]{3}$";
+        }
+        amount: {
+          type: money<C>;
+          description: "The principal in {C} minor units; the stored installment anchors partition it exactly";
+        }
+        first_due: {
+          type: date;
+          description: "Due date of the first installment; later anchors use fixed offsets of {every}";
+        }
+        when(derived_amount) {
+          [derived_field]: {
+            type: money<C>;
+            optional: true;
+            pattern: "^[1-9][0-9]{0,17}$";
+            description: "Machine-computed {derived_percent} of {derived_source}; callers never supply it";
+          }
+        }
+        for i in count {
+          let(remainder_words): if_eq(i, 1, " (carries the integer-division remainder)", "");
+          installment[i]Amount: {
+            type: money<C>;
+            description: "Stored amount for installment {i} of {count}{remainder_words}";
+          }
+          installment[i]DelinquentAfter: {
+            type: date;
+            optional: true;
+            description: "Machine-set marker proving installment {i} reached its stored due date while unpaid";
+          }
+        }
+      }
+
+      parties {
+        when(has_advance) { beneficiary: advance_to; }
+        when_not(has_advance) { beneficiary: payee; }
+        when_not(same_debtor) { payer: payer; }
+      }
+
+      let(count_is_2): if_eq(count, 2, true, false);
+      let(count_is_3): if_eq(count, 3, true, false);
+      let(count_is_4): if_eq(count, 4, true, false);
+      when(count_is_2) {
+        lifecycle {
+          states draft;
+          when(has_advance) { states approved; }
+          states active installment_1_delinquent installment_2_delinquent written_off repaid;
+          initial draft;
+          when(has_advance) { on approve: draft -> approved; }
+          when_not(has_advance) { on approve: draft -> active; }
+          when(has_advance) { on advance: approved -> active; }
+          on collect_installment_1: installment_1_delinquent|installment_2_delinquent -> active;
+          on collect_installment_2: installment_1_delinquent|installment_2_delinquent -> active;
+          on mark_installment_1_delinquent: active|installment_2_delinquent -> installment_1_delinquent;
+          on mark_installment_2_delinquent: active|installment_1_delinquent -> installment_2_delinquent;
+          on complete: active|installment_1_delinquent|installment_2_delinquent -> repaid;
+          when(has_advance) { on write_off: draft|approved|active|installment_1_delinquent|installment_2_delinquent -> written_off; }
+          when_not(has_advance) { on write_off: draft|active|installment_1_delinquent|installment_2_delinquent -> written_off; }
+        }
+      }
+      when(count_is_3) {
+        lifecycle {
+          states draft;
+          when(has_advance) { states approved; }
+          states active installment_1_delinquent installment_2_delinquent installment_3_delinquent written_off repaid;
+          initial draft;
+          when(has_advance) { on approve: draft -> approved; }
+          when_not(has_advance) { on approve: draft -> active; }
+          when(has_advance) { on advance: approved -> active; }
+          on collect_installment_1: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> active;
+          on collect_installment_2: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> active;
+          on collect_installment_3: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> active;
+          on mark_installment_1_delinquent: active|installment_2_delinquent|installment_3_delinquent -> installment_1_delinquent;
+          on mark_installment_2_delinquent: active|installment_1_delinquent|installment_3_delinquent -> installment_2_delinquent;
+          on mark_installment_3_delinquent: active|installment_1_delinquent|installment_2_delinquent -> installment_3_delinquent;
+          on complete: active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> repaid;
+          when(has_advance) { on write_off: draft|approved|active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> written_off; }
+          when_not(has_advance) { on write_off: draft|active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> written_off; }
+        }
+      }
+      when(count_is_4) {
+        lifecycle {
+          states draft;
+          when(has_advance) { states approved; }
+          states active installment_1_delinquent installment_2_delinquent installment_3_delinquent installment_4_delinquent written_off repaid;
+          initial draft;
+          when(has_advance) { on approve: draft -> approved; }
+          when_not(has_advance) { on approve: draft -> active; }
+          when(has_advance) { on advance: approved -> active; }
+          on collect_installment_1: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> active;
+          on collect_installment_2: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> active;
+          on collect_installment_3: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> active;
+          on collect_installment_4: installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> active;
+          on mark_installment_1_delinquent: active|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> installment_1_delinquent;
+          on mark_installment_2_delinquent: active|installment_1_delinquent|installment_3_delinquent|installment_4_delinquent -> installment_2_delinquent;
+          on mark_installment_3_delinquent: active|installment_1_delinquent|installment_2_delinquent|installment_4_delinquent -> installment_3_delinquent;
+          on mark_installment_4_delinquent: active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent -> installment_4_delinquent;
+          on complete: active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> repaid;
+          when(has_advance) { on write_off: draft|approved|active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> written_off; }
+          when_not(has_advance) { on write_off: draft|active|installment_1_delinquent|installment_2_delinquent|installment_3_delinquent|installment_4_delinquent -> written_off; }
+        }
+      }
+
+      action create {
+        agent_description: "Create the obligation in draft with its principal split across stored installment anchors. Approve is the next call. Where the product declares a derived fee, creating the obligation also moves that fee from its bearer to the platform account.";
+        summary: "Create a {instrument_words} obligation";
+        when(derived_amount) {
+          moves: [{
+            key: "derived_amount";
+            operation: "internal_transfer.create";
+            bind: {
+              amount: { from: instance; path: concat("fields.", derived_field); };
+              currency: { from: instance; path: fields.currency; };
+              destination_account_id: { from: instance; path: fields.platformAccountId; };
+              source_account_id: { from: instance; path: concat("fields.", derived_bearer_field); };
+              [metadata_instrument_key]: { from: const; value: instrument; };
+              [metadata_instance_key]: { from: instance; path: instrumentInstanceId; };
+              [metadata_phase_key]: { from: const; value: create; };
+              product_id: { from: instance; path: productId; };
+            };
+            capture: { create_derived_amount_transfer_id: transferId; };
+          }];
+        }
+        steps: [];
+      }
+      action approve {
+        agent_description: "Approve the draft obligation and freeze its principal partition and due anchors. The obligation must be in draft. No money moves. Where the product advances funds, approve is what makes advance available.";
+        summary: "Approve the immutable principal partition and stored anchors";
+        steps: [];
+      }
+      when(has_advance) {
+        action advance {
+          agent_description: "Pay the principal out to the advance recipient and put the obligation into repayment. The obligation must be approved. This moves the whole principal and does not reverse, so approve is the last point to stop.";
+          summary: "Advance the principal to the {advance_words}; the internal ledger receipt is the confirmation";
+          moves: [{ amount: amount_field; from: payee; to: beneficiary; key: advance; }];
+          steps: [];
+        }
+      }
+      for i in count {
+        let(child_id): concat(instrument, "_installment_", i, "_payment");
+        let(target_field): concat("installment", i, "Amount");
+        let(marker_field): concat("installment", i, "DelinquentAfter");
+        let(delinquent_action): concat("mark_installment_", i, "_delinquent");
+        let(offset): scale_duration(every, sub(i, 1));
+        action collect_installment_[i] {
+          let(first): if_eq(i, 1, true, false);
+          summary: "Close delinquent installment {i} after linked payments reach its stored amount";
+          when(first) { due: { field: first_due_field; }; }
+          when_not(first) { due: { field: first_due_field; offset: offset; }; }
+          requires aggregate: {
+                check: { amount_field: "amount"; kind: sum_exactly; target_field: target_field; };
+            instrument_id: child_id;
+            over: children;
+            ref_field: parent_ref_field;
+            statuses: [paid];
+          };
+          steps: [];
+        }
+        action [delinquent_action] {
+          let(first): if_eq(i, 1, true, false);
+          summary: "Mark installment {i} delinquent only when its due anchor is unmet";
+          when(first) { due: { field: first_due_field; }; }
+          when_not(first) { due: { field: first_due_field; offset: offset; }; }
+          requires aggregate: {
+            check: { amount_field: "amount"; kind: sum_below; target_field: target_field; };
+            instrument_id: child_id;
+            over: children;
+            ref_field: parent_ref_field;
+            statuses: [paid];
+          };
+          sets_at: { field: marker_field; marker: true; offset: PT1S; };
+          steps: [];
+        }
+      }
+      action complete {
+        summary: "Close the obligation only after every stored anchor is paid exactly";
+        due: { field: first_due_field; offset: last_offset; };
+        for i in count {
+          requires aggregate: {
+            check: { amount_field: "amount"; kind: sum_exactly; target_field: concat("installment", i, "Amount"); };
+            instrument_id: concat(instrument, "_installment_", i, "_payment");
+            over: children;
+            ref_field: parent_ref_field;
+            statuses: [paid];
+          };
+        }
+        steps: [];
+      }
+      action write_off {
+        agent_description: "Write off the remaining exposure and stop the obligation. No money moves and nothing is refunded. This is the bookkeeping exit for debt that will not be collected. A written-off obligation never returns to repayment.";
+        summary: "Write off the remaining exposure without moving money";
+        steps: [];
+      }
+
+      instruments {
+        for i in count {
+          instrument {
+            let(has_mandate): mandate;
+            id: concat(instrument, "_installment_", i, "_payment");
+            generatedPrefix: true;
+            title: concat(sentence(instrument), " Installment ", i, " Payment");
+            agent_description: concat("One payment against installment ", i, " of the obligation. Payments can be partial, so create a record, repay it, and the parent installment closes once its paid records sum to the stored anchor amount.");
+            summary: concat("Anchor-bound payment for installment ", i);
+            description: concat("One partial or full payment bound to installment ", i, " of ", instrument, "; the operation name fixes the anchor and ", parent_ref_field, " fixes the obligation");
+            fields {
+              amount: {
+                type: money<C>;
+                description: concat("Positive payment amount capped with its paid siblings at installment", i, "Amount");
+              }
+              currency: {
+                type: text;
+                description: "ISO 4217 currency code";
+                max_length: 3;
+                min_length: 3;
+                pattern: "^[A-Z]{3}$";
+              }
+              [parent_ref_field]: {
+                type: ref<instrument>;
+                description: "The exact {instrument_words} this payment belongs to";
+                pattern: concat("^", prefix(instrument), "_(sandbox|live)_[a-z0-9]{8,64}$");
+              }
+            }
+            parties { beneficiary: payee; payer: payer; }
+            lifecycle {
+              states created paid refunded;
+              initial created;
+              on repay: created -> paid;
+              on refund: paid -> refunded;
+            }
+            action create {
+              agent_description: concat("Open a payment record against installment ", i, ". The parent obligation must be live. No money moves yet. Repay is what pays.");
+              summary: concat("Create a payment record for installment ", i);
+              requires refs: {
+                field: parent_ref_field;
+                statuses: parent_statuses;
+                bind: {
+                  currency: fields.currency;
+                  [payer_field]: concat("fields.", payer_field);
+                  [payee_field]: concat("fields.", payee_field);
+                };
+              };
+              steps: [];
+            }
+            action repay {
+              agent_description: concat("Pay this record's amount toward installment ", i, ". The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.");
+              summary: concat("Pay a partial or full amount against installment ", i);
+              when(has_mandate) {
+                input: {
+                  additional_properties: false;
+                  properties: {
+                    evidence_reference: {
+                      description: "Required decision reference retained in the operation receipt";
+                      max_length: 180;
+                      min_length: 1;
+                      type: string;
+                    };
+                  };
+                  required: [evidenceReference];
+                  type: object;
+                };
+                capture_input: { mandate_evidence_reference: evidenceReference; };
+                port: { allowed_parties: ["payer"]; };
+              }
+              requires refs: {
+                field: parent_ref_field;
+                statuses: parent_statuses;
+                match: {
+                  let(payer_match): concat("fields.", payer_field);
+                  let(payee_match): concat("fields.", payee_field);
+                  let(currency_match): "fields.currency";
+                  [payer_match]: payer_match;
+                  [payee_match]: payee_match;
+                  [currency_match]: currency_match;
+                };
+              };
+              requires exposure: {
+                amount_field: "amount";
+                anchor_field: parent_ref_field;
+                cap_field: concat("installment", i, "Amount");
+                cap_on_anchor: true;
+                child_instrument_id: concat(instrument, "_installment_", i, "_payment");
+                statuses: [paid];
+              };
+              moves: [{ amount: "amount"; from: payer; to: beneficiary; key: repayment; }];
+              steps: [];
+            }
+            action refund {
+              agent_description: concat("Return one whole installment ", i, " payment to the payer. The record must be paid, and the refund is always its full amount, so split a payment across records when a partial refund could be needed. This moves money back.");
+              summary: concat("Refund this one stored installment ", i, " payment whole");
+              requires refs: {
+                field: parent_ref_field;
+                statuses: parent_statuses;
+                match: {
+                  let(payer_match): concat("fields.", payer_field);
+                  let(payee_match): concat("fields.", payee_field);
+                  let(currency_match): "fields.currency";
+                  [payer_match]: payer_match;
+                  [payee_match]: payee_match;
+                  [currency_match]: currency_match;
+                };
+              };
+              moves: [{ amount: "amount"; from: beneficiary; to: payer; key: refund; }];
+              steps: [];
+            }
+          }
+        }
+      }
+    }
+
+    when_not(count) {
+      let(amount_field): concat(amount);
+      let(until_name): concat(until);
+      title: sentence(instrument);
+      summary: "Open {every} obligation for {payer}";
+      description: "Open monthly obligation for {payer}; one period liability at a time";
+
+      fields {
+        amount: {
+          type: money<C>;
+          description: "Exact charge for one {every} period in {C} minor units";
+        }
+        currency: {
+          type: text;
+          const: C;
+          description: "ISO 4217 currency code";
+        }
+        first_due: {
+          type: date;
+          description: "First period anchor; missing Gregorian month days clamp to the target month's final day";
+        }
+      }
+
+      parties { payer: payer; beneficiary: payee; }
+
+      lifecycle {
+        states active period_open canceled;
+        initial active;
+        on open_period: active -> period_open;
+        on collect_period: period_open -> active;
+        on [until]: active|period_open -> canceled;
+      }
+
+      action create {
+        agent_description: "Create the open obligation before its first period anchor. No money moves. The charge for one period and the first anchor are fixed here, and periods then open on their own.";
+        summary: "Create the open obligation before its first anchor";
+        steps: [];
+      }
+
+      action open_period {
+        summary: "Open exactly one period liability without moving money";
+        due: {
+          field: first_due;
+          every: {
+            period: { calendar: gregorian; month_end: month_end; months: 1; };
+            until_action: until_name;
+            liability: period_liability;
+            delinquency: parent_policy;
+            drain_action: termination_drain;
+          };
+        };
+        steps: [];
+      }
+
+      action collect_period {
+        agent_description: "Collect one open period charge from the payer, with the mandate evidence reference kept in the receipt. A period must be open. Only the payer may call it. This moves the period amount and does not reverse.";
+        summary: "Collect one authored period charge with mandate evidence";
+        input: {
+          additional_properties: false;
+          properties: {
+            evidence_reference: {
+              description: "Required decision reference retained in the operation receipt";
+              max_length: 180;
+              min_length: 1;
+              type: string;
+            };
+          };
+          required: [evidenceReference];
+          type: object;
+        };
+        capture_input: { mandate_evidence_reference: evidenceReference; };
+        port: { allowed_parties: ["payer"]; };
+        moves: [{ amount: amount_field; from: payer; to: beneficiary; key: period_collection; }];
+        steps: [];
+      }
+
+      action [until] {
+        agent_description: "Cancel the open schedule for good and drain any period liability still standing. Only the payer may call it, and the reference fields the port declares are required. No further period opens and there is no reactivation.";
+        summary: "Cancel the open schedule and drain any period liability";
+        input: {
+          additional_properties: false;
+          properties: {
+            for item in keys(until_fields) {
+              [item]: {
+                description: "Required decision reference retained in the operation receipt";
+                max_length: 180;
+                min_length: 1;
+                type: string;
+              }
+            }
+          };
+          required: keys(until_fields);
+          type: object;
+        };
+        capture_input: {
+          for item in keys(until_fields) { [item]: item; }
+        };
+        port: { allowed_parties: ["payer"]; };
+        steps: [];
+      }
+    }
+  }
+}

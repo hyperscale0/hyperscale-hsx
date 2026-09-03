@@ -1,0 +1,15 @@
+program supplier_settlement "Supplier settlement"
+import { reconciled_payout } from "std/settlements"
+
+party treasury: business
+party supplier: business
+
+settlement supplier_payout = reconciled_payout {
+  payer: treasury
+  beneficiary: supplier
+  amount: netPayable: money(SAR)
+  beneficiary_ref: supplierBeneficiaryId
+  settle_by: settleBy
+  matched_within: 100
+  matched_ceiling: 500
+}

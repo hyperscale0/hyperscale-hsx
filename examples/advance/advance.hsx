@@ -1,0 +1,13 @@
+program advance_example "Advance example"
+import { advance } from "std/settlements"
+party funder: business
+party recipient: business
+settlement advance_payment = advance {
+  funder: funder
+  to: recipient
+  amount: principal: money(SAR)
+  fee: 2.5%
+  count: 2
+  every: P30D
+  first_due: firstDueAt
+}

@@ -1,0 +1,667 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "activate",
+        "fail",
+        "close"
+      ],
+      "actions": {
+        "activate": {
+          "due": {
+            "field": "closeBy"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_at_least",
+                "targetField": "targetAmount"
+              },
+              "instrumentId": "round_commitment",
+              "over": "children",
+              "refField": "roundId",
+              "statuses": [
+                "committed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Activate when commitments meet the target"
+        },
+        "close": {
+          "agentDescription": "Settle the pool once every admitted commitment is collected or was cancelled before activation. The pool must be active. No money moves here, collect already paid the beneficiary.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ]
+          },
+          "moves": [],
+          "publicAction": "closeRound",
+          "requiresAggregate": [
+            {
+              "check": {
+                "kind": "all_in"
+              },
+              "instrumentId": "round_commitment",
+              "over": "children",
+              "refField": "roundId",
+              "statuses": [
+                "cancelled",
+                "collected"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Settle after every admitted row is collected or was cancelled before activation"
+        },
+        "create": {
+          "agentDescription": "Open the pool before any commitment exists. The caller supplies the target, the currency, the beneficiary account, the close anchor, and the pinned contributor count. No money moves and the pool opens for commitments.",
+          "moves": [],
+          "publicAction": "createRound",
+          "steps": [],
+          "summary": "Open the contribution pool"
+        },
+        "fail": {
+          "due": {
+            "field": "closeBy"
+          },
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_aggregate",
+                "source": "requiresAggregate"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresAggregate": [
+            {
+              "check": {
+                "amountField": "amount",
+                "kind": "sum_below",
+                "targetField": "targetAmount"
+              },
+              "instrumentId": "round_commitment",
+              "over": "children",
+              "refField": "roundId",
+              "statuses": [
+                "committed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Fail when commitments remain below target"
+        }
+      },
+      "agentDescription": "Reach for threshold pool when many contributors commit toward one target and nothing is collected unless the pool reaches it by the close date. Commitments sit in escrow until the pool activates or fails. Pick weighted distribution to pay a pool out and instant transfer for a single payment.",
+      "aggregateInvariants": [
+        {
+          "childField": "amount",
+          "childInstrumentId": "round_commitment",
+          "childRefField": "roundId",
+          "childStatuses": [
+            "committed"
+          ],
+          "parentField": "targetAmount"
+        },
+        {
+          "childInstrumentId": "round_commitment",
+          "childRefField": "roundId",
+          "childStatuses": [
+            "committed"
+          ],
+          "count": true,
+          "parentField": "maxContributors"
+        }
+      ],
+      "description": "All-or-nothing aggregate contribution threshold",
+      "fields": {
+        "closeBy": {
+          "description": "Stored close anchor",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "companyAccountId": {
+          "description": "The company account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "maxContributors": {
+          "const": 100,
+          "description": "Exactly 100 admitted contributors",
+          "type": "integer"
+        },
+        "targetAmount": {
+          "description": "Funding target in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "round",
+      "idPrefix": "roun",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "active",
+          "failed",
+          "settled"
+        ],
+        "transitions": {
+          "activate": {
+            "from": [
+              "open"
+            ],
+            "to": "active"
+          },
+          "close": {
+            "from": [
+              "active"
+            ],
+            "to": "settled"
+          },
+          "fail": {
+            "from": [
+              "open"
+            ],
+            "to": "failed"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "companyAccountId"
+      },
+      "required": [
+        "companyAccountId",
+        "currency",
+        "targetAmount",
+        "closeBy",
+        "maxContributors"
+      ],
+      "summary": "Threshold contribution pool for company",
+      "title": "Round"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "cancel",
+        "collect",
+        "refund"
+      ],
+      "actions": {
+        "cancel": {
+          "agentDescription": "Pull one commitment back out of escrow to the contributor. The pool must still be open, so this is unavailable once the pool activates or fails. The money returns and the commitment is closed.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.contributorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "round_commitment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "cancel"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "cancelCancelTransferId": "transferId"
+              },
+              "key": "cancel",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "cancelRoundCommitment",
+          "requiresRefs": [
+            {
+              "field": "roundId",
+              "match": {
+                "fields.companyAccountId": "fields.companyAccountId",
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Cancel one commitment while the pool is open"
+        },
+        "collect": {
+          "agentDescription": "Release one commitment out of escrow to the beneficiary. The pool must be active, which happens only once commitments meet the target. The money moves for good.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.companyAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "round_commitment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "collectCollectTransferId": "transferId"
+              },
+              "key": "collect",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "collectRoundCommitment",
+          "requiresRefs": [
+            {
+              "field": "roundId",
+              "match": {
+                "fields.companyAccountId": "fields.companyAccountId",
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "active"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Collect one successful commitment whole"
+        },
+        "create": {
+          "agentDescription": "Commit one whole amount into the pool escrow. The pool must still be open, the currency and beneficiary account must match it, and the committed total plus this amount must stay within the target. The money leaves the contributor now.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "round_commitment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "create"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.contributorAccountId"
+                }
+              },
+              "capture": {
+                "createCommitTransferId": "transferId"
+              },
+              "key": "commit",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "createRoundCommitment",
+          "requiresExposure": [
+            {
+              "amountField": "amount",
+              "anchorField": "roundId",
+              "capField": "targetAmount",
+              "capOnAnchor": true,
+              "childInstrumentId": "round_commitment",
+              "statuses": [
+                "committed"
+              ]
+            }
+          ],
+          "requiresRefs": [
+            {
+              "bind": {
+                "companyAccountId": "fields.companyAccountId",
+                "currency": "fields.currency"
+              },
+              "field": "roundId",
+              "statuses": [
+                "open"
+              ]
+            }
+          ],
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Store one whole commitment without exceeding the pool target"
+        },
+        "refund": {
+          "agentDescription": "Return one commitment out of escrow to the contributor after the pool failed to reach its target. The pool must be in failed. The money returns and the commitment is closed.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.amount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.contributorAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "round_commitment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "refund"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "refundRefundTransferId": "transferId"
+              },
+              "key": "refund",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "refundRoundCommitment",
+          "requiresRefs": [
+            {
+              "field": "roundId",
+              "match": {
+                "fields.companyAccountId": "fields.companyAccountId",
+                "fields.currency": "fields.currency"
+              },
+              "statuses": [
+                "failed"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Refund one failed-pool commitment whole"
+        }
+      },
+      "agentDescription": "Reach for this child row to record one whole commitment into a round. Each contributor commits once, the money sits in the product escrow, and whether it is collected or refunded depends on the pool reaching its target.",
+      "description": "One whole commitment linked to round",
+      "fields": {
+        "amount": {
+          "description": "One whole commitment amount",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "companyAccountId": {
+          "description": "The company account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "contributorAccountId": {
+          "description": "The contributor account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "roundId": {
+          "description": "The exact round",
+          "pattern": "^roun_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        }
+      },
+      "id": "round_commitment",
+      "idPrefix": "zzaa",
+      "lifecycle": {
+        "initial": "committed",
+        "states": [
+          "committed",
+          "cancelled",
+          "collected",
+          "refunded"
+        ],
+        "transitions": {
+          "cancel": {
+            "from": [
+              "committed"
+            ],
+            "to": "cancelled"
+          },
+          "collect": {
+            "from": [
+              "committed"
+            ],
+            "to": "collected"
+          },
+          "refund": {
+            "from": [
+              "committed"
+            ],
+            "to": "refunded"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "companyAccountId",
+        "payer": "contributorAccountId"
+      },
+      "required": [
+        "companyAccountId",
+        "contributorAccountId",
+        "amount",
+        "currency",
+        "roundId"
+      ],
+      "summary": "Whole commitment to round",
+      "title": "Round Commitment"
+    }
+  ],
+  "product": "capital_pool_example",
+  "subjects": [],
+  "title": "Capital pool example",
+  "udl": 1,
+  "version": 1
+}

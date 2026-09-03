@@ -1,0 +1,677 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "authorize",
+        "capture",
+        "capture_more",
+        "settle",
+        "void",
+        "expire",
+        "settle_on_expiry",
+        "correct_capture",
+        "reverse_capture"
+      ],
+      "actions": {
+        "authorize": {
+          "agentDescription": "Reserve the authorizedAmount against the payer in the payee's favor until reserveUntil. The payment must be created. The money is held, not paid: capture and settle post it, void and expiry release it.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.authorizedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.payeeAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "card_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "authorize"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                }
+              },
+              "capture": {
+                "authorizeReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "authorizeCardPayment",
+          "steps": [],
+          "summary": "Reserve the authorizedAmount until reserveUntil"
+        },
+        "capture": {
+          "agentDescription": "Post the first capture slice out of the live reservation. The payment must be authorized and the caller passes captureAmount in minor units. The slice settles for good and void can no longer release the reservation. Call before reserveUntil.",
+          "deadline": {
+            "field": "reserveUntil"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "captureAmount": {
+                "description": "Positive partial capture amount in minor units",
+                "pattern": "^[1-9][0-9]{0,17}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "captureAmount"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "input",
+                  "path": "captureAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "postMode": {
+                  "from": "const",
+                  "value": "partial_only"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "capture": {
+                "capturedAmount": "postedAmount"
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "captureCardPayment",
+          "steps": [],
+          "summary": "Post one strict partial capture slice"
+        },
+        "capture_more": {
+          "agentDescription": "Post another capture slice out of a partly captured reservation. Call this only after capture took the first slice. Each slice settles for good, and the uncaptured remainder still releases at reserveUntil.",
+          "deadline": {
+            "field": "reserveUntil"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "captureAmount": {
+                "description": "Positive partial capture amount in minor units",
+                "pattern": "^[1-9][0-9]{0,17}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "captureAmount"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "input",
+                  "path": "captureAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "postMode": {
+                  "from": "const",
+                  "value": "partial_only"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "capture": {
+                "capturedAmount": "postedAmount"
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "captureMoreCardPayment",
+          "steps": [],
+          "summary": "Post another strict partial capture slice"
+        },
+        "correct_capture": {
+          "agentDescription": "Return the whole captured amount to the payer after the payment settled. Only a settled payment corrects, and only the party the product authorized may call it. The money moves back and there is no undo.",
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.capturedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "card_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "correct_capture"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payeeAccountId"
+                }
+              },
+              "capture": {
+                "correctCaptureTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "correctCaptureCardPayment",
+          "steps": [],
+          "summary": "Return the full captured amount on payee correction"
+        },
+        "create": {
+          "agentDescription": "Open the payment row before anything is reserved. The caller supplies the authorizedAmount, the currency, and both party accounts. This reserves nothing, call authorize next.",
+          "moves": [],
+          "publicAction": "createCardPayment",
+          "steps": [],
+          "summary": "Create a card payment"
+        },
+        "expire": {
+          "due": {
+            "field": "reserveUntil"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Uncaptured reservation expired"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "steps": [],
+          "summary": "Release an uncaptured reservation at expiry"
+        },
+        "reverse_capture": {
+          "agentDescription": "Return the whole captured amount to the payer on an external reversal. The payment must be settled and the call must land before reversalUntil. The caller passes externalReference, which stays in the receipt. There is no undo.",
+          "captureInput": {
+            "externalReference": "externalReference"
+          },
+          "deadline": {
+            "field": "reversalUntil"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "externalReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "externalReference"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.capturedAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                },
+                "metadata.clawbackOfTransferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "card_payment"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "reverse_capture"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payeeAccountId"
+                }
+              },
+              "capture": {
+                "reverseCaptureTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "reverseCaptureCardPayment",
+          "steps": [],
+          "summary": "Return the full captured amount on an external reversal"
+        },
+        "settle": {
+          "agentDescription": "Post the whole reserved remainder and finish the payment. The payment must be authorized or partly captured. The money settles and the external reversal window opens on reversalUntil.",
+          "deadline": {
+            "field": "reserveUntil"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "capture": {
+                "capturedAmount": "postedAmount"
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            }
+          ],
+          "publicAction": "settleCardPayment",
+          "setsAt": {
+            "field": "reversalUntil",
+            "offset": "P14D"
+          },
+          "steps": [],
+          "summary": "Post the full reserved remainder and settle"
+        },
+        "settle_on_expiry": {
+          "due": {
+            "field": "reserveUntil"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Uncaptured remainder released at expiry"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "setsAt": {
+            "field": "reversalUntil",
+            "offset": "P14D"
+          },
+          "steps": [],
+          "summary": "Release the uncaptured remainder and settle captured slices"
+        },
+        "void": {
+          "agentDescription": "Release the reservation whole and cancel the payment. Only an authorized reservation with nothing captured can void. Once any slice is captured, settle it or let it expire instead.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Reservation voided before any capture"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.authorizeReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "voidCardPayment",
+          "steps": [],
+          "summary": "Release an entirely uncaptured reservation"
+        }
+      },
+      "agentDescription": "Reach for captured payment when the payee reserves against the payer first and then takes the money in slices before reserveUntil. Pick instant transfer when the whole amount moves at once, and deposit when the reservation is claimed or returned whole.",
+      "description": "Payer reservation captured by the payee in slices within a fixed window",
+      "fields": {
+        "authorizedAmount": {
+          "description": "Maximum captured amount in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "payeeAccountId": {
+          "description": "The payee account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "payerAccountId": {
+          "description": "The payer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "reserveUntil": {
+          "description": "Reservation expiry that releases any uncaptured remainder",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "reversalUntil": {
+          "description": "Machine-owned external reversal cutoff anchored when settlement completes",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        }
+      },
+      "id": "card_payment",
+      "idPrefix": "cp",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "authorized",
+          "partially_captured",
+          "settled",
+          "voided",
+          "expired",
+          "corrected",
+          "reversed"
+        ],
+        "transitions": {
+          "authorize": {
+            "from": [
+              "created"
+            ],
+            "to": "authorized"
+          },
+          "capture": {
+            "from": [
+              "authorized"
+            ],
+            "to": "partially_captured"
+          },
+          "capture_more": {
+            "from": [
+              "partially_captured"
+            ],
+            "to": "partially_captured"
+          },
+          "correct_capture": {
+            "from": [
+              "settled"
+            ],
+            "to": "corrected"
+          },
+          "expire": {
+            "from": [
+              "authorized"
+            ],
+            "to": "expired"
+          },
+          "reverse_capture": {
+            "from": [
+              "settled"
+            ],
+            "to": "reversed"
+          },
+          "settle": {
+            "from": [
+              "authorized",
+              "partially_captured"
+            ],
+            "to": "settled"
+          },
+          "settle_on_expiry": {
+            "from": [
+              "partially_captured"
+            ],
+            "to": "settled"
+          },
+          "void": {
+            "from": [
+              "authorized"
+            ],
+            "to": "voided"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "payeeAccountId",
+        "payer": "payerAccountId"
+      },
+      "required": [
+        "payerAccountId",
+        "payeeAccountId",
+        "authorizedAmount",
+        "reserveUntil",
+        "currency"
+      ],
+      "summary": "Capture reservation from payer to payee",
+      "title": "Card payment"
+    }
+  ],
+  "product": "captured_payment_example",
+  "subjects": [],
+  "title": "Captured payment example",
+  "udl": 1,
+  "version": 1
+}

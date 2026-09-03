@@ -1,0 +1,378 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Register the shared key that a settled pool and its allocations both point at. No money moves and there is nothing to configure. Create this first.",
+          "moves": [],
+          "steps": [],
+          "summary": "Create instrument"
+        }
+      },
+      "agentDescription": "A shared key that ties one settled pool to the allocations that draw from it. It holds no money and no schedule. Create one before the pool and its allocations.",
+      "fields": {},
+      "id": "distribution_group",
+      "idPrefix": "dgrp",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open"
+        ],
+        "transitions": {}
+      },
+      "required": [],
+      "summary": "Reference group for a flat distribution",
+      "title": "Distribution group"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "settle"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open the pool with its distributable total and funding account. No money moves. Claims can be recorded from here until the pool settles.",
+          "moves": [],
+          "steps": [],
+          "summary": "Create instrument"
+        },
+        "settle": {
+          "agentDescription": "Freeze the pool so its claims can pay out. No money moves on this call, and no further claim can be recorded. There is no unsettle.",
+          "moves": [],
+          "steps": [],
+          "summary": "Settle instrument"
+        }
+      },
+      "agentDescription": "The pool that backs flat distribution claims. It carries the distributable total and the funding account, and it must settle before any claim pays out. Claims recorded after settlement are refused.",
+      "fields": {
+        "currency": {
+          "const": "SAR",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "distributableTotal": {
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "distributionGroupId": {
+          "type": "string"
+        },
+        "sourceAccountId": {
+          "type": "string"
+        }
+      },
+      "id": "settled_pool",
+      "idPrefix": "sp",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "settled"
+        ],
+        "transitions": {
+          "settle": {
+            "from": [
+              "open"
+            ],
+            "to": "settled"
+          }
+        }
+      },
+      "required": [
+        "currency",
+        "distributableTotal",
+        "distributionGroupId",
+        "sourceAccountId"
+      ],
+      "summary": "Pool that backs flat distribution claims",
+      "title": "Settled pool"
+    },
+    {
+      "actionOrder": [
+        "create"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Admit one recipient weight against the shared group. No money moves. The weight recorded here is what the matching claim pays out against the settled pool.",
+          "moves": [],
+          "steps": [],
+          "summary": "Create instrument"
+        }
+      },
+      "agentDescription": "One stored weight and its recipient, admitted before the pool settles. A claim reads its weight and recipient from here rather than taking them from the caller. Each allocation backs at most one claim.",
+      "fields": {
+        "amount": {
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "distributionGroupId": {
+          "type": "string"
+        },
+        "recipientAccountId": {
+          "type": "string"
+        }
+      },
+      "id": "allocation",
+      "idPrefix": "alloc",
+      "lifecycle": {
+        "initial": "admitted",
+        "states": [
+          "admitted"
+        ],
+        "transitions": {}
+      },
+      "required": [
+        "amount",
+        "distributionGroupId",
+        "recipientAccountId",
+        "currency"
+      ],
+      "summary": "Stored weight and recipient for one claim",
+      "title": "Allocation"
+    },
+    {
+      "actionOrder": [
+        "create",
+        "payout"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Record one recipient weight against a pool that is still open. Both the pool and the weight source must be in an accepting state, and the same weight source cannot be claimed twice. No money moves. Do not supply a share. It is derived at payout from the settled pool.",
+          "effects": {
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ]
+          },
+          "moves": [],
+          "requiresRefs": [
+            {
+              "bind": {
+                "currency": "fields.currency",
+                "treasuryAccountId": "fields.sourceAccountId"
+              },
+              "field": "poolId",
+              "match": {
+                "fields.distributionGroupId": "fields.distributionGroupId"
+              },
+              "statuses": [
+                "open"
+              ]
+            },
+            {
+              "bind": {
+                "memberAccountId": "fields.recipientAccountId",
+                "weight": "fields.amount"
+              },
+              "field": "allocationId",
+              "match": {
+                "fields.distributionGroupId": "fields.distributionGroupId"
+              },
+              "statuses": [
+                "admitted"
+              ],
+              "unique": true
+            }
+          ],
+          "steps": [],
+          "summary": "Open one weighted distribution claim"
+        },
+        "payout": {
+          "distribute": {
+            "amountRef": "payoutShare",
+            "onZero": "skip_steps",
+            "pool": {
+              "from": "parent",
+              "path": "fields.distributableTotal"
+            },
+            "refField": "poolId",
+            "statuses": [
+              "claimed",
+              "paid"
+            ],
+            "weightField": "weight"
+          },
+          "due": {
+            "field": "payableAt",
+            "whenParentStatus": {
+              "instrumentId": "settled_pool",
+              "refField": "poolId",
+              "statuses": [
+                "settled"
+              ]
+            }
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "reads": [
+              {
+                "signature": "reads.requires_refs",
+                "source": "requiresRefs"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "refs.payoutShare"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.treasuryAccountId"
+                }
+              },
+              "capture": {
+                "payoutTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "requiresRefs": [
+            {
+              "field": "poolId",
+              "statuses": [
+                "settled"
+              ]
+            }
+          ],
+          "steps": [],
+          "summary": "Pay one largest-remainder share from the settled pool"
+        }
+      },
+      "agentDescription": "One weighted claim on a distribution pool that another instrument owns. Record one claim per recipient before the pool settles. Its share is derived from its weight against the settled pool, never supplied by the caller, and the shares add back to the pool exactly.",
+      "description": "One weighted claim on a settled distribution pool",
+      "fields": {
+        "allocationId": {
+          "description": "Allocation that supplies the claim weight and recipient",
+          "pattern": "^alloc_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "distributionGroupId": {
+          "description": "Group shared by the pool and allocation",
+          "pattern": "^dgrp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "Account that receives this claim",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "payableAt": {
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "poolId": {
+          "description": "Settled pool that backs the claim",
+          "pattern": "^sp_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string"
+        },
+        "treasuryAccountId": {
+          "description": "Account that funds this claim",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "weight": {
+          "description": "Stored claim weight in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "payout_claim",
+      "idPrefix": "pc",
+      "lifecycle": {
+        "initial": "claimed",
+        "states": [
+          "claimed",
+          "paid"
+        ],
+        "transitions": {
+          "payout": {
+            "from": [
+              "claimed"
+            ],
+            "to": "paid"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "memberAccountId"
+      },
+      "required": [
+        "poolId",
+        "distributionGroupId",
+        "allocationId",
+        "memberAccountId",
+        "treasuryAccountId",
+        "weight",
+        "currency",
+        "payableAt"
+      ],
+      "summary": "Flat largest-remainder distribution claim",
+      "title": "Payout claim"
+    }
+  ],
+  "product": "flat_weighted_distribution",
+  "subjects": [],
+  "title": "Flat weighted distribution",
+  "udl": 1,
+  "version": 1
+}

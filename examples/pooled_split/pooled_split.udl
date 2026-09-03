@@ -1,0 +1,425 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "fund_share_1",
+        "distribute_share_1",
+        "fund_share_2",
+        "distribute_share_2"
+      ],
+      "actions": {
+        "create": {
+          "agentDescription": "Open a pool period and provision the escrow account the pool sits in. This is the first call on the period, and funding a share refuses until it lands. It moves no money.",
+          "moves": [],
+          "publicAction": "createPool",
+          "steps": [
+            {
+              "bind": {
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "owner.id": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "owner.type": {
+                  "from": "const",
+                  "value": "product"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "role": {
+                  "from": "const",
+                  "value": "product_escrow"
+                }
+              },
+              "capture": {
+                "escrowAccountId": "accountId"
+              },
+              "operation": "account.escrow.provision"
+            }
+          ],
+          "summary": "Open a pool period"
+        },
+        "distribute_share_1": {
+          "due": {
+            "field": "payoutDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.firstRecipientShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.firstRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the first recipient's share of the pool"
+        },
+        "distribute_share_2": {
+          "due": {
+            "field": "payoutDueAt"
+          },
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ],
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.secondRecipientShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.secondRecipientAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "distribute_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                }
+              },
+              "capture": {
+                "distributeShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "steps": [],
+          "summary": "Distribute the second recipient's share of the pool"
+        },
+        "fund_share_1": {
+          "agentDescription": "Move share 1 of the period total, the first recipient's cut, from the payer into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the payer for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.firstRecipientShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_1"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                }
+              },
+              "capture": {
+                "fundShare1TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare1Pool",
+          "steps": [],
+          "summary": "Pool share 1 of the period total"
+        },
+        "fund_share_2": {
+          "agentDescription": "Move share 2 of the period total, the second recipient's cut, from the payer into the pool escrow. Shares fund in order, so every earlier share must be in already. It debits the payer for real. The pool pays out from the stored payout date with no release call.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.collection.pay_in",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.secondRecipientShareAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "refs.escrowAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "pool"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "fund_share_2"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.payerAccountId"
+                }
+              },
+              "capture": {
+                "fundShare2TransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "fundShare2Pool",
+          "steps": [],
+          "summary": "Pool share 2 of the period total"
+        }
+      },
+      "agentDescription": "Reach for pool when the payer funds one period total that is then split across 2 fixed recipients by stored share amounts. Callers fund the pool one share at a time. Each recipient's payout fires from the stored payout date, not from a call.",
+      "description": "Pooled split: the payer pools the period's poolAmount share by share; the pool distributes to every recipient in full on the stored payout date",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "firstRecipientAccountId": {
+          "description": "The first recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "firstRecipientShareAmount": {
+          "description": "60% of poolAmount (carries the integer-division remainder): the first recipient's share. Computed as floor(poolAmount * 6000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "payerAccountId": {
+          "description": "The payer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "payoutDueAt": {
+          "description": "The period's payout date; the pool distributes from it",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "poolAmount": {
+          "description": "The pooled period total in SAR minor units; the share fields below partition it exactly",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "secondRecipientAccountId": {
+          "description": "The second recipient account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "secondRecipientShareAmount": {
+          "description": "40% of poolAmount: the second recipient's share. Computed as floor(poolAmount * 4000 / 10000) in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "pool",
+      "idPrefix": "pool",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "pooling_1",
+          "pooled",
+          "distributing_1",
+          "distributed"
+        ],
+        "transitions": {
+          "distribute_share_1": {
+            "from": [
+              "pooled"
+            ],
+            "to": "distributing_1"
+          },
+          "distribute_share_2": {
+            "from": [
+              "distributing_1"
+            ],
+            "to": "distributed"
+          },
+          "fund_share_1": {
+            "from": [
+              "created"
+            ],
+            "to": "pooling_1"
+          },
+          "fund_share_2": {
+            "from": [
+              "pooling_1"
+            ],
+            "to": "pooled"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "firstRecipientAccountId",
+        "payer": "payerAccountId"
+      },
+      "partitions": [
+        {
+          "pieceFields": [
+            "firstRecipientShareAmount",
+            "secondRecipientShareAmount"
+          ],
+          "totalField": "poolAmount"
+        }
+      ],
+      "required": [
+        "payerAccountId",
+        "firstRecipientAccountId",
+        "secondRecipientAccountId",
+        "poolAmount",
+        "payoutDueAt",
+        "firstRecipientShareAmount",
+        "secondRecipientShareAmount",
+        "currency"
+      ],
+      "summary": "Period pool from payer split 2 ways",
+      "title": "Pool"
+    }
+  ],
+  "product": "pooled_split_example",
+  "subjects": [],
+  "title": "Pooled split example",
+  "udl": 1,
+  "version": 1
+}

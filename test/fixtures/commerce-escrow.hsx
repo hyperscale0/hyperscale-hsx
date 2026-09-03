@@ -1,10 +1,10 @@
 // A commerce cooperative: instant checkout with asymmetric fees, a refundable
 // rental deposit, and a weekly fulfillment pool split between the partners.
-// Exercises instant_transfer, deposit, and pooled_split in one company.
+// Exercises instant_transfer, security_deposit, and pooled_split in one company.
 
 program commerce_escrow "Commerce cooperative"
 
-import { instant_transfer, deposit, pooled_split } from "settlement"
+import { instant_transfer, security_deposit, pooled_split } from "std/settlements"
 
 party shopper:  person
 party merchant: business
@@ -20,7 +20,7 @@ settlement checkout = instant_transfer {
   fees { shopper: 1%, merchant: 2% }
 }
 
-settlement rental_deposit = deposit {
+settlement rental_deposit = security_deposit {
   payer:  shopper
   holder: merchant
   amount: depositAmount: money(SAR)

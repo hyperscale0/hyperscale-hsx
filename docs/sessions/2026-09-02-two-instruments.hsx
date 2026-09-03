@@ -1,0 +1,21 @@
+program juniper_forge_contract "Juniper Forge contract"
+import { instant_transfer, scheduled } from "std/settlements"
+
+party samira_nassar: person
+party juniper_forge_interiors: business
+
+settlement concept_fee = instant_transfer {
+  payer: samira_nassar
+  payee: juniper_forge_interiors
+  amount: conceptFee: money(SAR)
+  fees { samira_nassar: 1% }
+}
+
+settlement build_installments = scheduled {
+  payer: samira_nassar
+  payee: juniper_forge_interiors
+  amount: buildPrice: money(SAR)
+  count: 3
+  every: P30D
+  first_due: firstBuildPaymentAt
+}

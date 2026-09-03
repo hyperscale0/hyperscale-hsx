@@ -1,0 +1,247 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "charge_api_call",
+        "charge_storage_gib",
+        "close_period"
+      ],
+      "actions": {
+        "charge_api_call": {
+          "agentDescription": "Charge one metered api call at the committed price. The period must still be open, so charge before periodEnd. The transfer posts from the customer to the provider at once and there is no reversal action.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.callRate"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.providerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "usage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "charge_api_call"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "chargeApiCallTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "chargeApiCallUsage",
+          "steps": [],
+          "summary": "Charge one metered api call; the emission is the transfer itself"
+        },
+        "charge_storage_gib": {
+          "agentDescription": "Charge one metered storage gib at the committed price. The period must still be open, so charge before periodEnd. The transfer posts from the customer to the provider at once and there is no reversal action.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.storageRate"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.providerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "usage"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "charge_storage_gib"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.customerAccountId"
+                }
+              },
+              "capture": {
+                "chargeStorageGibTransferTransferId": "transferId"
+              },
+              "key": "transfer",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "publicAction": "chargeStorageGibUsage",
+          "steps": [],
+          "summary": "Charge one metered storage gib; the emission is the transfer itself"
+        },
+        "close_period": {
+          "due": {
+            "field": "periodEnd"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Close the metering period; no further usage can be charged"
+        },
+        "create": {
+          "agentDescription": "Open the metering period with its committed rate card. The caller supplies the periodEnd anchor and every per-unit price. The prices are fixed here and no later charge can change them. No money moves.",
+          "moves": [],
+          "publicAction": "createUsage",
+          "steps": [],
+          "summary": "Open a usage period with its committed rate card"
+        }
+      },
+      "agentDescription": "Reach for metered when the customer is billed per unit at a rate card fixed when the period opens, and the period closes on periodEnd. Every charge is its own transfer. Pick recurring collection for a flat repeating amount and instant transfer for a one-off payment.",
+      "description": "Metered usage: the customer is charged per unit at the committed rate card until the period closes on its stored end date",
+      "fields": {
+        "callRate": {
+          "description": "Per-unit price of api call in SAR minor units, committed at period open",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "customerAccountId": {
+          "description": "The customer account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "periodEnd": {
+          "description": "End of this metering period; the close makes further charges unreachable",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "providerAccountId": {
+          "description": "The provider account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "storageRate": {
+          "description": "Per-unit price of storage gib in SAR minor units, committed at period open",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "usage",
+      "idPrefix": "usag",
+      "lifecycle": {
+        "initial": "open",
+        "states": [
+          "open",
+          "closed"
+        ],
+        "transitions": {
+          "charge_api_call": {
+            "from": [
+              "open"
+            ],
+            "to": "open"
+          },
+          "charge_storage_gib": {
+            "from": [
+              "open"
+            ],
+            "to": "open"
+          },
+          "close_period": {
+            "from": [
+              "open"
+            ],
+            "to": "closed"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "providerAccountId",
+        "payer": "customerAccountId"
+      },
+      "required": [
+        "customerAccountId",
+        "providerAccountId",
+        "periodEnd",
+        "callRate",
+        "storageRate",
+        "currency"
+      ],
+      "summary": "Metered charges from customer on a committed rate card",
+      "title": "Usage"
+    }
+  ],
+  "product": "metered_example",
+  "subjects": [],
+  "title": "Metered example",
+  "udl": 1,
+  "version": 1
+}

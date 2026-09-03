@@ -1,0 +1,30 @@
+program open_membership "Open membership"
+import { recurring_collection, scheduled } from "std/settlements"
+
+party member: person
+party club: business
+
+settlement membership = scheduled {
+  mode: obligation
+  payer: member
+  payee: club
+  debtor: member
+  amount: monthlyFee: money(SAR)
+  every: P1M
+  first_due: firstPeriodAt
+  until: port cancel_membership
+  month_end: clamp_to_last_day
+  period_liability: one_open
+  termination_drain: cancel_membership
+  mandate: port collect_membership
+}
+
+port collect_membership {
+  allowed: [member]
+  shape: { evidenceReference: text }
+}
+
+port cancel_membership {
+  allowed: [member]
+  shape: { reason: text }
+}

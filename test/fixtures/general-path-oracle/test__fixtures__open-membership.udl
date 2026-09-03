@@ -1,0 +1,262 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "open_period",
+        "collect_period",
+        "cancel_membership"
+      ],
+      "actions": {
+        "cancel_membership": {
+          "agentDescription": "Cancel the open schedule for good and drain any period liability still standing. Only the payer may call it, and the reference fields the port declares are required. No further period opens and there is no reactivation.",
+          "captureInput": {
+            "reason": "reason"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "type": "object"
+          },
+          "moves": [],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "cancelMembershipMembership",
+          "steps": [],
+          "summary": "Cancel the open schedule and drain any period liability"
+        },
+        "collect_period": {
+          "agentDescription": "Collect one open period charge from the payer, with the mandate evidence reference kept in the receipt. A period must be open. Only the payer may call it. This moves the period amount and does not reverse.",
+          "captureInput": {
+            "mandateEvidenceReference": "evidenceReference"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "evidenceReference": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceReference"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.monthlyFee"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.clubAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "membership"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "collect_period"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.memberAccountId"
+                }
+              },
+              "capture": {
+                "collectPeriodPeriodCollectionTransferId": "transferId"
+              },
+              "key": "period_collection",
+              "operation": "internal_transfer.create"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "payer"
+            ]
+          },
+          "publicAction": "collectPeriodMembership",
+          "steps": [],
+          "summary": "Collect one authored period charge with mandate evidence"
+        },
+        "create": {
+          "agentDescription": "Create the open obligation before its first period anchor. No money moves. The charge for one period and the first anchor are fixed here, and periods then open on their own.",
+          "moves": [],
+          "publicAction": "createMembership",
+          "steps": [],
+          "summary": "Create the open obligation before its first anchor"
+        },
+        "open_period": {
+          "due": {
+            "every": {
+              "delinquency": "parent_policy",
+              "drainAction": "cancel_membership",
+              "liability": "one_open",
+              "period": {
+                "calendar": "gregorian",
+                "monthEnd": "clamp_to_last_day",
+                "months": 1
+              },
+              "untilAction": "cancel_membership"
+            },
+            "field": "firstPeriodAt"
+          },
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.due",
+                "source": "due"
+              }
+            ]
+          },
+          "moves": [],
+          "steps": [],
+          "summary": "Open exactly one period liability without moving money"
+        }
+      },
+      "agentDescription": "Reach for scheduled when one payer owes one payee on a calendar. It covers a plan of fixed installments partitioning one total, an obligation whose installments are paid through child payment records and can go delinquent, and an open period charge that repeats until a cancel port fires. Rotating pool is for a group taking turns.",
+      "description": "Open monthly obligation for member; one period liability at a time",
+      "fields": {
+        "clubAccountId": {
+          "description": "The club account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "currency": {
+          "const": "SAR",
+          "description": "ISO 4217 currency code",
+          "type": "string"
+        },
+        "firstPeriodAt": {
+          "description": "First period anchor; missing Gregorian month days clamp to the target month's final day",
+          "format": "hyperscale-date-time",
+          "type": "string"
+        },
+        "memberAccountId": {
+          "description": "The member account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "monthlyFee": {
+          "description": "Exact charge for one P1M period in SAR minor units",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        }
+      },
+      "id": "membership",
+      "idPrefix": "memb",
+      "lifecycle": {
+        "initial": "active",
+        "states": [
+          "active",
+          "period_open",
+          "canceled"
+        ],
+        "transitions": {
+          "cancel_membership": {
+            "from": [
+              "active",
+              "period_open"
+            ],
+            "to": "canceled"
+          },
+          "collect_period": {
+            "from": [
+              "period_open"
+            ],
+            "to": "active"
+          },
+          "open_period": {
+            "from": [
+              "active"
+            ],
+            "to": "period_open"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "clubAccountId",
+        "payer": "memberAccountId"
+      },
+      "required": [
+        "memberAccountId",
+        "clubAccountId",
+        "monthlyFee",
+        "currency",
+        "firstPeriodAt"
+      ],
+      "summary": "Open P1M obligation for member",
+      "title": "Membership"
+    }
+  ],
+  "product": "open_membership",
+  "subjects": [],
+  "title": "Open membership",
+  "udl": 1,
+  "version": 1
+}

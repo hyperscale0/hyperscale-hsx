@@ -1,0 +1,221 @@
+module std.settlements.threshold_pool
+
+export instrument threshold_pool<C>(
+  contributor: optional<party>,
+  beneficiary: optional<party>,
+  target: money<C>,
+  commitment: money<C>,
+  max_contributors: optional<integer>,
+  close_by: date,
+  close_policy: optional<text>,
+  overfund_policy: optional<text>,
+  cancel_policy: optional<text>,
+  fail_policy: optional<text>,
+  beneficiary_account: optional<account<C>>,
+  memo: optional<text>,
+  contribution_instrument: optional<block>,
+  wording: optional<block>,
+) {
+  when(wording) {
+    let(wording_unknown_keys): keys_except(wording, "pool_summary", "pool_description", "create_summary", "commitment_create_summary", "commitment_cancel_summary", "commitment_refund_summary");
+    when(wording_unknown_keys) {
+      unsupported {
+        code: HSX1407;
+        message: "threshold_pool wording contains an unknown key";
+        fix: "use only the six declared threshold_pool wording keys";
+      }
+    }
+  }
+  agent_description: "Reach for threshold pool when many contributors commit toward one target and nothing is collected unless the pool reaches it by the close date. Commitments sit in escrow until the pool activates or fails. Pick weighted distribution to pay a pool out and instant transfer for a single payment.";
+  when_not(contribution_instrument) {
+  fields {
+    [beneficiary]AccountId { type: account<C>; description: concat("The ", words(beneficiary), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    close_by { type: date; description: "Stored close anchor"; }
+    currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+    maxContributors { type: integer; description: concat("Exactly ", max_contributors, " admitted contributors"); const: max_contributors; }
+    target { type: money<C>; description: "Funding target in {C} minor units"; }
+  }
+  lifecycle {
+    states open active failed settled;
+    initial open;
+    on activate: open -> active;
+    on fail: open -> failed;
+    on close: active -> settled;
+  }
+  parties { beneficiary: concat(camel(beneficiary), "AccountId"); }
+  required: [concat(camel(beneficiary), "AccountId"), currency, target, close_by, maxContributors];
+  title: sentence(instrument);
+  id_prefix: prefix(instrument);
+  let(pool_summary): get(wording, "pool_summary");
+  when_not(pool_summary) { summary: concat("Threshold contribution pool for ", words(beneficiary)); }
+  when(pool_summary) { summary: pool_summary; }
+  let(pool_description): get(wording, "pool_description");
+  when_not(pool_description) { description: "All-or-nothing aggregate contribution threshold"; }
+  when(pool_description) { description: pool_description; }
+  aggregate_invariants { childField: amount; childInstrumentId: concat(instrument, "_commitment"); childRefField: concat(camel(instrument), "Id"); childStatuses: [committed]; parentField: target; }
+  aggregate_invariants { childInstrumentId: concat(instrument, "_commitment"); childRefField: concat(camel(instrument), "Id"); childStatuses: [committed]; count: true; parentField: maxContributors; }
+  action create {
+    agent_description: "Open the pool before any commitment exists. The caller supplies the target, the currency, the beneficiary account, the close anchor, and the pinned contributor count. No money moves and the pool opens for commitments.";
+    let(create_summary): get(wording, "create_summary");
+    when_not(create_summary) { summary: "Open the contribution pool"; }
+    when(create_summary) { summary: create_summary; }
+    moves: [];
+    steps: [];
+  }
+  action activate {
+    summary: "Activate when commitments meet the target";
+    due { field: close_by; }
+    requires aggregate { instrumentId: concat(instrument, "_commitment"); over: children; refField: concat(camel(instrument), "Id"); statuses: [committed]; check: { kind: sum_at_least; amountField: amount; targetField: target; }; }
+    moves: [];
+    steps: [];
+  }
+  action fail {
+    summary: "Fail when commitments remain below target";
+    due { field: close_by; }
+    requires aggregate { instrumentId: concat(instrument, "_commitment"); over: children; refField: concat(camel(instrument), "Id"); statuses: [committed]; check: { kind: sum_below; amountField: amount; targetField: target; }; }
+    moves: [];
+    steps: [];
+  }
+  action close {
+    agent_description: "Settle the pool once every admitted commitment is collected or was cancelled before activation. The pool must be active. No money moves here, collect already paid the beneficiary.";
+    summary: "Settle after every admitted row is collected or was cancelled before activation";
+    requires aggregate { instrumentId: concat(instrument, "_commitment"); over: children; refField: concat(camel(instrument), "Id"); statuses: [cancelled, collected]; check: { kind: all_in; }; }
+    moves: [];
+    steps: [];
+  }
+  instruments {
+    instrument {
+      let(parent_name): instrument;
+      id: concat(parent_name, "_commitment");
+      generatedPrefix: true;
+      fields {
+        amount { type: money<C>; description: "One whole commitment amount"; }
+        [beneficiary]AccountId { type: account<C>; description: concat("The ", words(beneficiary), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+        [parent_name]Id { type: ref<parent_name>; description: concat("The exact ", parent_name); pattern: concat("^", prefix(parent_name), "_(sandbox|live)_[a-z0-9]{8,64}$"); }
+        [contributor]AccountId { type: account<C>; description: concat("The ", words(contributor), " account"); pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+        currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
+      }
+      lifecycle {
+        states committed cancelled collected refunded;
+        initial committed;
+        on cancel: committed -> cancelled;
+        on collect: committed -> collected;
+        on refund: committed -> refunded;
+      }
+      parties { beneficiary: concat(camel(beneficiary), "AccountId"); payer: concat(camel(contributor), "AccountId"); }
+      required: [concat(camel(beneficiary), "AccountId"), concat(camel(contributor), "AccountId"), amount, currency, concat(camel(parent_name), "Id")];
+      title: concat(sentence(parent_name), " Commitment");
+      agent_description: concat("Reach for this child row to record one whole commitment into a ", words(parent_name), ". Each contributor commits once, the money sits in the product escrow, and whether it is collected or refunded depends on the pool reaching its target.");
+      summary: concat("Whole commitment to ", parent_name);
+      description: concat("One whole commitment linked to ", parent_name);
+      action create {
+        agent_description: "Commit one whole amount into the pool escrow. The pool must still be open, the currency and beneficiary account must match it, and the committed total plus this amount must stay within the target. The money leaves the contributor now.";
+        let(commitment_create_summary): get(wording, "commitment_create_summary");
+        when_not(commitment_create_summary) { summary: "Store one whole commitment without exceeding the pool target"; }
+        when(commitment_create_summary) { summary: commitment_create_summary; }
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; bind: { [beneficiary]AccountId: concat("fields.", camel(beneficiary), "AccountId"); currency: "fields.currency"; }; }
+        requires exposure { amountField: amount; anchorField: concat(camel(parent_name), "Id"); capField: target; capOnAnchor: true; childInstrumentId: concat(parent_name, "_commitment"); statuses: [committed]; }
+        moves: [{ amount: amount; from: payer; to: refs.escrowAccountId; key: commit; }];
+        steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { escrowAccountId: accountId; }; }];
+      }
+      action cancel {
+        agent_description: "Pull one commitment back out of escrow to the contributor. The pool must still be open, so this is unavailable once the pool activates or fails. The money returns and the commitment is closed.";
+        let(commitment_cancel_summary): get(wording, "commitment_cancel_summary");
+        when_not(commitment_cancel_summary) { summary: "Cancel one commitment while the pool is open"; }
+        when(commitment_cancel_summary) { summary: commitment_cancel_summary; }
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [open]; match: { "fields.[beneficiary]AccountId": concat("fields.", camel(beneficiary), "AccountId"); "fields.currency": "fields.currency"; }; }
+        moves: [{ amount: amount; from: refs.escrowAccountId; to: payer; key: cancel; }];
+        steps: [];
+      }
+      action collect {
+        agent_description: "Release one commitment out of escrow to the beneficiary. The pool must be active, which happens only once commitments meet the target. The money moves for good.";
+        summary: "Collect one successful commitment whole";
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [active]; match: { "fields.[beneficiary]AccountId": concat("fields.", camel(beneficiary), "AccountId"); "fields.currency": "fields.currency"; }; }
+        moves: [{ amount: amount; from: refs.escrowAccountId; to: beneficiary; key: collect; }];
+        steps: [];
+      }
+      action refund {
+        agent_description: "Return one commitment out of escrow to the contributor after the pool failed to reach its target. The pool must be in failed. The money returns and the commitment is closed.";
+        let(commitment_refund_summary): get(wording, "commitment_refund_summary");
+        when_not(commitment_refund_summary) { summary: "Refund one failed-pool commitment whole"; }
+        when(commitment_refund_summary) { summary: commitment_refund_summary; }
+        requires refs { field: concat(camel(parent_name), "Id"); statuses: [failed]; match: { "fields.[beneficiary]AccountId": concat("fields.", camel(beneficiary), "AccountId"); "fields.currency": "fields.currency"; }; }
+        moves: [{ amount: amount; from: refs.escrowAccountId; to: payer; key: refund; }];
+        steps: [];
+      }
+    }
+  }
+  }
+
+  when(contribution_instrument) {
+    let(contribution_id): get(contribution_instrument, "instrument");
+    let(contribution_ref_field): get(contribution_instrument, "ref_field");
+    let(contribution_amount_field): get(contribution_instrument, "amount_field");
+    let(committed_status): get(contribution_instrument, "committed_status");
+    let(collected_status): get(contribution_instrument, "collected_status");
+    let(instrument_id_prefix): get(contribution_instrument, "id_prefix");
+    let(active_parked): get(contribution_instrument, "active_parked");
+    let(custody_ref): get(contribution_instrument, "custody_ref");
+    let(beneficiary_account_description): get(contribution_instrument, "beneficiary_account_description");
+    let(target_description): get(contribution_instrument, "target_description");
+    let(currency_description): get(contribution_instrument, "currency_description");
+    let(create_examples): get(contribution_instrument, "create_examples");
+    let(activate_examples): get(contribution_instrument, "activate_examples");
+    let(fail_examples): get(contribution_instrument, "fail_examples");
+    let(close_examples): get(contribution_instrument, "close_examples");
+    let(beneficiary_account_field): camel(beneficiary_account);
+    let(target_field): camel(target);
+    let(close_field): camel(close_by);
+
+    fields {
+      [beneficiary_account_field] { type: account<C>; description: beneficiary_account_description; pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$"; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      [close_field] { type: date; }
+      currency { type: text; description: currency_description; maxLength: 3; minLength: 3; pattern: "^[A-Z]{3}$"; }
+      when(memo) { [memo] { type: text; optional: true; maxLength: 180; minLength: 1; } }
+      [target_field] { type: money<C>; description: target_description; }
+    }
+    lifecycle {
+      states open active failed settled;
+      initial open;
+      on activate: open -> active;
+      on close: active -> settled;
+      on fail: open -> failed;
+    }
+    parties { beneficiary: beneficiary_account_field; }
+    required: [beneficiary_account_field, target_field, currency, close_field];
+    aggregate_invariants { childField: contribution_amount_field; childInstrumentId: contribution_id; childRefField: contribution_ref_field; childStatuses: [committed_status, collected_status]; parentField: target_field; }
+    caller_parked_states { active: active_parked; }
+    id_prefix: instrument_id_prefix;
+    action create {
+      public: none;
+      agent_description: "Open the pool before any contribution exists. The caller supplies the target, the currency, the beneficiary account, and the close anchor, and the pool provisions its escrow account. No money moves.";
+      examples: create_examples;
+      moves: [];
+      steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { [custody_ref]: accountId; }; }];
+    }
+    action activate {
+      public: none;
+      due { field: close_field; }
+      examples: activate_examples;
+      requires aggregate { instrumentId: contribution_id; over: children; refField: contribution_ref_field; statuses: [committed_status]; check: { kind: sum_at_least; amountField: contribution_amount_field; targetField: target_field; }; }
+      moves: [];
+      steps: [];
+    }
+    action fail {
+      public: none;
+      due { field: close_field; }
+      examples: fail_examples;
+      requires aggregate { instrumentId: contribution_id; over: children; refField: contribution_ref_field; statuses: [committed_status]; check: { kind: sum_below; amountField: contribution_amount_field; targetField: target_field; }; }
+      moves: [];
+      steps: [];
+    }
+    action close {
+      public: none;
+      agent_description: "Settle the pool once every contribution has been collected into the beneficiary account. No money moves. Refused while any contribution is still uncollected, so wait for the per-contribution collections to run rather than retrying.";
+      examples: close_examples;
+      requires aggregate { instrumentId: contribution_id; over: children; refField: contribution_ref_field; statuses: [collected_status]; check: { kind: all_in; }; }
+      moves: [];
+      steps: [];
+    }
+  }
+}

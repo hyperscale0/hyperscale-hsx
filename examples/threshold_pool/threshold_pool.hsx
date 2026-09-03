@@ -1,0 +1,16 @@
+program capital_pool_example "Capital pool example"
+import { threshold_pool } from "std/settlements"
+party contributor: person
+party company: business
+settlement round = threshold_pool {
+  contributor: contributor
+  beneficiary: company
+  target: targetAmount: money(SAR)
+  commitment: commitmentAmount: money(SAR)
+  max_contributors: 100
+  close_by: closeBy
+  close_policy: threshold
+  overfund_policy: reject
+  cancel_policy: before_close
+  fail_policy: whole_commitment_refund
+}

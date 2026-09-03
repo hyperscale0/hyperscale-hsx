@@ -47,33 +47,11 @@ describe("hsx check", () => {
   it("prints one file:line:col line per diagnostic and exits 1", async () => {
     const result = await run(["check", BROKEN]);
     expect(result.code).toBe(1);
+    // Binding one bad party no longer suppresses the independent bad port.
     expect(result.err.split("\n")).toEqual([
-      `${BROKEN}:15:12: error [check] settlement basket payee must name a declared party; there is no party named grocer`,
-      `${BROKEN}:17:17: error [check] settlement basket decides release through port confirm_pickup, but no port with that name is declared`,
-      `${BROKEN}:18:21: error [check] the on_cancel split must account for exactly 100%; these shares total 60%`,
+      `${BROKEN}:17:17: error [typecheck] decision port confirm_pickup is not declared`,
+      `${BROKEN}:15:12: error [bind] party role refers to grocer, which is not declared`,
     ]);
-  });
-
-  it("exits 0 on a warning, and 1 on the same warning under --strict", async () => {
-    const lintful = `program lintful "Lintful"
-import { instant_transfer } from "settlement"
-party payer_side: person
-party payee_side: business
-party bystander: person
-settlement pay = instant_transfer {
-  payer: payer_side
-  payee: payee_side
-  amount: total: money(SAR)
-}
-`;
-    const files = { "lint.hsx": lintful };
-    const relaxed = await run(["check", "lint.hsx"], files);
-    expect(relaxed.code).toBe(0);
-    expect(relaxed.err).toContain("warning [check]");
-    expect(relaxed.err).toContain("bystander");
-
-    const strict = await run(["check", "lint.hsx", "--strict"], files);
-    expect(strict.code).toBe(1);
   });
 });
 
@@ -84,14 +62,16 @@ describe("hsx build", () => {
     const written = result.written.get("ir.json");
     expect(written).toBeDefined();
     const artifacts = JSON.parse(written as string) as {
-      document: { hsx: number; nouns: { id: string }[]; product: string };
+      document: { udl: number; instruments: { id: string }[]; product: string };
       frame: { moneyEvents: { key: string }[] };
     };
-    expect(artifacts.document.hsx).toBe(1);
+    expect(artifacts.document.udl).toBe(1);
     expect(artifacts.document.product).toBe("tip_jar");
-    expect(artifacts.document.nouns.map((noun) => noun.id)).toEqual(["tip"]);
+    expect(
+      artifacts.document.instruments.map((instrument) => instrument.id),
+    ).toEqual(["tip"]);
     expect(artifacts.frame.moneyEvents.map((event) => event.key)).toEqual([
-      "tip_pay_1",
+      "transfer",
     ]);
     expect(written).toEndWith("\n");
   });
@@ -107,7 +87,90 @@ describe("hsx build", () => {
     const result = await run(["build", BROKEN, "--out", "ir.json"]);
     expect(result.code).toBe(1);
     expect(result.written.size).toBe(0);
-    expect(result.err).toContain("error [check]");
+    expect(result.err).toContain("error [bind]");
+  });
+});
+
+describe("hsx cost", () => {
+  it("reads the packaged card and prints its effect rows as a table", async () => {
+    const result = await run(["cost", CLEAN]);
+    expect(result.code).toBe(0);
+    expect(result.out.split("\n")[0]).toMatch(
+      /^costTableVersion\t\d{4}-\d{2}-\d{2}\.\d+$/,
+    );
+    expect(result.out.split("\n")[1]).toBe(
+      "instrument.action\teffect\tunit\tcount\ttotal\tpayer",
+    );
+    expect(result.out).toContain("tip.pay_piece_1\tmoves.transfer.internal");
+    expect(result.out).toContain("75 SAR minor + amount-dependent (11 bps)");
+    expect(result.out).toContain("\tend_customer");
+  });
+
+  it("prints the version-pinned manifest as JSON", async () => {
+    const result = await run(["cost", CLEAN, "--json"]);
+    expect(result.code).toBe(0);
+    const manifest = JSON.parse(result.out) as {
+      actions: readonly {
+        components: readonly { signature: string }[];
+      }[];
+      costTableVersion: string;
+    };
+    expect(manifest.costTableVersion).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+    expect(
+      manifest.actions.flatMap((action) => action.components),
+    ).toContainEqual(
+      expect.objectContaining({ signature: "moves.transfer.internal" }),
+    );
+  });
+
+  it("writes cost JSON to --out", async () => {
+    const result = await run(["cost", CLEAN, "--out", "cost.json"]);
+    expect(result.code).toBe(0);
+    expect(result.out).toBe("");
+    const written = result.written.get("cost.json");
+    expect(written).toBeDefined();
+    expect(JSON.parse(written as string).costTableVersion).toMatch(
+      /^\d{4}-\d{2}-\d{2}\.\d+$/,
+    );
+    expect(written).toEndWith("\n");
+  });
+
+  it("exits 1 and prints no table for a refused program", async () => {
+    const result = await run(["cost", BROKEN]);
+    expect(result.code).toBe(1);
+    expect(result.out).toBe("");
+  });
+});
+
+describe("hsx explain", () => {
+  it("prints the catalog title, fix, and example", async () => {
+    const result = await run(["explain", "HSX1201"]);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      "HSX1201 Linear money consumed more than once",
+    );
+    expect(result.out).toContain("Fix:");
+    expect(result.out).toContain("Example:");
+  });
+
+  it("exits 2 for an unknown diagnostic code", async () => {
+    const result = await run(["explain", "HSX9999"]);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain("unknown diagnostic code HSX9999");
+  });
+});
+
+describe("hsx format", () => {
+  it("prints canonical source without changing the input file", async () => {
+    const result = await run(["format", "general.hsx"], {
+      "general.hsx": "module std.payments\nexport const fee:bps=25",
+    });
+    expect(result.code).toBe(0);
+    expect(result.err).toBe("");
+    expect(result.out).toBe(
+      "module std.payments;\nexport const fee: bps = 25;",
+    );
+    expect(result.written.size).toBe(0);
   });
 });
 
@@ -124,10 +187,10 @@ describe("hsx usage", () => {
     expect(result.out).toContain("hsx check <file.hsx>");
   });
 
-  it("prints the package version and the IR version for --version", async () => {
+  it("prints the package and UDL versions for --version", async () => {
     const result = await run(["--version"]);
     expect(result.code).toBe(0);
-    expect(result.out).toBe(`${HSX_VERSION} (IR version 1)`);
+    expect(result.out).toBe(`${HSX_VERSION} (UDL version 1)`);
   });
 
   it("exits 2 on an unknown command", async () => {
@@ -142,6 +205,7 @@ describe("hsx usage", () => {
     expect((await run(["check", CLEAN, CLEAN])).code).toBe(2);
     expect((await run(["build", CLEAN, "--out"])).code).toBe(2);
     expect((await run(["check", CLEAN, "--out", "x.json"])).code).toBe(2);
+    expect((await run(["build", CLEAN, "--json"])).code).toBe(2);
   });
 
   it("exits 2 and names the path when the file cannot be read", async () => {

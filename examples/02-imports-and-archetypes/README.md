@@ -44,10 +44,12 @@ field types are `text`, `date`, `id(<asset>)`, and `money(<CUR>)`.
 asset booth: good { title_transfer: off_platform }
 ```
 
-`title_transfer: off_platform` says ownership of the booth changes hands
-outside the platform. Money is always on-platform; this flag is about the
-object. It shows up in the Business Frame's `offPlatform` list so nobody
-mistakes an escrow of money for an escrow of the thing.
+`title_transfer: off_platform` records that ownership of the booth changes
+hands outside the platform. Money stays on-platform; this flag describes the
+object. Today `frameFor` emits `offPlatform` as an empty list alongside the
+frame's five constant fields (`confidence: "high"`, `conservationGroups: []`,
+`offPlatform: []`, `openQuestions: []`, and `rules: []`), so callers never
+assume the list carries parsed asset flags.
 
 ## Fees have a side, and the side matters
 
@@ -76,7 +78,7 @@ nothing.
 
 ## Where the piece fields come from
 
-Look at the compiled noun's `fields` and you will find `piece1Amount`,
+Look at the compiled instrument's `fields` and you will find `piece1Amount`,
 `piece2Amount`, `piece3Amount` next to `bookingFee`, plus a `partitions`
 clause proving they sum to it exactly.
 

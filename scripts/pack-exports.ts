@@ -1,8 +1,8 @@
 /**
  * Pack-time entry-point rewrite (prepack applies, postpack restores).
  *
- * The workspace package.json keeps main/module/types/exports on a `.ts`
- * source: a dist-pointing mapping visible to the workspace would let a
+ * The product package.json keeps main/module/types/exports on a `.ts`
+ * source: a dist-pointing mapping visible to the product would let a
  * consumer read the untracked (and possibly stale) dist/ build during
  * `vp test`. The published tarball needs the opposite, because native Node
  * cannot import .ts out of node_modules. That is the split pnpm formalizes as
@@ -22,15 +22,19 @@
 const packageJsonPath = new URL("../package.json", import.meta.url);
 
 const dataExports = {
-  "./spec/hsx-ir.schema.json": "./spec/hsx-ir.schema.json",
   "./package.json": "./package.json",
+  "./std/*": "./std/*",
 };
 
 const sourceEntries = {
   main: "./src/index.ts",
   module: "./src/index.ts",
   types: "./src/index.ts",
-  exports: { ".": "./src/index.ts", ...dataExports },
+  exports: {
+    ".": "./src/index.ts",
+    "./cost": "./src/cost.ts",
+    ...dataExports,
+  },
 };
 
 const distEntries = {
@@ -39,6 +43,10 @@ const distEntries = {
   types: "./dist/src/index.d.ts",
   exports: {
     ".": { types: "./dist/src/index.d.ts", default: "./dist/src/index.js" },
+    "./cost": {
+      types: "./dist/src/cost.d.ts",
+      default: "./dist/src/cost.js",
+    },
     ...dataExports,
   },
 };

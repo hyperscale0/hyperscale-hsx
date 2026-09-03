@@ -17,9 +17,9 @@ bun test
 
 - [ ] `bun run check` passes locally (typecheck plus the full suite).
 - [ ] A grammar, checker, or lowering change comes with a fixture under `test/fixtures/`. A change without a fixture is a change nobody can defend later.
-- [ ] A change to the emitted IR is reflected in `spec/hsx-ir.schema.json`, and `HSX_IR_VERSION` moves if the shape is no longer backward compatible.
+- [ ] A change to emitted UDL updates its canonical fixture and keeps the UDL package's format law.
 - [ ] A user-visible change is in `CHANGELOG.md` under Unreleased.
-- [ ] New syntax is documented in `docs/reference.md`.
+- [ ] New syntax updates its compiler vocabulary source, then `bun run docs:build` and `bun run docs:check` pass.
 
 Before the merge the maintainer who asked for this change sends the CLA;
 nothing merges until it is signed. CONTRIBUTING.md says why.

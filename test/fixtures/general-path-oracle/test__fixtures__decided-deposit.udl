@@ -1,0 +1,293 @@
+{
+  "instruments": [
+    {
+      "actionOrder": [
+        "create",
+        "place_deposit",
+        "assess_damage",
+        "return_deposit"
+      ],
+      "actions": {
+        "assess_damage": {
+          "agentDescription": "Claim the held deposit for the owner. The deposit must be in held. The reservation settles here, whole or up to the decided amount with the exact remainder released back to the renter. There is no return afterwards.",
+          "decidedAmount": {
+            "boundField": "depositAmount",
+            "field": "damageAmount",
+            "remainderAction": "return_deposit"
+          },
+          "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              },
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[1]"
+              }
+            ]
+          },
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "damageAmount": {
+                "description": "Caller-decided amount in minor units",
+                "pattern": "^(0|[1-9][0-9]{0,17})$",
+                "type": "string"
+              },
+              "evidence": {
+                "description": "Required decision reference retained in the operation receipt",
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "damageAmount",
+              "evidence"
+            ],
+            "type": "object"
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "input",
+                  "path": "damageAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "postMode": {
+                  "from": "const",
+                  "value": "partial_only"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "post",
+              "operation": "internal_transfer.post"
+            },
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Return the unclaimed deposit remainder"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "remainder",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
+          "publicAction": "assessDamageSecurityDeposit",
+          "steps": [],
+          "summary": "Claim the deposit for the owner through assess_damage"
+        },
+        "create": {
+          "agentDescription": "Open the deposit row before anything is reserved. The caller supplies the depositAmount, the currency, and the renter and owner accounts. Nothing is reserved yet, call place deposit next.",
+          "moves": [],
+          "publicAction": "createSecurityDeposit",
+          "steps": [],
+          "summary": "Create a security deposit"
+        },
+        "place_deposit": {
+          "agentDescription": "Reserve the depositAmount against the renter's account in the owner's favor. The deposit must be created. The money is held, not paid: the claim posts it to the owner and the return releases it back.",
+          "effects": {
+            "holds": [
+              {
+                "signature": "holds.reserve",
+                "source": "moves[0]"
+              }
+            ],
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "amount": {
+                  "from": "instance",
+                  "path": "fields.depositAmount"
+                },
+                "currency": {
+                  "from": "instance",
+                  "path": "fields.currency"
+                },
+                "destinationAccountId": {
+                  "from": "instance",
+                  "path": "fields.ownerAccountId"
+                },
+                "metadata.instrumentId": {
+                  "from": "const",
+                  "value": "security_deposit"
+                },
+                "metadata.instrumentInstanceId": {
+                  "from": "instance",
+                  "path": "instrumentInstanceId"
+                },
+                "metadata.phase": {
+                  "from": "const",
+                  "value": "place_deposit"
+                },
+                "productId": {
+                  "from": "instance",
+                  "path": "productId"
+                },
+                "sourceAccountId": {
+                  "from": "instance",
+                  "path": "fields.renterAccountId"
+                }
+              },
+              "capture": {
+                "placeDepositReservationTransferId": "transferId"
+              },
+              "key": "reservation",
+              "operation": "internal_transfer.reserve"
+            }
+          ],
+          "publicAction": "placeDepositSecurityDeposit",
+          "steps": [],
+          "summary": "Reserve the depositAmount against the renter's account"
+        },
+        "return_deposit": {
+          "agentDescription": "Return the held deposit to the renter. The deposit must be in held and unclaimed. This releases the reservation whole and the owner receives nothing.",
+          "effects": {
+            "moves": [
+              {
+                "signature": "moves.transfer.internal",
+                "source": "moves[0]"
+              }
+            ]
+          },
+          "moves": [
+            {
+              "bind": {
+                "reason": {
+                  "from": "const",
+                  "value": "Deposit returned in full"
+                },
+                "transferId": {
+                  "from": "instance",
+                  "path": "refs.placeDepositReservationTransferId"
+                }
+              },
+              "key": "void",
+              "operation": "internal_transfer.void"
+            }
+          ],
+          "publicAction": "returnDepositSecurityDeposit",
+          "steps": [],
+          "summary": "Return the deposit to the renter through return_deposit"
+        }
+      },
+      "agentDescription": "Reach for security deposit when money is reserved against the renter in the owner's favor and later claimed or returned. The funds stay reserved and move only on the claim. Pick captured payment when the holder takes the money in slices, and instant transfer when nothing is held.",
+      "description": "Deposit: the depositAmount is reserved against the renter's account in the owner's favor, then damageAmount is claimed and the exact remainder returned, or the deposit is returned in full",
+      "fields": {
+        "currency": {
+          "description": "ISO 4217 currency code",
+          "maxLength": 3,
+          "minLength": 3,
+          "pattern": "^[A-Z]{3}$",
+          "type": "string"
+        },
+        "depositAmount": {
+          "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
+          "pattern": "^[1-9][0-9]{0,17}$",
+          "type": "string"
+        },
+        "ownerAccountId": {
+          "description": "The owner account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        },
+        "renterAccountId": {
+          "description": "The renter account",
+          "pattern": "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+          "type": "string",
+          "x-hyperscale-reference-filter": {
+            "column": "role",
+            "values": [
+              "customer_balance"
+            ]
+          }
+        }
+      },
+      "id": "security_deposit",
+      "idPrefix": "sd",
+      "lifecycle": {
+        "initial": "created",
+        "states": [
+          "created",
+          "held",
+          "claimed",
+          "returned"
+        ],
+        "transitions": {
+          "assess_damage": {
+            "from": [
+              "held"
+            ],
+            "to": "claimed"
+          },
+          "place_deposit": {
+            "from": [
+              "created"
+            ],
+            "to": "held"
+          },
+          "return_deposit": {
+            "from": [
+              "held"
+            ],
+            "to": "returned"
+          }
+        }
+      },
+      "parties": {
+        "beneficiary": "ownerAccountId",
+        "payer": "renterAccountId"
+      },
+      "required": [
+        "renterAccountId",
+        "ownerAccountId",
+        "depositAmount",
+        "currency"
+      ],
+      "summary": "Refundable deposit from renter held for owner",
+      "title": "Security deposit"
+    }
+  ],
+  "product": "equipment_rental",
+  "subjects": [],
+  "title": "Equipment rental",
+  "udl": 1,
+  "version": 1
+}

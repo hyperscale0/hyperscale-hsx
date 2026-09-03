@@ -1,0 +1,16 @@
+program instant_transfer_example "Instant transfer example"
+import { instant_transfer } from "std/settlements"
+party customer: person
+party merchant: business
+settlement transfer = instant_transfer {
+  payer: customer
+  payee: merchant
+  amount: transferAmount: money(SAR)
+  fees {
+    customer: checkoutFee: money(SAR)
+    merchant {
+      tier { from: 0, to: 10000, fee: 1% }
+      tier { from: 10000, fee: highValueFee: money(SAR) }
+    }
+  }
+}

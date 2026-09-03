@@ -51,3 +51,21 @@ jobs:
 
       - name: Pack
         run: bun pm pack --dry-run
+
+  Editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+
+      - name: Package editor
+        working-directory: editors/vscode
+        run: bunx @vscode/vsce package --no-dependencies --out hsx.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hsx-vscode-extension
+          path: editors/vscode/hsx.vsix

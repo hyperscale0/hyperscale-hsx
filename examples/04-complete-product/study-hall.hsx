@@ -14,7 +14,7 @@
 
 program study_hall "Study hall"
 
-import { held_payment, deposit, pooled_split } from "settlement"
+import { held_payment, security_deposit, pooled_split } from "std/settlements"
 
 party student:     person
 party tutor:       business
@@ -31,7 +31,7 @@ settlement lesson = held_payment {
   release: port confirm_lesson | at(lessonEndsAt)
 }
 
-settlement kit_deposit = deposit {
+settlement kit_deposit = security_deposit {
   payer:  student
   holder: tutor
   amount: kitDeposit: money(SAR)
