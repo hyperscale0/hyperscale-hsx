@@ -56,22 +56,20 @@ describe("hsx check", () => {
 });
 
 describe("hsx build", () => {
-  it("writes the document and frame to --out", async () => {
+  it("writes the document to --out", async () => {
     const result = await run(["build", CLEAN, "--out", "ir.json"]);
     expect(result.code).toBe(0);
     const written = result.written.get("ir.json");
     expect(written).toBeDefined();
-    const artifacts = JSON.parse(written as string) as {
-      document: { udl: number; instruments: { id: string }[]; product: string };
-      frame: { moneyEvents: { key: string }[] };
+    const document = JSON.parse(written as string) as {
+      instruments: { id: string }[];
+      product: string;
+      udl: number;
     };
-    expect(artifacts.document.udl).toBe(1);
-    expect(artifacts.document.product).toBe("tip_jar");
-    expect(
-      artifacts.document.instruments.map((instrument) => instrument.id),
-    ).toEqual(["tip"]);
-    expect(artifacts.frame.moneyEvents.map((event) => event.key)).toEqual([
-      "transfer",
+    expect(document.udl).toBe(1);
+    expect(document.product).toBe("tip_jar");
+    expect(document.instruments.map((instrument) => instrument.id)).toEqual([
+      "tip",
     ]);
     expect(written).toEndWith("\n");
   });
@@ -80,7 +78,7 @@ describe("hsx build", () => {
     const result = await run(["build", CLEAN]);
     expect(result.code).toBe(0);
     expect(result.written.size).toBe(0);
-    expect(JSON.parse(result.out).document.product).toBe("tip_jar");
+    expect(JSON.parse(result.out).product).toBe("tip_jar");
   });
 
   it("writes nothing and exits 1 when the program is refused", async () => {

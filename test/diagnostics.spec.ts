@@ -13,7 +13,9 @@ function sourceCodes(): string[] {
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) return sourceFiles(path);
-      return entry.name.endsWith(".ts") && entry.name !== "diagnostics.ts"
+      return entry.name.endsWith(".ts") &&
+        entry.name !== "diagnostics.ts" &&
+        entry.name !== "std-bundle.ts"
         ? [path]
         : [];
     });

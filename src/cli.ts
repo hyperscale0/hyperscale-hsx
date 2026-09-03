@@ -15,6 +15,7 @@ import { compile, type CompileResult } from "./compile.ts";
 import type { UdlCostManifest, UdlCostTable } from "./cost.ts";
 import { hsxDiagnostics } from "./diagnostics.ts";
 import { format } from "./format.ts";
+import { startLspServer } from "./lsp/server.ts";
 import { HSX_TARGET_UDL_VERSION, HSX_VERSION } from "./version.ts";
 
 /** Filesystem and streams, injected so the CLI stays testable. */
@@ -23,6 +24,8 @@ export interface Io {
   readonly out: (line: string) => void;
   readonly readFile: (path: string) => Promise<string>;
   readonly writeFile: (path: string, contents: string) => Promise<void>;
+  readonly stdin?: NodeJS.ReadableStream;
+  readonly stdout?: NodeJS.WritableStream;
 }
 
 /**
@@ -41,15 +44,17 @@ Usage:
   hsx cost <file.hsx> [--json] [--out <file.json>] [--strict]
   hsx explain <HSX####>
   hsx format <file.hsx>
+  hsx lsp
   hsx --version
   hsx --help
 
 Commands:
   check   Compile and report diagnostics. Prints nothing when the program is clean.
-  build   Compile and write canonical UDL and its Business Frame as JSON.
+  build   Compile and write canonical UDL as JSON.
   cost    Compile and print the version-pinned cost manifest as a table or JSON.
   explain Print one diagnostic title, fix, and source example.
   format  Print the source in the one canonical HSX style.
+  lsp     Run the language server over stdin and stdout.
 
 Options:
   --json        Print the cost manifest as JSON instead of a table.
@@ -73,6 +78,15 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return OK;
   }
   if (command === "explain") return explainDiagnostic(rest, io);
+  if (command === "lsp") {
+    const input = io.stdin ?? process.stdin;
+    const output = io.stdout ?? process.stdout;
+    return new Promise<number>((resolve) => {
+      startLspServer(input, output, {
+        onExit: resolve,
+      });
+    });
+  }
   if (
     command !== "check" &&
     command !== "build" &&
@@ -142,14 +156,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     );
     return refused ? REFUSED : OK;
   }
-  const json = `${JSON.stringify(
-    {
-      document: result.artifacts.document,
-      frame: result.artifacts.frame,
-    },
-    null,
-    2,
-  )}\n`;
+  const json = `${JSON.stringify(result.artifacts.document, null, 2)}\n`;
   if (parsed.out === undefined) {
     io.out(json.trimEnd());
   } else {
@@ -322,4 +329,16 @@ function diagnosticLines(
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+if (import.meta.main) {
+  const { readFile, writeFile } = await import("node:fs/promises");
+  process.exitCode = await runCli(process.argv.slice(2), {
+    err: (line) => process.stderr.write(`${line}\n`),
+    out: (line) => process.stdout.write(`${line}\n`),
+    readFile: (path) => readFile(path, "utf8"),
+    writeFile: (path, contents) => writeFile(path, contents, "utf8"),
+    stdin: process.stdin,
+    stdout: process.stdout,
+  });
 }

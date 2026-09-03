@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HSX Playground</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="toolbar-brand">
+        <span class="logo">HSX</span>
+        <span class="title">Playground</span>
+        <span id="verdict-badge" class="badge badge-valid">valid</span>
+      </div>
+      <div class="toolbar-actions">
+        <label for="examples-select" class="select-label">Example:</label>
+        <select id="examples-select" class="select-input">
+          <option value="">Choose an example...</option>
+        </select>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="pane pane-editor">
+        <div class="pane-header">
+          <span class="pane-title">Source</span>
+        </div>
+        <div class="editor-wrap">
+          <div id="line-gutter" class="gutter" aria-hidden="true">1</div>
+          <textarea
+            id="source-editor"
+            class="editor"
+            spellcheck="false"
+            placeholder="Enter HSX source here..."
+          ></textarea>
+        </div>
+      </section>
+
+      <section class="pane pane-output">
+        <div class="pane-header tabs-header">
+          <div class="tabs">
+            <button id="tab-udl-btn" class="tab-btn active" type="button">
+              Canonical UDL
+            </button>
+            <button id="tab-cost-btn" class="tab-btn" type="button">
+              Cost Manifest
+            </button>
+          </div>
+        </div>
+        <div class="output-wrap">
+          <div id="tab-udl-content" class="tab-panel active">
+            <pre><code id="udl-output"></code></pre>
+          </div>
+          <div id="tab-cost-content" class="tab-panel">
+            <pre><code id="cost-output"></code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="diagnostics-panel">
+      <div class="diagnostics-header">
+        <span class="diagnostics-title">Diagnostics</span>
+        <span id="diagnostics-count" class="diagnostics-count">0 issues</span>
+      </div>
+      <div class="diagnostics-scroll">
+        <table class="diagnostics-table">
+          <thead>
+            <tr>
+              <th class="col-stage">Stage</th>
+              <th class="col-code">Code</th>
+              <th class="col-pos">Line:Col</th>
+              <th class="col-message">Message</th>
+              <th class="col-fix">Fix</th>
+            </tr>
+          </thead>
+          <tbody id="diagnostics-list">
+            <tr>
+              <td colspan="5" class="diagnostic-empty">
+                No diagnostics. Compilation passed cleanly.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </footer>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

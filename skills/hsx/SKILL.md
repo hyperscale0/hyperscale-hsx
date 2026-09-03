@@ -480,4 +480,4 @@ port snapshot_entitlements {
 
 ## Output boundary
 
-Use `compile` or the CLI to obtain canonical UDL, the Business Frame, the origin map, and the cost manifest. The engine reads UDL and never HSX. When a task needs direct UDL work, use the UDL skill instead.
+Use `compile` or the CLI to obtain canonical UDL, the origin map, and the cost manifest. The engine reads UDL and never HSX. When a task needs direct UDL work, use the UDL skill instead.

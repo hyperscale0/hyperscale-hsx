@@ -30,10 +30,10 @@ After installing dependencies in a repository checkout, run `bun run bin/hsx.ts 
 ```ts
 import { compile } from "@hyperscale0/hsx";
 const result = compile(source, { costTable });
-const { document, frame, originMap, costManifest } = result.artifacts!;
+const { document, originMap, costManifest } = result.artifacts!;
 ```
 
-The compiler returns four artifacts named `document`, `frame`, `originMap`, and `costManifest`.
+The compiler returns three artifacts named `document`, `originMap`, and `costManifest`.
 
 `document` is the canonical UDL value.
 
@@ -53,6 +53,8 @@ contract, and the compiler refuses an invalid plan before a runtime reads it.
 
 The VS Code extension is built as `hsx.vsix` in CI. Download the workflow
 artifact, then run `code --install-extension hsx.vsix`.
+
+The editor extension runs `hsx lsp` over stdio to surface diagnostics and format documents. Configure `hsx.serverPath` or install the compiler binary globally with `npm i -g @hyperscale0/hsx`.
 
 HSX is licensed under AGPL-3.0-only. See [LICENSE](./LICENSE) and
 [LICENSING.md](./LICENSING.md).

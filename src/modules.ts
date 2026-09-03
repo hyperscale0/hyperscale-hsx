@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import type { UdlDocument } from "@hyperscale0/udl";
 import type {
   ApplicationScopeDecl,
@@ -10,6 +9,7 @@ import type {
 } from "./ast.ts";
 import { lineColIn, lineIndex } from "./ast.ts";
 import { parseProgram } from "./parse.ts";
+import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
 
 export interface ModuleSource {
   readonly name: string;
@@ -24,6 +24,7 @@ export interface HsxCompilerHost {
     specifier: string,
     from: string,
   ) => ModuleSource | undefined;
+  readonly standardLibrary?: StandardLibrary;
 }
 
 export interface ModuleIssue {
@@ -68,7 +69,12 @@ export function resolveProgramModules(
     );
     for (const declaration of imports) {
       const requested = declaration.names.map((name) => name.name);
-      const sources = standardSources(declaration.from.value, requested);
+      const stdLib = host.standardLibrary ?? bundledStandardLibrary;
+      const sources = standardSources(
+        stdLib,
+        declaration.from.value,
+        requested,
+      );
       const custom =
         sources.length === 0
           ? host.resolveModule?.(declaration.from.value, from)
@@ -421,22 +427,18 @@ function collectTemplatedNameReferences(
 }
 
 function standardSources(
+  standardLibrary: StandardLibrary,
   specifier: string,
   names: readonly string[],
 ): ModuleSource[] {
   if (specifier !== "std/settlements") return [];
   return names.flatMap((name) => {
-    const relative = `settlements/${name}.hsx`;
-    const candidates = [
-      new URL(`../std/${relative}`, import.meta.url),
-      new URL(`../../std/${relative}`, import.meta.url),
-    ];
-    const url = candidates.find((candidate) => existsSync(candidate));
-    return url
+    const source = standardLibrary.source(specifier, name);
+    return source !== undefined
       ? [
           {
             name: `std.settlements.${name}`,
-            source: readFileSync(url, "utf8"),
+            source,
           },
         ]
       : [];

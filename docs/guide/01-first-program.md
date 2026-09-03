@@ -1,6 +1,6 @@
 # Your first program
 
-An HSX file declares one program, the parties that take part, and the instruments that define its money rules. A settlement applies a standard-library instrument. The compiler checks the application and emits canonical UDL with a Business Frame, an origin map, and a cost manifest.
+An HSX file declares one program, the parties that take part, and the instruments that define its money rules. A settlement applies a standard-library instrument. The compiler checks the application and emits canonical UDL with an origin map and a cost manifest.
 
 This program sends a tip from a listener to a host:
 

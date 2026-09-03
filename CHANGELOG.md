@@ -11,6 +11,22 @@ listed here.
 
 ## [Unreleased]
 
+- Added `hsx lsp` over stdio with diagnostics and formatting, and a VS Code language client.
+- Added a static browser playground under `playground/` with debounced compilation, diagnostics inspection, span navigation, canonical UDL and cost manifest inspection, and inlined examples.
+- Bundled standard library sources as data in `src/std-bundle.ts` and decoupled compiler module resolution from Node filesystem imports.
+
+### Changed
+
+- Moved LSP server exports (`startLspServer`, `createHostForUri`, and LSP types) from the package root to `@hyperscale0/hsx/lsp`.
+
+### Removed
+
+- Deleted the Business Frame artifact (`frame`) from the compiler output and CLI build command.
+
+## [1.0.0] - 2026-09-04
+
+This release is byte-identical to 1.0.0-rc.1. Later changes bump under the contract-diff tiers.
+
 ## [1.0.0-rc.1] - 2026-09-02
 
 ### Added
@@ -231,7 +247,8 @@ This is the first version published as a package anyone can install.
   program that needs more is refused with a diagnostic saying so.
 - **`party` takes no attribute block yet**, though the grammar parses one.
 
-[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-rc.1...v1.0.0
 [1.0.0-rc.1]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-beta.1...v1.0.0-rc.1
 [1.0.0-beta.1]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.6...v1.0.0-beta.1
 [1.0.0-alpha.6]: https://github.com/hyperscale0/hyperscale-hsx/compare/v1.0.0-alpha.5...v1.0.0-alpha.6

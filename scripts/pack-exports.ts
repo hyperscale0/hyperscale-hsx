@@ -33,6 +33,7 @@ const sourceEntries = {
   exports: {
     ".": "./src/index.ts",
     "./cost": "./src/cost.ts",
+    "./lsp": "./src/lsp/server.ts",
     ...dataExports,
   },
 };
@@ -46,6 +47,10 @@ const distEntries = {
     "./cost": {
       types: "./dist/src/cost.d.ts",
       default: "./dist/src/cost.js",
+    },
+    "./lsp": {
+      types: "./dist/src/lsp/server.d.ts",
+      default: "./dist/src/lsp/server.js",
     },
     ...dataExports,
   },

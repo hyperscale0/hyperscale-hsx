@@ -234,7 +234,7 @@ function stdMarkdown(module: ModuleReference): string {
 }
 
 function udlOutputMarkdown(): string {
-  return `${generatedHeader}# UDL output\n\nAn accepted compile returns four artifacts.\n\n| Artifact | Contents |\n| --- | --- |\n| \`document\` | The canonical UDL object. Serialize it with \`serializeUdl\` from \`@hyperscale0/udl\`. |\n| \`frame\` | The Business Frame paired with the document. |\n| \`originMap\` | Canonical UDL paths mapped to authored HSX spans. |\n| \`costManifest\` | The deterministic manifest pinned to the supplied rate card. |\n\nCanonical UDL sorts object keys, preserves array order, uses two-space JSON indentation, and ends with one line feed.\n`;
+  return `${generatedHeader}# UDL output\n\nAn accepted compile returns three artifacts.\n\n| Artifact | Contents |\n| --- | --- |\n| \`document\` | The canonical UDL object. Serialize it with \`serializeUdl\` from \`@hyperscale0/udl\`. |\n| \`originMap\` | Canonical UDL paths mapped to authored HSX spans. |\n| \`costManifest\` | The deterministic manifest pinned to the supplied rate card. |\n\nCanonical UDL sorts object keys, preserves array order, uses two-space JSON indentation, and ends with one line feed.\n`;
 }
 
 function editorGrammar(modules: readonly ModuleReference[]): string {

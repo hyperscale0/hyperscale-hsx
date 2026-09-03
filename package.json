@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -34,6 +34,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./cost": "./src/cost.ts",
+    "./lsp": "./src/lsp/server.ts",
     "./package.json": "./package.json",
     "./std/*": "./std/*"
   },
@@ -61,17 +62,21 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "bun test && bun run docs:check && tsc -p tsconfig.json && bun run build && bun scripts/check-bin.ts",
+    "check": "bun test && bun run docs:check && bun run std:check && bun run playground:check && tsc -p tsconfig.json && bun run build && bun scripts/check-bin.ts",
     "docs:build": "bun scripts/docs/build.ts",
     "docs:check": "bun scripts/docs/check.ts",
     "examples:build": "bun scripts/examples/build.ts",
+    "playground:build": "bun scripts/build-playground.ts",
+    "playground:check": "bun scripts/build-playground.ts --check",
     "postpack": "bun scripts/pack-exports.ts restore",
     "prepack": "bun run build && bun scripts/pack-exports.ts apply",
+    "std:bundle": "bun scripts/bundle-std.ts",
+    "std:check": "bun scripts/bundle-std.ts --check",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@hyperscale0/udl": "1.0.0-rc.1"
+    "@hyperscale0/udl": "1.0.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",

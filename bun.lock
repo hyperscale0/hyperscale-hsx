@@ -5,7 +5,7 @@
     "": {
       "name": "@hyperscale0/hsx",
       "dependencies": {
-        "@hyperscale0/udl": "1.0.0-rc.1",
+        "@hyperscale0/udl": "1.0.0",
       },
       "devDependencies": {
         "@types/bun": "1.4.0",
@@ -16,7 +16,7 @@
   "packages": {
     "@cfworker/json-schema": ["@cfworker/json-schema@4.1.1", "", {}, "sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og=="],
 
-    "@hyperscale0/udl": ["@hyperscale0/udl@1.0.0-rc.1", "", { "dependencies": { "@cfworker/json-schema": "4.1.1", "zod": "4.4.3" }, "bin": { "udl": "dist/cli.js" } }, "sha512-GmM1TEz4uDGm4tpjULlq8ZYs03RMHy/E6CXCzST7bLhydVfJ+rZ2m4FpxjdnYg5dtwPRfaSIvMBQquAyxxprHg=="],
+    "@hyperscale0/udl": ["@hyperscale0/udl@1.0.0", "", { "dependencies": { "@cfworker/json-schema": "4.1.1", "zod": "4.4.3" }, "bin": { "udl": "dist/cli.js" } }, "sha512-028aejdoTtMrahk5SHwx52QVOG2SN3dWreY9tgvrEChQ6VJVcmzkOHPFUroTmmx76HCR7XKfEvPTaw13o8M8/A=="],
 
     "@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 

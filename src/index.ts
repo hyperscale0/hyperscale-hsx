@@ -30,10 +30,12 @@ export { type OriginMapEntry } from "./emit.ts";
 export { lowerGeneralProgram } from "./emit.ts";
 export { parseProgram } from "./parse.ts";
 export { checkGeneralProgram, type GeneralCheckOptions } from "./typecheck.ts";
-export type {
-  BlockExpr,
-  ExposeDecl,
-  Program,
-  ProgramDecl,
-  UseDecl,
+export {
+  byteOffsetToCodeUnit,
+  type BlockExpr,
+  type ExposeDecl,
+  type Program,
+  type ProgramDecl,
+  type UseDecl,
 } from "./ast.ts";
+export { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";

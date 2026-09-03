@@ -35,6 +35,36 @@ export function lineColAt(source: string, offset: number): LineCol {
   return { column: clamped - lineStart + 1, line };
 }
 
+const utf8Encoder = new TextEncoder();
+
+/**
+ * Convert a UTF-8 byte offset to a UTF-16 code-unit offset over a string.
+ * Walks Unicode code points, counting UTF-8 bytes and UTF-16 code units.
+ * Clamps to [0, source.length].
+ */
+export function byteOffsetToCodeUnit(
+  source: string,
+  byteOffset: number,
+): number {
+  if (byteOffset <= 0) return 0;
+  let currentByte = 0;
+  let codeUnit = 0;
+
+  for (const char of source) {
+    const charBytes = utf8Encoder.encode(char).length;
+    if (currentByte + charBytes > byteOffset) {
+      return codeUnit;
+    }
+    currentByte += charBytes;
+    codeUnit += char.length;
+    if (currentByte === byteOffset) {
+      return codeUnit;
+    }
+  }
+
+  return source.length;
+}
+
 /**
  * One source scanned once, so many offsets resolve without rescanning it.
  * `lineColAt` walks from offset zero every time, which turns a run of d

@@ -1,7 +1,7 @@
 /**
  * The HSX compiler driver: source text in, three-verdict result out.
  *
- * - `valid`: the program lowers cleanly; the IR document and frame are ready
+ * - `valid`: the program lowers cleanly; the IR document is ready
  *   for the independent checker.
  * - `warning`: the program lowers, and the compiler's lint voice has notes
  *   the author should read (the artifacts are still present and usable).
@@ -55,8 +55,6 @@ export interface CompileDiagnostic {
 interface CompileArtifacts {
   /** The canonical UDL document. */
   readonly document: Json;
-  /** The congruent Business Frame. */
-  readonly frame: Json;
   /** Canonical UDL paths bound to their narrowest authored source terms. */
   readonly originMap: readonly CompileOriginMapEntry[];
   /** Deterministic compile-time cost, pinned to one versioned table. */
@@ -215,7 +213,6 @@ export function compile(
     artifacts: {
       document: lowered.value.document,
       costManifest: cost.manifest,
-      frame: lowered.value.frame,
       originMap: lowered.value.originMap.map(compileOrigin),
     },
     diagnostics,

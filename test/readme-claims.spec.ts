@@ -46,13 +46,12 @@ const claims: readonly {
   },
   {
     sentence:
-      "The compiler returns four artifacts named `document`, `frame`, `originMap`, and `costManifest`.",
+      "The compiler returns three artifacts named `document`, `originMap`, and `costManifest`.",
     proof() {
       const result = compile(hsxBlocks()[0] ?? "");
       expect(Object.keys(result.artifacts ?? {}).sort()).toEqual([
         "costManifest",
         "document",
-        "frame",
         "originMap",
       ]);
     },

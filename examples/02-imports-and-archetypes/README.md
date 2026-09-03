@@ -46,10 +46,7 @@ asset booth: good { title_transfer: off_platform }
 
 `title_transfer: off_platform` records that ownership of the booth changes
 hands outside the platform. Money stays on-platform; this flag describes the
-object. Today `frameFor` emits `offPlatform` as an empty list alongside the
-frame's five constant fields (`confidence: "high"`, `conservationGroups: []`,
-`offPlatform: []`, `openQuestions: []`, and `rules: []`), so callers never
-assume the list carries parsed asset flags.
+object.
 
 ## Fees have a side, and the side matters
 

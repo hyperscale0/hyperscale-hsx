@@ -1,11 +1,15 @@
 {
   "name": "hsx",
   "displayName": "HSX",
-  "description": "Syntax highlighting for the HSX settlement language.",
-  "version": "1.0.0-rc.1",
+  "description": "Syntax highlighting, language server diagnostics, and formatting for the HSX settlement language.",
+  "version": "1.0.0",
   "publisher": "hyperscale0",
   "license": "AGPL-3.0-only",
   "private": true,
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:hsx"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hyperscale0/hyperscale-hsx.git",
@@ -17,6 +21,18 @@
   "categories": [
     "Programming Languages"
   ],
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
   "contributes": {
     "languages": [
       {
@@ -43,6 +59,17 @@
         "language": "hsx",
         "path": "./snippets/hsx.json"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "HSX",
+      "properties": {
+        "hsx.serverPath": {
+          "type": "string",
+          "default": "hsx",
+          "description": "Path to the hsx executable."
+        }
+      }
+    }
   }
 }

@@ -140,29 +140,22 @@ instrument item {
     expect(result.artifacts).toBeUndefined();
   });
 
-  it("refuses unresolved compile-time markers in the Business Frame", () => {
-    const visibleActionSlots: Record<string, JsonValue> = {
+  it("refuses unresolved compile-time markers in lowered document paths", () => {
+    const actionSlots: Record<string, JsonValue> = {
+      moves: [
+        {
+          bind: {
+            amount: "__hsx_none__",
+            destinationAccountId: "fields.destinationAccountId",
+            sourceAccountId: "fields.sourceAccountId",
+          },
+          key: "probe",
+          operation: "internal_transfer.create",
+        },
+      ],
       steps: [],
-      summary: "Create the frame probe",
+      summary: "Create the document probe",
     };
-    const actionSlots = new Proxy(visibleActionSlots, {
-      get(target, key, receiver) {
-        if (key === "moves") {
-          return [
-            {
-              bind: {
-                amount: "__hsx_none__",
-                destinationAccountId: "fields.destinationAccountId",
-                sourceAccountId: "fields.sourceAccountId",
-              },
-              key: "probe",
-              operation: "internal_transfer.create",
-            },
-          ];
-        }
-        return Reflect.get(target, key, receiver);
-      },
-    });
     const program: TypedProgram = {
       instruments: [
         {
@@ -175,25 +168,25 @@ instrument item {
             },
           ],
           fields: [],
-          id: "zz_frame_probe",
+          id: "zz_document_probe",
           origin: { end: 1, start: 0 },
           slots: {
-            idPrefix: "zzfrm",
+            idPrefix: "zzdoc",
             lifecycle: {
               initial: "created",
               states: ["created"],
               transitions: {},
             },
-            summary: "Frame probe",
-            title: "Frame probe",
+            summary: "Document probe",
+            title: "Document probe",
           },
         },
       ],
       kind: "typed_program",
-      name: "frame_probe",
+      name: "document_probe",
       origin: { end: 1, start: 0 },
       subjects: [],
-      title: "Frame probe",
+      title: "Document probe",
     };
 
     const result = lowerGeneralProgram(program);
@@ -202,7 +195,7 @@ instrument item {
     expect(result.issues).toContainEqual(
       expect.objectContaining({
         code: "HSX1603",
-        path: "$.frame.moneyEvents[0].amount",
+        path: "$.instruments[0].actions.create.moves[0].bind.amount",
       }),
     );
   });
