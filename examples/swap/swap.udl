@@ -43,8 +43,8 @@
                   "path": "fields.buyerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -84,8 +84,8 @@
                   "path": "fields.sellerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -131,8 +131,8 @@
             {
               "bind": {
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "owner.id": {
                   "from": "instance",
@@ -232,8 +232,8 @@
                   "path": "fields.buyerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -277,8 +277,8 @@
                   "path": "fields.sellerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -356,8 +356,8 @@
                   "path": "fields.buyerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -397,8 +397,8 @@
                   "path": "fields.sellerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -438,8 +438,8 @@
                   "path": "fields.buyerFee"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -479,8 +479,8 @@
                   "path": "fields.sellerFee"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -604,8 +604,8 @@
                   "path": "fields.buyerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -649,8 +649,8 @@
                   "path": "fields.sellerAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",

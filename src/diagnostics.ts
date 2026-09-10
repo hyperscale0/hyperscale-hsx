@@ -356,6 +356,16 @@ action pay { computes remainder rest { amount_ref: total; on_zero: refuse; total
     example: instrument("", "amount: money<SAR>; fee: money<USD>;"),
   },
   {
+    code: "HSX1306",
+    stage: "typecheck",
+    title: "Fixed-currency amount moved in another currency",
+    fix: "Bind the currency of a money<CUR> move or account step as the constant CUR; the compiler pins a binding that reads the instrument's currency field.",
+    example: instrument(
+      `action pay { agent_description: "Pay the amount."; moves: [{ "bind": { "amount": { "from": "instance"; "path": "fields.amount"; }; "currency": { "from": "const"; "value": "USD"; }; "destinationAccountId": { "from": "instance"; "path": "fields.payeeAccountId"; }; "sourceAccountId": { "from": "instance"; "path": "fields.payerAccountId"; }; }; "key": "transfer"; "operation": "internal_transfer.create"; }]; steps: []; }`,
+      "amount: money<SAR>; payeeAccountId: account<SAR>; payerAccountId: account<SAR>;",
+    ),
+  },
+  {
     code: "HSX1401",
     stage: "typecheck",
     title: "Unbounded action",

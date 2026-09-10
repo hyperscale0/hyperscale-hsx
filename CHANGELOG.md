@@ -9,6 +9,19 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-10
+
+Published in lockstep with UDL 2.0.1.
+
+### Added
+
+- Pinned the currency of every move of a `money<CUR>` field, and of every account step in a fixed-currency instrument, to the constant `CUR` in the lowered document; a binding that reads the instrument's currency field is rewritten, and one the compiler cannot pin (an input, a ref, or a constant naming another currency) reports `HSX1306`.
+
+### Changed
+
+- Anchored `dispute` on `held_payment` to `release_deadline` like `cancel`, so a dispute after the release deadline refuses instead of freezing money the clock already released.
+- Declared the safe-integer maximum on `share_offering.totalShares` and `share_allocation.shares` so the lowered schema round-trips byte for byte.
+
 ## [2.0.0] - 2026-09-10
 
 ### Added

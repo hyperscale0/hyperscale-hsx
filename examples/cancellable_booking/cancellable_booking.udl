@@ -80,8 +80,8 @@
                   "path": "fields.sessionPrice"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -125,8 +125,8 @@
                   "path": "refs.cancellationRefundAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -160,8 +160,8 @@
             {
               "bind": {
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "owner.id": {
                   "from": "instance",
@@ -206,8 +206,8 @@
                   "path": "refs.cancellationPenaltyAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -251,8 +251,8 @@
                   "path": "fields.sessionPrice"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",

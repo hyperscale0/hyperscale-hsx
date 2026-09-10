@@ -26,8 +26,8 @@
                   "path": "fields.callRate"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -83,8 +83,8 @@
                   "path": "fields.storageRate"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",

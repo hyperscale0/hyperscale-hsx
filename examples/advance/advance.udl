@@ -34,8 +34,8 @@
                   "path": "fields.repayment1Amount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -99,8 +99,8 @@
                   "path": "fields.repayment2Amount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -162,8 +162,8 @@
                   "path": "fields.principal"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",

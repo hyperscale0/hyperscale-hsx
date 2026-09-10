@@ -39,7 +39,7 @@ describe("cancellable booking standard library", () => {
     expect(booking.actions.create?.steps).toEqual([
       {
         bind: {
-          currency: { from: "instance", path: "fields.currency" },
+          currency: { from: "const", value: "SAR" },
           "owner.id": { from: "instance", path: "productId" },
           "owner.type": { from: "const", value: "product" },
           productId: { from: "instance", path: "productId" },

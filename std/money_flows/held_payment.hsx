@@ -497,6 +497,7 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
     agent_description: concat("Freeze a funded ", words(instrument), " so neither release nor refund can run until the parties settle the disagreement. No money moves and the whole balance stays put. Only a funded ", words(instrument), " disputes.");
     description: concat("Freezes funded ", words(instrument), ", preserving the entire balance while the parties decide what happens next.");
     summary: concat("Dispute a ", words(instrument), " settlement");
+    when(release_deadline) { deadline { field: release_deadline; }; }
     moves: [];
     steps: [];
   }
@@ -598,6 +599,7 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
       agent_description: concat("Freeze a funded ", words(instrument), " so neither release nor refund can run until the parties settle the disagreement. No money moves and the whole balance stays put. Only a funded ", words(instrument), " disputes.");
       description: concat("Freezes funded ", words(instrument), ", preserving the entire balance while the parties decide what happens next.");
       summary: concat("Dispute a ", words(instrument), " settlement");
+      deadline: { field: release_deadline; };
       moves: [];
       steps: [];
     }

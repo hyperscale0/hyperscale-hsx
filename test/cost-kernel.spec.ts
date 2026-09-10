@@ -225,6 +225,42 @@ describe("cost pricing kernel parity", () => {
     );
   });
 
+  it("pins a fixed-currency move to its currency and refuses one bound elsewhere", () => {
+    const move = (currency: string) =>
+      SOURCE.replace(
+        "moves: [];",
+        `moves: [{ "bind": { "amount": { "from": "instance"; "path": "fields.amount"; }; "currency": ${currency}; "destinationAccountId": { "from": "instance"; "path": "fields.payeeAccountId"; }; "sourceAccountId": { "from": "instance"; "path": "fields.buyerAccountId"; }; }; "key": "transfer"; "operation": "internal_transfer.create"; }];`,
+      ).replace(
+        "fields { amount: money<SAR>; }",
+        "fields { amount: money<SAR>; payeeAccountId: account<SAR>; }",
+      );
+
+    const pinned = prepare(
+      move('{ "from": "instance"; "path": "fields.currency"; }'),
+    );
+    const pay = pinned.document.instruments[0]?.actions.pay;
+    expect(pay?.moves[0]?.bind.currency).toEqual({
+      from: "const",
+      value: "SAR",
+    });
+
+    for (const [bound, spelled] of [
+      ['{ "from": "const"; "value": "USD"; }', "USD"],
+      ['{ "from": "input"; "path": "currency"; }', "a caller-supplied value"],
+    ]) {
+      const parsed = parseProgram(move(bound!));
+      expect(parsed.diagnostics).toEqual([]);
+      const checked = checkGeneralProgram(parsed.program);
+      expect(checked.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "HSX1306",
+          fix: "bind currency as { from: const; value: SAR; }",
+          message: `action pay binds the currency of fields.amount to ${spelled}; a money<SAR> amount moves in SAR`,
+        }),
+      );
+    }
+  });
+
   it("reports invalid billing currency through diagnostic in HSX and thrown error in UDL", () => {
     const invalidCurrencyTable: UdlCostTable = {
       ...testCostTable,

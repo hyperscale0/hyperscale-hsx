@@ -270,8 +270,8 @@
                   "path": "fields.amount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",

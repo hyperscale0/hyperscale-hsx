@@ -3147,7 +3147,8 @@ function checkInstrument(
           },
         },
       };
-    });
+    })
+    .map((action) => pinFixedCurrencyBindings(action, fields, diagnostics));
   for (const action of actions) {
     for (const declared of ports.get(action.name) ?? []) {
       const allowed = entry(declared.body, "allowed")?.value;
@@ -3883,6 +3884,109 @@ function friendlyMoveRows(body: BlockExpr): readonly {
 
 function isJsonObject(value: JsonValue): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * A money<SAR> field moves SAR, whatever the caller wrote in the instance
+ * currency field. Every move of a fixed-currency amount, and every account
+ * step of an instrument whose money is fixed, binds that currency as a
+ * constant: a binding that reads one of the instrument's own text fields is
+ * pinned here, and one the compiler cannot pin (an input, a ref, or a
+ * constant naming another currency) is refused as HSX1306.
+ */
+function pinFixedCurrencyBindings(
+  action: TypedAction,
+  fields: readonly TypedField[],
+  diagnostics: GeneralDiagnostic[],
+): TypedAction {
+  const fieldByName = new Map(fields.map((field) => [field.name, field]));
+  const fixedCurrencyOf = (field: TypedField | undefined) =>
+    field?.type.kind === "money" &&
+    field.type.currency &&
+    CURRENCY.test(field.type.currency)
+      ? field.type.currency
+      : undefined;
+  const fixed = new Set(
+    fields.flatMap((field) => fixedCurrencyOf(field) ?? []),
+  );
+  // Two fixed currencies is HSX1305's refusal; one decides here, none skips.
+  const ledger = fixed.size === 1 ? [...fixed][0] : undefined;
+  if (!ledger) return action;
+  const instanceField = (
+    binding: JsonValue | undefined,
+  ): TypedField | undefined =>
+    binding !== undefined &&
+    isJsonObject(binding) &&
+    binding.from === "instance" &&
+    typeof binding.path === "string" &&
+    binding.path.startsWith("fields.")
+      ? fieldByName.get(binding.path.slice("fields.".length))
+      : undefined;
+  const pin = (
+    entry: JsonValue,
+    currency: string,
+    subject: string,
+  ): JsonValue => {
+    if (!isJsonObject(entry)) return entry;
+    const bind = entry.bind;
+    if (bind === undefined || !isJsonObject(bind)) return entry;
+    const binding = bind.currency;
+    if (binding === undefined) return entry;
+    const bound =
+      isJsonObject(binding) && binding.from === "const"
+        ? String(binding.value)
+        : undefined;
+    if (bound === currency) return entry;
+    if (bound === undefined && instanceField(binding)?.type.kind === "text") {
+      return {
+        ...entry,
+        bind: { ...bind, currency: { from: "const", value: currency } },
+      };
+    }
+    diagnostics.push({
+      code: "HSX1306",
+      fix: `bind currency as { from: const; value: ${currency}; }`,
+      message: `action ${action.name} binds the currency of ${subject} to ${bound ?? "a caller-supplied value"}; a money<${currency}> amount moves in ${currency}`,
+      severity: "error",
+      span: action.origin,
+    });
+    return entry;
+  };
+  const moves = action.slots.moves ?? [];
+  const steps = action.slots.steps ?? [];
+  return {
+    ...action,
+    slots: {
+      ...action.slots,
+      moves: Array.isArray(moves)
+        ? moves.map((move) => {
+            if (!isJsonObject(move)) return move;
+            // A post settles a reservation; the ledger refuses a post whose
+            // currency differs from the reserve, which is pinned here.
+            if (move.operation === "internal_transfer.post") return move;
+            const bind = move.bind;
+            const amount =
+              bind !== undefined && isJsonObject(bind)
+                ? instanceField(bind.amount)
+                : undefined;
+            return pin(
+              move,
+              fixedCurrencyOf(amount) ?? ledger,
+              amount ? `fields.${amount.name}` : "the moved amount",
+            );
+          })
+        : moves,
+      steps: Array.isArray(steps)
+        ? steps.map((step) =>
+            isJsonObject(step) &&
+            typeof step.operation === "string" &&
+            step.operation.startsWith("account.")
+              ? pin(step, ledger, `the ${step.operation} account`)
+              : step,
+          )
+        : steps,
+    },
+  };
 }
 
 function bindFieldReferences(

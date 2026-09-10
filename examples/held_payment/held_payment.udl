@@ -49,8 +49,8 @@
                   "path": "fields.price"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -121,8 +121,8 @@
                   "path": "fields.price"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -174,8 +174,8 @@
             {
               "bind": {
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "owner.id": {
                   "from": "instance",
@@ -204,7 +204,18 @@
         },
         "dispute": {
           "agentDescription": "Freeze a funded sale so neither release nor refund can run until the parties settle the disagreement. No money moves and the whole balance stays put. Only a funded sale disputes.",
+          "deadline": {
+            "field": "releaseDueAt"
+          },
           "description": "Freezes funded sale, preserving the entire balance while the parties decide what happens next.",
+          "effects": {
+            "schedules": [
+              {
+                "signature": "schedules.deadline",
+                "source": "deadline"
+              }
+            ]
+          },
           "moves": [],
           "publicAction": "disputeSale",
           "steps": [],
@@ -232,8 +243,8 @@
                   "path": "fields.price"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -273,8 +284,8 @@
                   "path": "fields.serviceFeeAmount"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
@@ -339,8 +350,8 @@
                   "path": "fields.price"
                 },
                 "currency": {
-                  "from": "instance",
-                  "path": "fields.currency"
+                  "from": "const",
+                  "value": "SAR"
                 },
                 "destinationAccountId": {
                   "from": "instance",
