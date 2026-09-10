@@ -190,8 +190,7 @@ function ledgerCostTable(
       const currency = field.type.currency;
       if (field.type.kind !== "money" || !currency || !CURRENCY.test(currency))
         continue;
-      if (!currencies.has(currency))
-        currencies.set(currency, field.origin);
+      if (!currencies.has(currency)) currencies.set(currency, field.origin);
     }
   }
   const [first, second] = [...currencies];

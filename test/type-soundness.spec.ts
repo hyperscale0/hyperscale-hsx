@@ -800,7 +800,9 @@ instrument review {
 }`;
     const result = compile(source);
     expect(result.verdict).toBe("invalid");
-    const diagnostic = result.diagnostics.find(({ code }) => code === "HSX1508");
+    const diagnostic = result.diagnostics.find(
+      ({ code }) => code === "HSX1508",
+    );
     expect(diagnostic).toBeDefined();
     expect(diagnostic?.message).toContain("allowed_parties");
     expect(diagnostic?.fix).toContain("allowed_parties: [...]");

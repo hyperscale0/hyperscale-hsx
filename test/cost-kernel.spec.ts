@@ -168,13 +168,11 @@ describe("cost pricing kernel parity", () => {
   });
 
   it("prices each program in the table that matches its ledger currency", () => {
-    const tables = ["USD", "EUR", "GBP"].map(
-      (currency): UdlCostTable => ({
-        ...testCostTable,
-        currency,
-        version: `version-${currency}`,
-      }),
-    );
+    const tables = ["USD", "EUR", "GBP"].map((currency): UdlCostTable => ({
+      ...testCostTable,
+      currency,
+      version: `version-${currency}`,
+    }));
     for (const currencyTable of tables) {
       const curr = currencyTable.currency;
       const { program, document } = prepare(

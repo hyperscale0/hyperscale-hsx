@@ -4019,9 +4019,7 @@ function crossInstrumentReferenceDiagnostics(
           : undefined;
       const childField = invariant.childField;
       const childFieldDef =
-        typeof childField === "string"
-          ? fieldIn(child, childField)
-          : undefined;
+        typeof childField === "string" ? fieldIn(child, childField) : undefined;
       const isIntegerSum =
         invariant.count !== true &&
         parent?.type.kind === "integer" &&

@@ -7,7 +7,10 @@ export interface HsxDiagnosticCatalogEntry {
   readonly reason?: string;
 }
 
-const instrument = (body: string, fields = ""): string => `program catalog_probe "Catalog probe"
+const instrument = (
+  body: string,
+  fields = "",
+): string => `program catalog_probe "Catalog probe"
 instrument probe {
   agent_description: "Probe instrument for catalog diagnostics.";
   fields { ${fields} }
@@ -486,7 +489,7 @@ instrument probe {
     code: "HSX1509",
     stage: "typecheck",
     title: "Callable action without an agent description",
-    fix: "Add agent_description: \"...\" to the instrument and to every action a caller can reach; composer.check refuses the program without them.",
+    fix: 'Add agent_description: "..." to the instrument and to every action a caller can reach; composer.check refuses the program without them.',
     example: `program catalog_probe "Catalog probe"
 instrument probe {
   fields {}

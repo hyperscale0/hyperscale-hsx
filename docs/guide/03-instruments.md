@@ -61,4 +61,3 @@ action release {
 ```
 
 Writing `allowed:` inside an action-level `port` clause triggers diagnostic `HSX1508`. Use `allowed_parties: [...]` inside action clauses, and reserve `allowed: [...]` for top-level port declarations.
-
