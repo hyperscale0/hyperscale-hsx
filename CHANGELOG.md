@@ -9,6 +9,14 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-10
+
+Published in lockstep with UDL 2.0.3.
+
+### Added
+
+- The quote clause key `charge_retained_by` lowers to the UDL `chargeRetainedBy` declaration, so an instrument can say which party keeps a cancellation charge. The lowering rides the generic key mapping that 2.0.2 already shipped; this release pins it with a test.
+
 ## [2.0.2] - 2026-09-10
 
 ### Added

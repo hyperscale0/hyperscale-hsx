@@ -2702,4 +2702,86 @@ port cancel_period {
     expect(points["obligation.cancel_period"]).toBeNull();
     expect(points["obligation.create"]).toBeNull();
   });
+
+  it("lowers charge_retained_by in quote clause to camelCase chargeRetainedBy", () => {
+    const result = compile(`program quote_retention "Quote Retention"
+party insurer: business
+party policyholder: person
+instrument policy_quote {
+  title: "Policy Quote";
+  summary: "Policy quote";
+  id_prefix: "pol";
+  agent_description: "Policy with retained charge quote.";
+  fields {
+    premium: money<SAR>;
+  }
+  parties {
+    beneficiary: insurer;
+    payer: policyholder;
+  }
+  lifecycle {
+    states created active refund_quoted canceled;
+    initial created;
+    on fund: created -> active;
+    on quote_refund: active -> refund_quoted;
+    on confirm_refund: refund_quoted -> canceled;
+  }
+  action create {
+    agent_description: "Create policy quote.";
+    summary: "Create policy quote";
+    steps: [];
+  }
+  action fund {
+    agent_description: "Fund policy.";
+    summary: "Fund policy";
+    steps: [];
+    moves: [
+      {
+        key: "fund_transfer",
+        operation: "internal_transfer.create",
+        bind: {
+          amount: { from: "instance", path: "fields.premium" },
+          destinationAccountId: { from: "instance", path: "fields.insurerAccountId" },
+          sourceAccountId: { from: "instance", path: "fields.policyholderAccountId" },
+        },
+      },
+    ];
+  }
+  action quote_refund {
+    agent_description: "Quote refund.";
+    summary: "Quote refund";
+    quote {
+      baseField: premium;
+      chargeRef: penalty;
+      charge_retained_by: beneficiary;
+      charges: [{ bps: 1000; }];
+      expires { offset: "PT15M"; }
+      fixes: [insurerAccountId, policyholderAccountId, premium];
+      netDestinationField: policyholderAccountId;
+      netRef: refund;
+    }
+  }
+  action confirm_refund {
+    commit: quote_refund;
+    agent_description: "Confirm refund.";
+    summary: "Confirm refund";
+    moves: [
+      {
+        key: "refund_transfer",
+        operation: "internal_transfer.create",
+        bind: {
+          amount: { from: "instance", path: "refs.refund" },
+          destinationAccountId: { from: "instance", path: "fields.policyholderAccountId" },
+          sourceAccountId: { from: "instance", path: "fields.insurerAccountId" },
+        },
+      },
+    ];
+  }
+}`);
+    expect(result.verdict).toBe("valid");
+    const document = result.artifacts?.document as UdlDocument | undefined;
+    const quote = (document?.instruments[0]?.actions?.quote_refund as any)
+      ?.quote;
+    expect(quote?.chargeRetainedBy).toBe("beneficiary");
+  });
 });
