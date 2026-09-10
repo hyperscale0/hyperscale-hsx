@@ -7,7 +7,9 @@
         "confirm_delivery",
         "release_on_deadline",
         "cancel",
-        "abandon"
+        "abandon",
+        "dispute",
+        "resume"
       ],
       "actions": {
         "abandon": {
@@ -160,6 +162,7 @@
             ]
           },
           "publicAction": "confirmDeliverySale",
+          "sandboxFailurePoint": "release",
           "steps": [],
           "summary": "Confirm through confirm_delivery and start the release payout"
         },
@@ -198,6 +201,14 @@
             }
           ],
           "summary": "Create a sale settlement"
+        },
+        "dispute": {
+          "agentDescription": "Freeze a funded sale so neither release nor refund can run until the parties settle the disagreement. No money moves and the whole balance stays put. Only a funded sale disputes.",
+          "description": "Freezes funded sale, preserving the entire balance while the parties decide what happens next.",
+          "moves": [],
+          "publicAction": "disputeSale",
+          "steps": [],
+          "summary": "Dispute a sale settlement"
         },
         "fund_piece_1": {
           "agentDescription": "Move the buyer's money into this settlement's escrow. Call it after create and before any release. It debits the buyer for real, and where the product charges a payer-side fee that fee is taken on top in the same call. Only a later release or unwind moves the money again.",
@@ -298,6 +309,7 @@
             }
           ],
           "publicAction": "fundPiece1Sale",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Fund piece 1 of the held amount into escrow"
         },
@@ -364,6 +376,14 @@
           ],
           "steps": [],
           "summary": "Release to the seller when releaseDueAt arrives undecided"
+        },
+        "resume": {
+          "agentDescription": "Lift the dispute hold and put the sale back where it was, funded and ready to release. No money moves and the balance was never touched. Only a disputed sale resumes. Use this when the parties settled without a refund.",
+          "description": "Ends the dispute hold without moving money and returns the fully funded sale to its first milestone.",
+          "moves": [],
+          "publicAction": "resumeSale",
+          "steps": [],
+          "summary": "Resume a sale settlement"
         }
       },
       "agentDescription": "Reach for sale when the buyer must commit money up front and nobody is paid until confirm_delivery fires. Funding moves price into this settlement's own escrow account, where it stays until a release or an unwind pays it out. A straight-through payment with no custody step is a different shape.",
@@ -415,7 +435,8 @@
         "price": {
           "description": "The held amount in SAR minor units, funded and paid out whole",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "releaseDueAt": {
           "description": "The date an undecided hold releases to the seller on; confirm_delivery and cancellation decide only before it",
@@ -436,7 +457,8 @@
         "serviceFeeAmount": {
           "description": "Machine-owned 1% service fee computed from price; charged on top at funding",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "sale",
@@ -446,6 +468,7 @@
         "states": [
           "created",
           "funded",
+          "disputed",
           "released",
           "cancelled",
           "abandoned"
@@ -469,6 +492,12 @@
             ],
             "to": "released"
           },
+          "dispute": {
+            "from": [
+              "funded"
+            ],
+            "to": "disputed"
+          },
           "fund_piece_1": {
             "from": [
               "created"
@@ -480,6 +509,12 @@
               "funded"
             ],
             "to": "released"
+          },
+          "resume": {
+            "from": [
+              "disputed"
+            ],
+            "to": "funded"
           }
         }
       },

@@ -2,7 +2,8 @@
 
 The HSX playground is a static browser application for authoring, editing,
 and inspecting HSX programs without a server. It runs the compiler directly
-in the browser client.
+in the browser client. The hosted playground is served at
+https://hyperscale0.ai/playground.
 
 ## What it provides
 
@@ -35,8 +36,8 @@ bun run --cwd open/hsx playground:check
 
 ## Serve locally
 
-The deliverable is the static directory under `open/hsx/playground/dist/`.
-Hosting infrastructure is owner-owed. To run the playground locally, serve
+The hosted playground is served at https://hyperscale0.ai/playground.
+To run the playground locally from `open/hsx/playground/dist/`, serve
 the output directory with any local static file server.
 
 Using Bun:

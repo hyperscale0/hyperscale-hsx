@@ -1,5 +1,5 @@
 program studio_booking "Studio booking"
-import { cancellable_booking } from "std/settlements"
+import { cancellable_booking } from "std/money_flows"
 
 party guest: person
 party studio: business

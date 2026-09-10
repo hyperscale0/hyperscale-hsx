@@ -1,5 +1,5 @@
 program conditional_disbursement_example "Conditional disbursement example"
-import { conditional_disbursement } from "std/settlements"
+import { conditional_disbursement } from "std/money_flows"
 party source: business
 party claimant: person
 settlement claim_payment = conditional_disbursement {

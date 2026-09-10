@@ -5,7 +5,7 @@
 
 program insured_car_marketplace "Insured car marketplace"
 
-import { held_payment, premium_forward, security_deposit } from "std/settlements"
+import { held_payment, premium_forward, security_deposit } from "std/money_flows"
 
 party buyer:   person
 party seller:  business

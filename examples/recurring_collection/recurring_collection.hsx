@@ -1,5 +1,5 @@
 program recurring_collection_example "Recurring collection example"
-import { recurring_collection, scheduled } from "std/settlements"
+import { recurring_collection, scheduled } from "std/money_flows"
 party debtor: person
 party repayment_source: business
 party recipient: business

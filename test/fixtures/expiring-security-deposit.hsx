@@ -1,6 +1,6 @@
 program expiring_security_deposit "Expiring security deposit"
 
-import { security_deposit } from "std/settlements"
+import { security_deposit } from "std/money_flows"
 
 party tenant: person
 party landlord: business

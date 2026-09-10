@@ -16,7 +16,7 @@
         "deny": {
           "agentDescription": "Refuse the whole disbursement without moving money. Every child amount under it must still be unapproved, so call this before any approval lands. The caller passes evidenceReference, which stays in the receipt. Denial is final.",
           "captureInput": {
-            "decisionEvidenceReference": "evidenceReference"
+            "evidenceReference": "evidenceReference"
           },
           "effects": {
             "decides": [
@@ -95,7 +95,8 @@
         "policyLimit": {
           "description": "Disbursement cap in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "sourceAccountId": {
           "description": "The source account",
@@ -328,7 +329,8 @@
         "amount": {
           "description": "Approved amount under the parent cap",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "claimPaymentId": {
           "description": "The exact claim_payment",

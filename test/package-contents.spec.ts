@@ -25,7 +25,7 @@ it("packs public runtime and documentation files without repository-only lanes",
     "docs/reference/grammar.md",
     "examples/cost-table.json",
     "skills/hsx/SKILL.md",
-    "std/settlements/held_payment.hsx",
+    "std/money_flows/held_payment.hsx",
   ]) {
     expect(paths).toContain(required);
   }

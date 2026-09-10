@@ -74,6 +74,7 @@
             }
           ],
           "publicAction": "authorizeCardPayment",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Reserve the authorizedAmount until reserveUntil"
         },
@@ -138,6 +139,7 @@
             }
           ],
           "publicAction": "captureCardPayment",
+          "sandboxFailurePoint": "release",
           "steps": [],
           "summary": "Post one strict partial capture slice"
         },
@@ -540,7 +542,8 @@
         "authorizedAmount": {
           "description": "Maximum captured amount in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",

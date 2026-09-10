@@ -1,5 +1,5 @@
 program policy_disbursement "Policy and disbursement"
-import { conditional_disbursement, premium_forward } from "std/settlements"
+import { conditional_disbursement, premium_forward } from "std/money_flows"
 
 party payer: person
 party carrier: business

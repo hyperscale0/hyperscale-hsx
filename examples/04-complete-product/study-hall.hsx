@@ -14,7 +14,7 @@
 
 program study_hall "Study hall"
 
-import { held_payment, security_deposit, pooled_split } from "std/settlements"
+import { held_payment, security_deposit, pooled_split } from "std/money_flows"
 
 party student:     person
 party tutor:       business

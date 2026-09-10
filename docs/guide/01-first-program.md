@@ -6,7 +6,7 @@ This program sends a tip from a listener to a host:
 
 ```hsx
 program tip_jar "Tip jar"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 party listener: person
 party host: business
 settlement tip = instant_transfer {

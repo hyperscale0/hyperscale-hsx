@@ -1,5 +1,5 @@
 program cancellable_booking_example "Cancellable booking example"
-import { cancellable_booking } from "std/settlements"
+import { cancellable_booking } from "std/money_flows"
 party guest: person
 party studio: business
 settlement studio_session = cancellable_booking {

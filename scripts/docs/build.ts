@@ -137,7 +137,7 @@ function clauseKeys(): readonly {
 }
 
 function readModules(): ModuleReference[] {
-  const root = join(packageRoot, "std", "settlements");
+  const root = join(packageRoot, "std", "money_flows");
   return readdirSync(root)
     .filter((file) => file.endsWith(".hsx") && file !== "index.hsx")
     .sort()
@@ -230,7 +230,7 @@ function stdMarkdown(module: ModuleReference): string {
         )
         .join("\n")
     : "| None | None |";
-  return `${generatedHeader}# ${module.name}\n\nSource: [\`std/settlements/${module.name}.hsx\`](../../../std/settlements/${module.name}.hsx)\n\n## Export\n\n\`${module.name}${module.typeParameters.length ? `<${module.typeParameters.join(", ")}>` : ""}\`\n\n## Parameters\n\n${module.parameters.map((parameter) => `- \`${parameter}\``).join("\n") || "None."}\n\n## Decision ports\n\n${module.ports.map((port) => `- \`${port}\``).join("\n") || "None."}\n\n## Actions and clauses\n\n| Action | Clauses lowered |\n| --- | --- |\n${actions}\n`;
+  return `${generatedHeader}# ${module.name}\n\nSource: [\`std/money_flows/${module.name}.hsx\`](../../../std/money_flows/${module.name}.hsx)\n\n## Export\n\n\`${module.name}${module.typeParameters.length ? `<${module.typeParameters.join(", ")}>` : ""}\`\n\n## Parameters\n\n${module.parameters.map((parameter) => `- \`${parameter}\``).join("\n") || "None."}\n\n## Decision ports\n\n${module.ports.map((port) => `- \`${port}\``).join("\n") || "None."}\n\n## Actions and clauses\n\n| Action | Clauses lowered |\n| --- | --- |\n${actions}\n`;
 }
 
 function udlOutputMarkdown(): string {

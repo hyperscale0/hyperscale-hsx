@@ -1,6 +1,6 @@
 # Money
 
-HSX indexes money by currency. `money<SAR>` is the field type inside a general instrument. `amount: total: money(SAR)` binds a settlement parameter to a new SAR money field. Values use integer minor units, so `1250` means SAR 12.50.
+HSX indexes money by currency. `money<SAR>` is the field type inside a general instrument. `amount: total: money(SAR)` binds a settlement parameter to a new SAR money field. Values use integer minor units, so `1250` means SAR 12.50. The emitted UDL field keeps the currency as `x-hyperscale-currency`, which is how the platform learns a program's ledger currency.
 
 Money of different currencies never unifies. Percent literals use basis-point precision: `2%` is 200 basis points and `2.5%` is 250 basis points. The compiler floors percentage-derived minor units and assigns any declared remainder according to the selected instrument.
 

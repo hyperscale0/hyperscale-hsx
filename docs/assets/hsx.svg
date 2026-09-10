@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">HSX</title>
+  <desc id="desc">Write a financial product. Compile its contract.</desc>
+  <rect width="1200" height="360" fill="#050505"/>
+  <path d="M48 48H1152M48 304H1152M944 48V304" fill="none" stroke="#303030"/>
+  <rect x="48" y="76" width="10" height="10" fill="#2f7dff"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="72" y="86" fill="#a3a3a3" font-size="14" letter-spacing="2">HYPERSCALE / DOCUMENTATION</text>
+    <text x="44" y="194" fill="#ffffff" font-size="76" letter-spacing="-4">HSX</text>
+    <text x="48" y="243" fill="#a3a3a3" font-size="20">Write a financial product. Compile its contract.</text>
+    <text x="48" y="334" fill="#a3a3a3" font-size="12" letter-spacing="2">LANGUAGE / STANDARD LIBRARY / COMPILER</text>
+    <text x="991" y="279" fill="#a3a3a3" font-size="12">SOURCE → CONTRACT</text>
+  </g>
+  <g fill="none" stroke="#2f7dff" stroke-width="2">
+    <path d="M990 110H1058V178H1126V246H1058V178H990Z"/>
+    <path d="M1058 110H1126V178H1058"/>
+  </g>
+</svg>

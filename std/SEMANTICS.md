@@ -1,9 +1,8 @@
 # Settlement semantics frozen before legacy teardown
 
 This note records the behavior that the former archetype branches emitted on
-2026-09-01. The 48 canonical documents under
-`test/fixtures/general-path-oracle/` are the byte-level authority. This note is
-the human porting index.
+2026-09-01. The in-place compiler family specs under `test/` are the semantic
+authority. This note is the human porting index.
 
 ## Direct and held payments
 
@@ -34,6 +33,12 @@ the human porting index.
   amount. Void and expiry release the reserve. Correction and external reversal
   use their declared ports and windows. Derived fees use the same floor,
   partition, bearer, and position rules as direct payment.
+- `cancellable_booking` holds the booking amount in escrow away from guest and
+  host until the booking ends or is cancelled. Cancellation quotes a penalty
+  against the time remaining before the start date, frozen with offer life.
+  Lifecycle moves through `created`, `held`, `cancellation_quoted`, `canceled`,
+  `settled`, and `completed`. Penalty retention moves penalty funds to host and
+  remainder to guest; completion releases full amount to host.
 - `premium_forward` holds premium pieces, then forwards the net pieces after a
   bind decision. It can abandon unbound custody. Policy reference, renewal due,
   endorsement evidence, and lapse actions appear only when declared. Its fee
@@ -128,3 +133,7 @@ the human porting index.
   beneficiary for that cycle. The final close requires the escrow account to be
   drained. Its referenced-membership form delegates those member cycles to a
   published membership instrument and emits only the parent.
+- `reconciled_payout` instructs an external payout with a tolerance dial,
+  waits for a matching bank debit statement line, and treats unmatched amounts
+  at the settle date as break rows. Lifecycle moves through `created`,
+  `instructed`, and `settled`.

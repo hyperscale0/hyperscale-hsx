@@ -1,5 +1,5 @@
 program community_circle "Community circle"
-import { rotating_pool } from "std/settlements"
+import { rotating_pool } from "std/money_flows"
 
 instrument community_membership {
   fields {

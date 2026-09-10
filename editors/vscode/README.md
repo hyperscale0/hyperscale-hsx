@@ -19,23 +19,25 @@ npm i -g @hyperscale0/hsx
 Typecheck the source with strict tsc, then build the bundle to `dist/extension.js`:
 
 ```sh
-npm run typecheck
-npm run build
+bun run typecheck
+bun run build
 ```
 
-## Install the CI artifact
+## Install the extension
 
-Download `hsx.vsix` from the Editor workflow artifact, then run:
+Download the package from https://hyperscale0.ai/downloads/hsx-vscode.vsix, then run:
 
 ```sh
-code --install-extension hsx.vsix
+code --install-extension hsx-vscode.vsix
 ```
 
-You can also package the extension from this directory:
+You can also install via the Extensions view in VS Code or Cursor: open the
+Extensions view (`Ctrl+Shift+X` or `Cmd+Shift+X`), select the **...** menu,
+choose **Install from VSIX...**, and select the downloaded file. The same
+`.vsix` package works in Cursor and other VS Code forks.
+
+To package the extension from this directory:
 
 ```sh
-bunx @vscode/vsce package --out hsx.vsix
+bun run package
 ```
-
-The team has no `hyperscale0` Visual Studio Marketplace publisher account, so
-CI builds the file but does not publish it.

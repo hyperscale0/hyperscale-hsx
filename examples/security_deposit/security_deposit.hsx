@@ -1,5 +1,5 @@
 program deposit_example "Deposit example"
-import { security_deposit } from "std/settlements"
+import { security_deposit } from "std/money_flows"
 party renter: person
 party owner: business
 settlement security_deposit = security_deposit {

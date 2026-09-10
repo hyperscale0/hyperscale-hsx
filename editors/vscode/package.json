@@ -1,5 +1,5 @@
 {
-  "name": "hsx",
+  "name": "hsx-vscode",
   "displayName": "HSX",
   "description": "Syntax highlighting, language server diagnostics, and formatting for the HSX settlement language.",
   "version": "1.0.0",
@@ -16,22 +16,24 @@
     "directory": "editors/vscode"
   },
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.134.0"
   },
   "categories": [
     "Programming Languages"
   ],
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "package": "vsce package --no-dependencies",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "10.1.1"
   },
   "devDependencies": {
-    "@types/vscode": "^1.75.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.9.0"
+    "@types/vscode": "1.134.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
   },
   "contributes": {
     "languages": [

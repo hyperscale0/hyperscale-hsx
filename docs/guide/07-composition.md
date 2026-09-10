@@ -4,7 +4,7 @@ One program can apply several instruments. Each instrument keeps its own lifecyc
 
 ```hsx
 program studio_sales "Studio sales"
-import { instant_transfer, scheduled } from "std/settlements"
+import { instant_transfer, scheduled } from "std/money_flows"
 party buyer: person
 party studio: business
 settlement purchase = instant_transfer {
@@ -31,7 +31,7 @@ Keep each money route in one instrument. Connect instruments with evidence and r
 
 ```hsx
 program supplier_payment "Supplier payment"
-import { reconciled_payout } from "std/settlements"
+import { reconciled_payout } from "std/money_flows"
 party treasury: business
 party supplier: business
 settlement payout = reconciled_payout {
@@ -44,3 +44,9 @@ settlement payout = reconciled_payout {
   matched_ceiling: 500
 }
 ```
+
+## Recomposition and exposed actions
+
+When evolving an existing Product with new instruments or flows, the composer plans the candidate program against the active Product Build.
+
+Public action exposures preserve stable semantic identities across builds. Unchanged authored instruments and catalog instruments retain their exposures without false removal and re-addition churn. Only genuinely new, removed, or rebound action aliases appear in the exposure delta.

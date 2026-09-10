@@ -1,5 +1,5 @@
 program swap_example "Swap example"
-import { swap } from "std/settlements"
+import { swap } from "std/money_flows"
 party buyer: business
 party seller: business
 settlement exchange = swap {

@@ -5,6 +5,7 @@ A module is ordinary HSX source. It declares a dotted module name and exports te
 ```hsx
 program approval_example "Approval example"
 instrument approval() {
+  agent_description: "Reusable approval lifecycle template."
   title: "Approval"
   summary: "A reusable approval lifecycle"
   fields {}
@@ -13,11 +14,21 @@ instrument approval() {
     initial pending;
     on approve: pending -> approved;
   }
-  action create { steps: []; moves: []; }
-  action approve { steps: []; moves: []; }
+  action create {
+    agent_description: "Create a pending approval record."
+    steps: [];
+    moves: [];
+  }
+  action approve {
+    agent_description: "Approve the pending decision."
+    steps: [];
+    moves: [];
+  }
 }
 instrument review = approval()
 ```
+
+Custom instruments and callable actions require `agent_description: "..."`. An agent uses these descriptions as tool instructions when invoking actions on an instance. Actions that declare a `due` clause run without an agent call and remain exempt from this requirement. Omitting `agent_description` on callable actions or their containing instruments triggers `HSX1509`.
 
 A parameter list makes an instrument a template, including an empty list. A concrete instrument without a parameter list emits directly when its file compiles. Export only the declarations that callers need.
 

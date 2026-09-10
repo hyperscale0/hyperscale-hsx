@@ -294,7 +294,8 @@
         "installment1Amount": {
           "description": "Stored amount for installment 1 of 2 (carries the integer-division remainder)",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "installment1DelinquentAfter": {
           "description": "Machine-set marker proving installment 1 reached its stored due date while unpaid",
@@ -304,7 +305,8 @@
         "installment2Amount": {
           "description": "Stored amount for installment 2 of 2",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "installment2DelinquentAfter": {
           "description": "Machine-set marker proving installment 2 reached its stored due date while unpaid",
@@ -314,7 +316,8 @@
         "principal": {
           "description": "The principal in SAR minor units; the stored installment anchors partition it exactly",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "recipientAccountId": {
           "description": "The recipient account",
@@ -547,7 +550,7 @@
           "summary": "Refund this one stored installment 1 payment whole"
         },
         "repay": {
-          "agentDescription": "Pay this record's amount toward installment 1. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.",
+          "agentDescription": "Pay this record's amount toward installment 1. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, its declared parties may call it and an evidence reference is required.",
           "captureInput": {
             "mandateEvidenceReference": "evidenceReference"
           },
@@ -672,7 +675,8 @@
         "amount": {
           "description": "Positive payment amount capped with its paid siblings at installment1Amount",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",
@@ -863,7 +867,7 @@
           "summary": "Refund this one stored installment 2 payment whole"
         },
         "repay": {
-          "agentDescription": "Pay this record's amount toward installment 2. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, only the payer may call it and an evidence reference is required.",
+          "agentDescription": "Pay this record's amount toward installment 2. The record must be created and its obligation live. Refused when this amount plus the records already paid against that installment would pass the stored amount. This moves the payer's money. Where a mandate applies, its declared parties may call it and an evidence reference is required.",
           "captureInput": {
             "mandateEvidenceReference": "evidenceReference"
           },
@@ -988,7 +992,8 @@
         "amount": {
           "description": "Positive payment amount capped with its paid siblings at installment2Amount",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",

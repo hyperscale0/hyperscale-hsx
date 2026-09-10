@@ -9,7 +9,7 @@
 
 program plain_header
 
-import { held_payment, scheduled } from "std/settlements"
+import { held_payment, scheduled } from "std/money_flows"
 
 party member: person
 party club:   business

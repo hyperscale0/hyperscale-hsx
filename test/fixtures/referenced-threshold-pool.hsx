@@ -1,5 +1,5 @@
 program community_raise "Community raise"
-import { threshold_pool } from "std/settlements"
+import { threshold_pool } from "std/money_flows"
 
 instrument community_pledge {
   fields {

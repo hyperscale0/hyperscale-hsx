@@ -1,6 +1,6 @@
 program comic_den "ComicDen"
 
-import { swap } from "std/settlements"
+import { swap } from "std/money_flows"
 
 party hind: person
 party tariq: person

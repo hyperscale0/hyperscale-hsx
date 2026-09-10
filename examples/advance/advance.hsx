@@ -1,5 +1,5 @@
 program advance_example "Advance example"
-import { advance } from "std/settlements"
+import { advance } from "std/money_flows"
 party funder: business
 party recipient: business
 settlement advance_payment = advance {

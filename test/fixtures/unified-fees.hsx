@@ -1,6 +1,6 @@
 program unified_fees "Unified fees"
 
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 
 party buyer: person
 party seller: business

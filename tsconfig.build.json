@@ -17,7 +17,7 @@
     "sourceMap": true,
     "strict": true,
     "target": "ES2022",
-    "types": ["bun"],
+    "types": ["bun-types"],
     "verbatimModuleSyntax": true
   },
   "include": ["src/**/*.ts", "bin/**/*.ts"]

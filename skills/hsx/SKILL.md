@@ -5,15 +5,15 @@ description: Write, review, and repair HSX programs that compile financial-produ
 
 # Write HSX
 
-Use this skill when a task creates or changes an `.hsx` program, chooses a standard-library settlement form, explains an HSX diagnostic, or reviews authored money rules. Do not use it to hand-edit canonical UDL or runtime state.
+Use this skill when a task creates or changes an `.hsx` program, chooses a money flow from the money flows library (open/hsx/std), explains an HSX diagnostic, or reviews authored money rules. Do not use it to hand-edit canonical UDL or runtime state.
 
 ## Program shape
 
-One file declares one `program`. Declare parties and assets before using them. Import standard-library instruments from `std/settlements`. Apply each selected instrument as a `settlement`, and declare every decision port it names. A program may also declare general instruments and subjects.
+One file declares one `program`. Declare parties and assets before using them. Import money flows from `std/money_flows`. Apply each selected instrument as a `settlement`, and declare every decision port it names. A program may also declare general instruments and subjects.
 
-Start with [the first-program guide](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/01-first-program.md). Read the generated [grammar](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/grammar.md), [types](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/types.md), and [standard-library pages](https://github.com/hyperscale0/hyperscale-hsx/tree/main/docs/reference/std) for the exact surface.
+Start with [the first-program guide](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/01-first-program.md). Read the generated [grammar](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/grammar.md), [types](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/types.md), and [money flows reference](https://github.com/hyperscale0/hyperscale-hsx/tree/main/docs/reference/std) for the exact surface.
 
-## Choose a standard instrument
+## Choose a money flow
 
 Choose the module whose lifecycle and money path already match the product. Do not copy its emitted mechanics into a custom instrument.
 
@@ -35,7 +35,7 @@ Choose the module whose lifecycle and money path already match the product. Do n
 - `settlement_batch` closes, calculates, approves, instructs, acknowledges, and reconciles a batch.
 - `swap` exchanges two independently typed sides.
 
-The standard library forms are demonstrated below. The marker before each program lets the repository test read the module list from disk and compile one matching example per module.
+The money flows are demonstrated below. The marker before each program lets the repository test read the module list from disk and compile one matching example per module.
 
 ## Diagnostic loop
 
@@ -54,13 +54,13 @@ Run `hsx check` after each coherent edit. Read the first error code, open the [d
 
 The [money](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/02-money.md), [fees and splits](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/05-fees-and-splits.md), [schedules](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/06-schedules.md), and [cost](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/09-cost.md) chapters explain these rules.
 
-## Standard-library witnesses
+## Money flow witnesses
 
 <!-- hsx-brick: advance -->
 
 ```hsx
 program advance_example "Advance example"
-import { advance } from "std/settlements"
+import { advance } from "std/money_flows"
 party funder: business
 party recipient: business
 settlement advance_payment = advance {
@@ -78,7 +78,7 @@ settlement advance_payment = advance {
 
 ```hsx
 program cancellable_booking_example "Cancellable booking example"
-import { cancellable_booking } from "std/settlements"
+import { cancellable_booking } from "std/money_flows"
 party guest: person
 party studio: business
 settlement studio_session = cancellable_booking {
@@ -97,7 +97,7 @@ settlement studio_session = cancellable_booking {
 
 ```hsx
 program captured_payment_example "Captured payment example"
-import { captured_payment } from "std/settlements"
+import { captured_payment } from "std/money_flows"
 party payer: person
 party payee: business
 settlement card_payment = captured_payment {
@@ -123,7 +123,7 @@ port reverse_capture {
 
 ```hsx
 program conditional_disbursement_example "Conditional disbursement example"
-import { conditional_disbursement } from "std/settlements"
+import { conditional_disbursement } from "std/money_flows"
 party source: business
 party claimant: person
 settlement claim_payment = conditional_disbursement {
@@ -145,7 +145,7 @@ port approve_claim {
 
 ```hsx
 program credit_facility_example "Credit facility example"
-import { credit_facility, scheduled } from "std/settlements"
+import { credit_facility, scheduled } from "std/money_flows"
 party lender: business
 party borrower: business
 party draw_destination: business
@@ -177,7 +177,7 @@ settlement facility = credit_facility {
 
 ```hsx
 program deposit_example "Deposit example"
-import { security_deposit } from "std/settlements"
+import { security_deposit } from "std/money_flows"
 party renter: person
 party owner: business
 settlement security_deposit = security_deposit {
@@ -203,7 +203,7 @@ port return_deposit { allowed: [owner] }
 
 ```hsx
 program capital_pool_example "Capital pool example"
-import { threshold_pool } from "std/settlements"
+import { threshold_pool } from "std/money_flows"
 party contributor: person
 party company: business
 settlement round = threshold_pool {
@@ -224,7 +224,7 @@ settlement round = threshold_pool {
 
 ```hsx
 program held_payment_example "Held payment example"
-import { held_payment } from "std/settlements"
+import { held_payment } from "std/money_flows"
 party buyer: person
 party seller: business
 settlement sale = held_payment {
@@ -242,7 +242,7 @@ port confirm_delivery { allowed: [buyer] }
 
 ```hsx
 program instant_transfer_example "Instant transfer example"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 party customer: person
 party merchant: business
 settlement transfer = instant_transfer {
@@ -263,7 +263,7 @@ settlement transfer = instant_transfer {
 
 ```hsx
 program metered_example "Metered example"
-import { metered } from "std/settlements"
+import { metered } from "std/money_flows"
 party customer: business
 party provider: business
 settlement usage = metered {
@@ -281,7 +281,7 @@ settlement usage = metered {
 
 ```hsx
 program pooled_split_example "Pooled split example"
-import { pooled_split } from "std/settlements"
+import { pooled_split } from "std/money_flows"
 party payer: business
 party first_recipient: business
 party second_recipient: business
@@ -301,7 +301,7 @@ settlement pool = pooled_split {
 
 ```hsx
 program premium_forward_example "Premium forward example"
-import { premium_forward } from "std/settlements"
+import { premium_forward } from "std/money_flows"
 party policyholder: person
 party carrier: business
 settlement premium = premium_forward {
@@ -325,7 +325,7 @@ port record_endorsement {
 
 ```hsx
 program reconciled_payout_example "Reconciled payout example"
-import { reconciled_payout } from "std/settlements"
+import { reconciled_payout } from "std/money_flows"
 party treasury: business
 party supplier: business
 settlement supplier_payout = reconciled_payout {
@@ -343,7 +343,7 @@ settlement supplier_payout = reconciled_payout {
 
 ```hsx
 program recurring_collection_example "Recurring collection example"
-import { recurring_collection, scheduled } from "std/settlements"
+import { recurring_collection, scheduled } from "std/money_flows"
 party debtor: person
 party repayment_source: business
 party recipient: business
@@ -369,7 +369,7 @@ port mandate_evidence {
 
 ```hsx
 program rotating_pool_example "Rotating pool example"
-import { rotating_pool } from "std/settlements"
+import { rotating_pool } from "std/money_flows"
 party member_a: person
 party member_b: person
 party member_c: person
@@ -392,7 +392,7 @@ settlement pool = rotating_pool {
 
 ```hsx
 program scheduled_example "Scheduled example"
-import { scheduled } from "std/settlements"
+import { scheduled } from "std/money_flows"
 party payer: business
 party payee: business
 settlement installments = scheduled {
@@ -409,7 +409,7 @@ settlement installments = scheduled {
 
 ```hsx
 program settlement_batch_example "Settlement batch example"
-import { settlement_batch } from "std/settlements"
+import { settlement_batch } from "std/money_flows"
 party settlement_account: business
 party payout_destination: business
 settlement batch = settlement_batch {
@@ -433,7 +433,7 @@ port acknowledge_payout {
 
 ```hsx
 program swap_example "Swap example"
-import { swap } from "std/settlements"
+import { swap } from "std/money_flows"
 party buyer: business
 party seller: business
 settlement exchange = swap {
@@ -457,7 +457,7 @@ port dispute_exchange { allowed: [buyer, seller] }
 
 ```hsx
 program weighted_distribution_example "Weighted distribution example"
-import { weighted_distribution } from "std/settlements"
+import { weighted_distribution } from "std/money_flows"
 party distribution_source: business
 party recipient: business
 settlement proceeds = weighted_distribution {
@@ -480,4 +480,4 @@ port snapshot_entitlements {
 
 ## Output boundary
 
-Use `compile` or the CLI to obtain canonical UDL, the origin map, and the cost manifest. The engine reads UDL and never HSX. When a task needs direct UDL work, use the UDL skill instead.
+Use `compile` or the Hyperscale CLI to obtain canonical UDL, the origin map, and the cost manifest. The engine reads UDL and never HSX. When a task needs direct UDL work, use the UDL skill instead.

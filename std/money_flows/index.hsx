@@ -1,0 +1,3 @@
+module std.money_flows
+
+// Money flows are imported by their full std.money_flows.<name> path.

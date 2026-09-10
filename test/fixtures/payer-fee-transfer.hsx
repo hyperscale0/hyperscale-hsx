@@ -1,5 +1,5 @@
 program payer_fee_transfer "Payer fee transfer"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 
 party student: person
 party tutor: business

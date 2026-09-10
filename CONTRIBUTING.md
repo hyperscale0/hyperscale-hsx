@@ -1,7 +1,7 @@
 # Contributing to HSX
 
-Read the repository `PRINCIPLES.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, and
-`open/AGENTS.md` before changing this package. `open/hsx` is AGPL and cannot
+Read `README.md`, `docs/README.md`, and `std/SEMANTICS.md` before changing
+this package. `open/hsx` is AGPL and cannot
 import proprietary code.
 
 The compiler pipeline is `parse.ts` to `modules.ts` to `typecheck.ts` to
@@ -12,11 +12,10 @@ compiler switch.
 Run:
 
 ```sh
-bun run --cwd open/hsx check
-bun run --cwd open/udl check
+bun run check
 ```
 
-The general-path witness compares every pinned program with its canonical UDL
-fixture under `test/fixtures/general-path-oracle/`. A standard module or oracle
-entry may not disappear silently. New UDL clauses enter HSX through the UDL
-vocabulary without a grammar production.
+The family specs compile standard library programs in place and assert their
+UDL semantic properties directly without fixture bytes. A standard module or
+semantic assertion may not disappear silently. New UDL clauses enter HSX
+through the UDL vocabulary without a grammar production.

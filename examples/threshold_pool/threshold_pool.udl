@@ -173,7 +173,8 @@
         "targetAmount": {
           "description": "Funding target in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "round",
@@ -576,7 +577,8 @@
         "amount": {
           "description": "One whole commitment amount",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "companyAccountId": {
           "description": "The company account",

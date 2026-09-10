@@ -13,7 +13,7 @@ Use one loop: compile, find the first error code in the diagnostics reference, a
 
 ```hsx
 program repaired_transfer "Repaired transfer"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 party sender: person
 party recipient: business
 settlement transfer = instant_transfer {

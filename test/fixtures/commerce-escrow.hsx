@@ -4,7 +4,7 @@
 
 program commerce_escrow "Commerce cooperative"
 
-import { instant_transfer, security_deposit, pooled_split } from "std/settlements"
+import { instant_transfer, security_deposit, pooled_split } from "std/money_flows"
 
 party shopper:  person
 party merchant: business

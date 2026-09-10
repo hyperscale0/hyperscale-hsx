@@ -1,5 +1,5 @@
 program fixed_side_exchange "Fixed side exchange";
-import { swap } from "std/settlements";
+import { swap } from "std/money_flows";
 party buyer: person;
 party seller: business;
 instrument exchange = swap(between: [buyer, seller], amounts: {

@@ -1,6 +1,6 @@
 program flat_weighted_distribution "Flat weighted distribution"
 
-import { weighted_distribution } from "std/settlements"
+import { weighted_distribution } from "std/money_flows"
 
 instrument distribution_group {
   fields {}

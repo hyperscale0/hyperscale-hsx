@@ -3,9 +3,16 @@ import {
   type UdlDocument,
   type UdlEffectKind,
 } from "@hyperscale0/udl";
-import type { GeneralDiagnostic, JsonValue, TypedProgram } from "./ir.ts";
+import type {
+  GeneralDiagnostic,
+  JsonValue,
+  TypedField,
+  TypedProgram,
+} from "./ir.ts";
 
 export type HsxEffectKind = UdlEffectKind;
+
+const CURRENCY = /^[A-Z]{3}$/;
 
 export interface UdlCostTable {
   readonly version: string;
@@ -72,16 +79,20 @@ export interface UdlCostManifest {
   };
 }
 
+/** One cost table, or one per billing currency the host prices. */
+export type UdlCostTables = UdlCostTable | readonly UdlCostTable[];
+
 export type CostManifestResult =
   | { readonly diagnostics: readonly GeneralDiagnostic[]; readonly ok: false }
   | { readonly manifest: UdlCostManifest; readonly ok: true };
 
 export function buildCostManifest(
   program: TypedProgram,
-  table: UdlCostTable | undefined,
+  tables: UdlCostTables | undefined,
   composesCatalogBlueprint: boolean,
 ): CostManifestResult {
-  if (!table) {
+  const priced = tables === undefined ? [] : [tables].flat();
+  if (priced.length === 0) {
     return {
       diagnostics: [
         {
@@ -97,13 +108,16 @@ export function buildCostManifest(
     };
   }
 
-  if (!/^[A-Z]{3}$/.test(table.currency)) {
+  const malformed = priced.find(
+    (candidate) => !CURRENCY.test(candidate.currency),
+  );
+  if (malformed) {
     return {
       diagnostics: [
         {
           code: "HSX1303",
           fix: "name one three-letter uppercase billing currency on the cost table",
-          message: `cost table ${table.version} has invalid billing currency ${table.currency}`,
+          message: `cost table ${malformed.version} has invalid billing currency ${malformed.currency}`,
           severity: "error",
           span: program.origin,
         },
@@ -113,65 +127,39 @@ export function buildCostManifest(
   }
 
   const diagnostics: GeneralDiagnostic[] = [];
-  const rowsBySignature = new Map<string, UdlCostTable["rows"]>();
-  for (const row of table.rows) {
-    rowsBySignature.set(row.signature, [
-      ...(rowsBySignature.get(row.signature) ?? []),
-      row,
-    ]);
-  }
+  const table = ledgerCostTable(program, priced, diagnostics);
+  if (!table) return { diagnostics, ok: false };
+  const rowsBySignature = indexCostRows(table);
   const actions: UdlCostManifest["actions"][number][] = [];
   for (const instrument of program.instruments) {
     for (const action of instrument.actions) {
-      const components: UdlCostManifest["actions"][number]["components"][number][] =
-        [];
-      let productPerEvent = 0n;
-      let endCustomerPerEvent = 0n;
-      for (const [signature, count] of effectCounts(action.effects)) {
-        const rows = rowsBySignature.get(signature) ?? [];
-        if (rows.length === 0) {
-          diagnostics.push({
-            code: "HSX1301",
-            fix: `add ${signature} to cost table ${table.version}`,
-            message: `${instrument.id}.${action.name} has unpriced effect signature ${signature}`,
-            severity: "error",
-            span: action.origin,
-          });
-          continue;
-        }
-        for (const row of rows) {
-          if (!validPrice(row)) {
-            diagnostics.push({
-              code: "HSX1302",
-              fix: `store ${signature} prices as nonnegative integers and name a volume meter for bps`,
-              message: `cost table ${table.version} has an invalid ${signature} price`,
-              severity: "error",
-              span: action.origin,
-            });
-            continue;
-          }
-          const eventTotal = BigInt(row.perEventMinor) * BigInt(count);
-          if (row.payer === "product") productPerEvent += eventTotal;
-          else endCustomerPerEvent += eventTotal;
-          components.push({
-            bps: row.bps,
-            count,
-            meter: row.meter,
-            payer: row.payer,
-            perEventMinor: row.perEventMinor,
-            settlement: row.settlement,
-            signature,
-            ...(row.volumeMeter ? { volumeMeter: row.volumeMeter } : {}),
-          });
-        }
-      }
-      actions.push({
-        action: action.name,
-        components,
-        endCustomerPerEventMinor: endCustomerPerEvent.toString(),
-        instrument: instrument.id,
-        perEventMinor: productPerEvent.toString(),
-      });
+      actions.push(
+        priceAction(
+          instrument.id,
+          action.name,
+          effectCounts(action.effects),
+          rowsBySignature,
+          (issue) => {
+            if (issue.kind === "missing_price") {
+              diagnostics.push({
+                code: "HSX1301",
+                fix: `add ${issue.signature} to cost table ${table.version}`,
+                message: `${instrument.id}.${action.name} has unpriced effect signature ${issue.signature}`,
+                severity: "error",
+                span: action.origin,
+              });
+            } else {
+              diagnostics.push({
+                code: "HSX1302",
+                fix: `store ${issue.signature} prices as nonnegative integers and name a volume meter for bps`,
+                message: `cost table ${table.version} has an invalid ${issue.signature} price`,
+                severity: "error",
+                span: action.origin,
+              });
+            }
+          },
+        ),
+      );
     }
   }
   const fixed = fixedCost(
@@ -182,6 +170,53 @@ export function buildCostManifest(
   );
   if (diagnostics.length > 0) return { diagnostics, ok: false };
   return { manifest: manifest(table, fixed, actions), ok: true };
+}
+
+/**
+ * The table priced in the program's ledger currency: the one currency its
+ * money fields move. A program without money fields prices in the host's
+ * first table.
+ */
+function ledgerCostTable(
+  program: TypedProgram,
+  tables: readonly UdlCostTable[],
+  diagnostics: GeneralDiagnostic[],
+): UdlCostTable | undefined {
+  const currencies = new Map<string, TypedField["origin"]>();
+  for (const instrument of program.instruments) {
+    for (const field of instrument.fields) {
+      // An unbound currency parameter (money<C>) is decided per instance,
+      // not by the program, so it names no ledger currency.
+      const currency = field.type.currency;
+      if (field.type.kind !== "money" || !currency || !CURRENCY.test(currency))
+        continue;
+      if (!currencies.has(currency))
+        currencies.set(currency, field.origin);
+    }
+  }
+  const [first, second] = [...currencies];
+  if (second) {
+    diagnostics.push({
+      code: "HSX1305",
+      fix: `move all money in ${first![0]}; a program bills in one ledger currency`,
+      message: `program moves money in ${[...currencies.keys()].join(" and ")}; a program bills in one ledger currency`,
+      severity: "error",
+      span: second[1],
+    });
+    return undefined;
+  }
+  const ledger = first?.[0] ?? tables[0]!.currency;
+  const table = tables.find((candidate) => candidate.currency === ledger);
+  if (table) return table;
+  const priced = tables.map((candidate) => candidate.currency).join(", ");
+  diagnostics.push({
+    code: "HSX1304",
+    fix: `move money in a priced currency: ${priced}`,
+    message: `program moves money in ${ledger}, which no cost table prices (priced: ${priced})`,
+    severity: "error",
+    span: first?.[1] ?? program.origin,
+  });
+  return undefined;
 }
 
 export function computeUdlFixedCost(
@@ -205,25 +240,15 @@ export function buildUdlCostManifest(
   table: UdlCostTable,
   composesCatalogBlueprint: boolean,
 ): UdlCostManifest {
-  if (!/^[A-Z]{3}$/.test(table.currency)) {
+  if (!CURRENCY.test(table.currency)) {
     throw new Error(
       `cost table ${table.version} has invalid billing currency ${table.currency}`,
     );
   }
-  const rowsBySignature = new Map<string, UdlCostTable["rows"]>();
-  for (const row of table.rows) {
-    rowsBySignature.set(row.signature, [
-      ...(rowsBySignature.get(row.signature) ?? []),
-      row,
-    ]);
-  }
+  const rowsBySignature = indexCostRows(table);
   const actions: UdlCostManifest["actions"][number][] = [];
   for (const instrument of document.instruments) {
     for (const [actionName, action] of Object.entries(instrument.actions)) {
-      const components: UdlCostManifest["actions"][number]["components"][number][] =
-        [];
-      let productPerEvent = 0n;
-      let endCustomerPerEvent = 0n;
       const effects = (action.effects ?? {}) as Readonly<
         Partial<
           Record<
@@ -232,39 +257,24 @@ export function buildUdlCostManifest(
           >
         >
       >;
-      for (const [signature, count] of effectCounts(effects)) {
-        const rows = rowsBySignature.get(signature) ?? [];
-        if (rows.length === 0)
-          throw new Error(
-            `${instrument.id}.${actionName} has unpriced effect signature ${signature}`,
-          );
-        for (const row of rows) {
-          if (!validPrice(row))
+      actions.push(
+        priceAction(
+          instrument.id,
+          actionName,
+          effectCounts(effects),
+          rowsBySignature,
+          (issue) => {
+            if (issue.kind === "missing_price") {
+              throw new Error(
+                `${instrument.id}.${actionName} has unpriced effect signature ${issue.signature}`,
+              );
+            }
             throw new Error(
-              `cost table ${table.version} has an invalid ${signature} price`,
+              `cost table ${table.version} has an invalid ${issue.signature} price`,
             );
-          const eventTotal = BigInt(row.perEventMinor) * BigInt(count);
-          if (row.payer === "product") productPerEvent += eventTotal;
-          else endCustomerPerEvent += eventTotal;
-          components.push({
-            bps: row.bps,
-            count,
-            meter: row.meter,
-            payer: row.payer,
-            perEventMinor: row.perEventMinor,
-            settlement: row.settlement,
-            signature,
-            ...(row.volumeMeter ? { volumeMeter: row.volumeMeter } : {}),
-          });
-        }
-      }
-      actions.push({
-        action: actionName,
-        components,
-        endCustomerPerEventMinor: endCustomerPerEvent.toString(),
-        instrument: instrument.id,
-        perEventMinor: productPerEvent.toString(),
-      });
+          },
+        ),
+      );
     }
   }
   return manifest(
@@ -293,6 +303,69 @@ export function evaluateUdlCostManifest(
     }
   }
   return total.toString();
+}
+
+interface ActionPricingIssue {
+  readonly kind: "invalid_price" | "missing_price";
+  readonly signature: string;
+}
+
+function indexCostRows(
+  table: UdlCostTable,
+): ReadonlyMap<string, readonly UdlCostTable["rows"][number][]> {
+  const rowsBySignature = new Map<string, UdlCostTable["rows"][number][]>();
+  for (const row of table.rows) {
+    const existing = rowsBySignature.get(row.signature);
+    if (existing) existing.push(row);
+    else rowsBySignature.set(row.signature, [row]);
+  }
+  return rowsBySignature;
+}
+
+function priceAction(
+  instrument: string,
+  action: string,
+  counts: Iterable<readonly [string, number]>,
+  rowsBySignature: ReadonlyMap<string, readonly UdlCostTable["rows"][number][]>,
+  onIssue: (issue: ActionPricingIssue) => void,
+): UdlCostManifest["actions"][number] {
+  const components: UdlCostManifest["actions"][number]["components"][number][] =
+    [];
+  let productPerEvent = 0n;
+  let endCustomerPerEvent = 0n;
+  for (const [signature, count] of counts) {
+    const rows = rowsBySignature.get(signature);
+    if (!rows || rows.length === 0) {
+      onIssue({ kind: "missing_price", signature });
+      continue;
+    }
+    for (const row of rows) {
+      if (!validPrice(row)) {
+        onIssue({ kind: "invalid_price", signature });
+        continue;
+      }
+      const eventTotal = BigInt(row.perEventMinor) * BigInt(count);
+      if (row.payer === "product") productPerEvent += eventTotal;
+      else endCustomerPerEvent += eventTotal;
+      components.push({
+        bps: row.bps,
+        count,
+        meter: row.meter,
+        payer: row.payer,
+        perEventMinor: row.perEventMinor,
+        settlement: row.settlement,
+        signature,
+        ...(row.volumeMeter ? { volumeMeter: row.volumeMeter } : {}),
+      });
+    }
+  }
+  return {
+    action,
+    components,
+    endCustomerPerEventMinor: endCustomerPerEvent.toString(),
+    instrument,
+    perEventMinor: productPerEvent.toString(),
+  };
 }
 
 function manifest(

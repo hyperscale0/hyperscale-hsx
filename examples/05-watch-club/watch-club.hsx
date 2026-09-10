@@ -11,7 +11,7 @@ import {
   scheduled,
   settlement_batch,
   swap
-} from "std/settlements"
+} from "std/money_flows"
 
 party member: person
 party seller: business

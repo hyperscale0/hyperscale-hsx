@@ -327,7 +327,13 @@ function declarationReferences(decl: Decl): {
   if (decl.kind === "type") collectExprNames(decl.value, names, ports);
   if (decl.kind === "party" && decl.attrs)
     collectExprNames(decl.attrs, names, ports);
-  if (decl.kind === "port") collectExprNames(decl.body, names, ports);
+  if (decl.kind === "port") {
+    collectExprNames(decl.body, names, ports);
+    const allowed = decl.body.entries.find(
+      (entry) => entry.key.name === "allowed",
+    );
+    if (allowed) collectApplicationPartyNames(allowed.value, parties);
+  }
   if (decl.kind === "instrument_apply" || isApplicationScopeDecl(decl)) {
     names.delete(decl.name.name);
     parties.delete(decl.name.name);
@@ -431,13 +437,13 @@ function standardSources(
   specifier: string,
   names: readonly string[],
 ): ModuleSource[] {
-  if (specifier !== "std/settlements") return [];
+  if (specifier !== "std/money_flows") return [];
   return names.flatMap((name) => {
     const source = standardLibrary.source(specifier, name);
     return source !== undefined
       ? [
           {
-            name: `std.settlements.${name}`,
+            name: `std.money_flows.${name}`,
             source,
           },
         ]

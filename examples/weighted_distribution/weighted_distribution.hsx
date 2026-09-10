@@ -1,5 +1,5 @@
 program weighted_distribution_example "Weighted distribution example"
-import { weighted_distribution } from "std/settlements"
+import { weighted_distribution } from "std/money_flows"
 party distribution_source: business
 party recipient: business
 settlement proceeds = weighted_distribution {

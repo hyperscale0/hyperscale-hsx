@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -76,11 +76,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@hyperscale0/udl": "1.0.0"
+    "@hyperscale0/udl": "2.0.0"
   },
   "devDependencies": {
-    "@types/bun": "1.4.0",
-    "typescript": "6.0.3"
+    "bun-types": "1.4.2",
+    "typescript": "7.0.2"
   },
   "contributors": [
     "Meshael AlBakaawi",

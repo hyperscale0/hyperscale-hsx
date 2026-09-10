@@ -1,5 +1,5 @@
 program supplier_settlement "Supplier settlement"
-import { reconciled_payout } from "std/settlements"
+import { reconciled_payout } from "std/money_flows"
 
 party treasury: business
 party supplier: business

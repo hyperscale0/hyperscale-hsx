@@ -4,7 +4,7 @@ Standard-library payment modules accept bounded fee forms. A payer fee sits on t
 
 ```hsx
 program lesson_market "Lesson market"
-import { instant_transfer, pooled_split } from "std/settlements"
+import { instant_transfer, pooled_split } from "std/money_flows"
 party student: person
 party tutor: business
 party assistant: business
@@ -29,7 +29,7 @@ Every percentage partition must total 100 percent. `pooled_split` distributes a 
 
 ```hsx
 program studio_booking "Studio booking"
-import { cancellable_booking } from "std/settlements"
+import { cancellable_booking } from "std/money_flows"
 party guest: person
 party studio: business
 settlement session = cancellable_booking {

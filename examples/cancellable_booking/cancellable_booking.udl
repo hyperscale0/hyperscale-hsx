@@ -275,6 +275,7 @@
             }
           ],
           "publicAction": "takeStudioSession",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Take the booking price from the guest into the holding account"
         }
@@ -303,7 +304,8 @@
         "sessionPrice": {
           "description": "Booking price in minor units, held away from both the guest and the studio until the booking ends",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "startsAt": {
           "description": "When the booking starts; the cancellation penalty is priced against the time left before it",

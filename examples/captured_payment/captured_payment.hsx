@@ -1,5 +1,5 @@
 program captured_payment_example "Captured payment example"
-import { captured_payment } from "std/settlements"
+import { captured_payment } from "std/money_flows"
 party payer: person
 party payee: business
 settlement card_payment = captured_payment {

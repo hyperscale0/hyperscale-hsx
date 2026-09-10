@@ -15,6 +15,7 @@ import type {
   ExposeDecl,
   IdentExpr,
   InstrumentDecl,
+  ModuleDecl,
   PortDecl,
   Program,
   ProgramDecl,
@@ -40,6 +41,7 @@ const CAMEL_CASE = /^[a-z][A-Za-z0-9]*$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const MONEY_PATTERN = "^[1-9][0-9]{0,17}$";
 const OPTIONAL_MONEY_PATTERN = "^(0|[1-9][0-9]{0,17})$";
+const ACCOUNT_PATTERN = "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
 const MAX_COMPREHENSION_EXPANSIONS = 256;
 const NONE_SENTINEL = "__hsx_none__";
 
@@ -55,6 +57,7 @@ interface ConcreteInstrument {
   readonly generatedPrefix: boolean;
   readonly name: IdentExpr;
   readonly parties: ReadonlySet<string>;
+  readonly ports: ReadonlyMap<string, readonly PortDecl[]>;
 }
 
 const actionClauseBySpelling: ReadonlyMap<string, ClauseDefinition> = new Map(
@@ -130,6 +133,32 @@ export function checkGeneralProgram(
       .filter((decl): decl is PortDecl => decl.kind === "port")
       .map((decl) => [decl.name.name, decl]),
   );
+  const checkedPorts = new Set<PortDecl>();
+  const checkPortDeclarations = (
+    declared: ReadonlyMap<string, PortDecl>,
+    knownParties: ReadonlySet<string>,
+  ) => {
+    for (const port of declared.values()) {
+      if (checkedPorts.has(port)) continue;
+      checkedPorts.add(port);
+      const allowed = entry(port.body, "allowed")?.value;
+      for (const item of allowed?.kind === "list"
+        ? allowed.items
+        : allowed
+          ? [allowed]
+          : []) {
+        const party = nameText(item);
+        if (knownParties.has(party)) continue;
+        report(
+          "HSX1024",
+          item.span,
+          `decision port ${port.name.name} allows undeclared party ${party}; declare the party before using it`,
+          `declare party ${party} with its party kind before using it in this port`,
+        );
+      }
+    }
+  };
+  checkPortDeclarations(ports, parties);
   const assetSubjects: TypedSubject[] = program.decls
     .filter((decl) => decl.kind === "asset")
     .map((decl) => ({
@@ -200,33 +229,24 @@ export function checkGeneralProgram(
     (declaration) =>
       declaration.kind === "use" || declaration.kind === "expose",
   );
-  const authoredInstrumentDeclarations = program.decls.filter(
-    (declaration) =>
-      declaration.kind === "instrument" ||
-      declaration.kind === "instrument_apply",
-  );
-  if (
-    options.publishedCatalog &&
-    (compositionDeclarations.length > 0 ||
-      authoredInstrumentDeclarations.length === 0)
-  ) {
-    return checkPublishedProgram(
-      program,
-      options.publishedCatalog,
-      header,
-      subjects,
-      diagnostics,
-      report,
-    );
+  if (!options.publishedCatalog) {
+    for (const declaration of compositionDeclarations) {
+      report(
+        "HSX1018",
+        declaration.span,
+        "this compiler host did not supply a published instrument catalog",
+        "pass the canonical UDL catalog as the publishedCatalog compile option",
+      );
+    }
   }
-  for (const declaration of compositionDeclarations) {
-    report(
-      "HSX1018",
-      declaration.span,
-      "this compiler host did not supply a published instrument catalog",
-      "pass the canonical UDL catalog as the publishedCatalog compile option",
-    );
-  }
+  const catalogById = options.publishedCatalog
+    ? new Map(
+        options.publishedCatalog.instruments.map((instrument) => [
+          instrument.id,
+          instrument,
+        ]),
+      )
+    : undefined;
 
   const aliases = new Map(
     program.decls
@@ -250,6 +270,8 @@ export function checkGeneralProgram(
   }
 
   const concrete: ConcreteInstrument[] = [];
+  const reachedPorts = new Set<PortDecl>();
+  const droppedPorts = new Set<PortDecl>();
   const scopedDeclarations = (
     declarationScope: readonly ApplicationScopeDecl[],
   ) => {
@@ -270,6 +292,7 @@ export function checkGeneralProgram(
         scopedTemplates.set(local.name.name, local);
       }
     }
+    checkPortDeclarations(scopedPorts, scopedParties);
     checkConstants(declarationScope, scopedAliases, diagnostics);
     return {
       aliases: scopedAliases,
@@ -286,13 +309,50 @@ export function checkGeneralProgram(
       decl.typeParameters.length === 0
     ) {
       const scoped = scopedDeclarations(decl.declarationScope ?? []);
-      concrete.push({
-        aliases: scoped.aliases,
-        body: substituteExpr(decl.body, scoped.constants) as BlockExpr,
-        generatedPrefix: false,
-        name: decl.name,
-        parties: scoped.parties,
-      });
+      const values = new Map(scoped.constants);
+      const dependencies = new Map<string, readonly string[]>();
+      const shapes = new Map<string, BlockExpr>();
+      for (const [name, port] of scoped.ports) {
+        const reference: Extract<Expr, { kind: "port_ref" }> = {
+          kind: "port_ref",
+          name: port.name,
+          span: port.span,
+        };
+        values.set(name, reference);
+        bindPortCompileValues(
+          values,
+          name,
+          reference,
+          scoped.ports,
+          diagnostics,
+          scoped.aliases,
+          shapes,
+          dependencies,
+        );
+      }
+      const selected = selectCompileTimeRows(
+        decl.body,
+        values,
+        diagnostics,
+        dependencies,
+      );
+      const body = expandComprehensions(
+        selected,
+        diagnostics,
+        values,
+        dependencies,
+      );
+      concrete.push(
+        ...bindActionPorts(
+          constructedInstruments(decl.name, body, diagnostics),
+          scoped.ports,
+          reachedPorts,
+        ).map((candidate) => ({
+          ...candidate,
+          aliases: scoped.aliases,
+          parties: scoped.parties,
+        })),
+      );
     }
     if (decl.kind !== "instrument_apply") continue;
     const application = decl.application;
@@ -315,6 +375,7 @@ export function checkGeneralProgram(
       );
       continue;
     }
+    const boundPorts = new Map<string, PortDecl>();
     const body = instantiate(
       template,
       application,
@@ -324,21 +385,39 @@ export function checkGeneralProgram(
       scoped.parties,
       scoped.aliases,
       scoped.constants,
+      boundPorts,
     );
     if (body) {
+      const applicationPorts = new Set<PortDecl>();
       const merged = decl.metadata
         ? mergeApplicationMetadata(body, decl.metadata, diagnostics)
         : body;
       concrete.push(
-        ...constructedInstruments(decl.name, merged, diagnostics).map(
-          (candidate) => ({
-            ...candidate,
-            aliases: scoped.aliases,
-            parties: scoped.parties,
-          }),
-        ),
+        ...bindActionPorts(
+          constructedInstruments(decl.name, merged, diagnostics),
+          boundPorts,
+          applicationPorts,
+        ).map((candidate) => ({
+          ...candidate,
+          aliases: scoped.aliases,
+          parties: scoped.parties,
+        })),
       );
+      for (const port of boundPorts.values()) {
+        if (applicationPorts.has(port)) reachedPorts.add(port);
+        else droppedPorts.add(port);
+      }
     }
+  }
+
+  for (const port of checkedPorts) {
+    if (reachedPorts.has(port) && !droppedPorts.has(port)) continue;
+    report(
+      "HSX1024",
+      port.name.span,
+      `wired decision port ${port.name.name} reaches no action`,
+      `carry ${port.name.name}'s condition into the action it authorizes`,
+    );
   }
 
   const allocated = allocateGeneratedPrefixes(concrete);
@@ -356,15 +435,37 @@ export function checkGeneralProgram(
       continue;
     }
     ids.add(candidate.name.name);
+    if (catalogById?.has(candidate.name.name)) {
+      report(
+        "HSX1022",
+        candidate.name.span,
+        `authored instrument ${candidate.name.name} collides with published catalog instrument`,
+        "rename the authored instrument to avoid colliding with the published catalog",
+      );
+      continue;
+    }
     const expandedBody = expandComprehensions(candidate.body, diagnostics);
     const checked = checkInstrument(
       candidate.name,
       expandedBody,
       candidate.parties,
+      candidate.ports,
       candidate.aliases,
       diagnostics,
     );
     if (checked) instruments.push(checked);
+  }
+
+  if (options.publishedCatalog) {
+    return checkPublishedProgram(
+      program,
+      options.publishedCatalog,
+      header,
+      subjects,
+      instruments,
+      diagnostics,
+      report,
+    );
   }
 
   crossInstrumentReferenceDiagnostics(instruments, diagnostics);
@@ -402,6 +503,7 @@ function checkPublishedProgram(
   catalog: UdlDocument,
   header: ProgramDecl | undefined,
   authoredSubjects: readonly TypedSubject[],
+  authoredInstruments: readonly TypedInstrument[],
   diagnostics: GeneralDiagnostic[],
   report: (
     code: string,
@@ -411,50 +513,43 @@ function checkPublishedProgram(
     severity?: "error" | "warning",
   ) => void,
 ): GeneralCheckResult {
-  if (!header) {
-    return { diagnostics };
-  }
-  if (!header.title || header.title.value.length === 0) {
-    report(
-      "HSX1015",
-      header.span,
-      `composed program ${header.name.name} needs a product title`,
-      'write the title after the product id, like `program product_name "Product title"`',
-    );
-  }
-  if (header.name.name.length > 60) {
-    report(
-      "HSX1015",
-      header.name.span,
-      "a composed program product id is at most 60 characters",
-      "shorten the product id without changing its snake_case spelling",
-    );
-  }
-  if ((header.title?.value.length ?? 0) > 80) {
-    report(
-      "HSX1015",
-      header.title?.span ?? header.span,
-      "a composed program title is at most 80 characters",
-      "shorten the product title to 80 characters or fewer",
-    );
-  }
-
-  const authoredInstruments = program.decls.filter(
-    (decl) => decl.kind === "instrument" || decl.kind === "instrument_apply",
+  const compositionDeclarations = program.decls.filter(
+    (decl) => decl.kind === "use" || decl.kind === "expose",
   );
-  for (const declaration of authoredInstruments) {
-    report(
-      "HSX1022",
-      declaration.span,
-      "a composed program cannot author an instrument",
-      "publish the instrument in the catalog, then select it with use",
-    );
+  if (
+    header &&
+    (compositionDeclarations.length > 0 || authoredInstruments.length === 0)
+  ) {
+    if (!header.title || header.title.value.length === 0) {
+      report(
+        "HSX1015",
+        header.span,
+        `composed program ${header.name.name} needs a product title`,
+        'write the title after the product id, like `program product_name "Product title"`',
+      );
+    }
+    if (header.name.name.length > 60) {
+      report(
+        "HSX1015",
+        header.name.span,
+        "a composed program product id is at most 60 characters",
+        "shorten the product id without changing its snake_case spelling",
+      );
+    }
+    if ((header.title?.value.length ?? 0) > 80) {
+      report(
+        "HSX1015",
+        header.title?.span ?? header.span,
+        "a composed program title is at most 80 characters",
+        "shorten the product title to 80 characters or fewer",
+      );
+    }
   }
 
   const uses = program.decls.filter(
     (decl): decl is UseDecl => decl.kind === "use",
   );
-  if (uses.length === 0) {
+  if (header && uses.length === 0 && authoredInstruments.length === 0) {
     report(
       "HSX1016",
       header.span,
@@ -504,6 +599,9 @@ function checkPublishedProgram(
   const exposures = program.decls.filter(
     (decl): decl is ExposeDecl => decl.kind === "expose",
   );
+  const authoredById = new Map(
+    authoredInstruments.map((instrument) => [instrument.id, instrument]),
+  );
   const publicNames = new Map<string, ExposeDecl>();
   const exposedTargets = new Map<string, ExposeDecl>();
   for (const exposure of exposures) {
@@ -511,11 +609,18 @@ function checkPublishedProgram(
     const explicitlyUsed = useById.has(exposure.instrument.name);
     const instrument = selectedById.get(exposure.instrument.name)?.instrument;
     const action = instrument?.actions[exposure.action.name];
-    if (!explicitlyUsed || !instrument || !action) {
+    const authoredInstrument = authoredById.get(exposure.instrument.name);
+    const authoredAction = authoredInstrument?.actions.find(
+      (candidate) => candidate.name === exposure.action.name,
+    );
+    if (
+      (!explicitlyUsed || !instrument || !action) &&
+      (!authoredInstrument || !authoredAction)
+    ) {
       report(
         "HSX1021",
         exposure.span,
-        `${target} is not an action on an explicitly used published instrument`,
+        `${target} is not an action on an explicitly used published instrument or authored instrument`,
         "add the matching use declaration and choose one of that instrument's actions",
       );
       continue;
@@ -546,14 +651,66 @@ function checkPublishedProgram(
     exposedTargets.set(target, exposure);
   }
 
+  const updatedAuthoredInstruments = authoredInstruments.map(
+    (authoredInstrument) => {
+      const instrumentExposures = exposures.filter(
+        (exposure) => exposure.instrument.name === authoredInstrument.id,
+      );
+      if (instrumentExposures.length === 0) return authoredInstrument;
+      const exposureByAction = new Map(
+        instrumentExposures.map((exposure) => [exposure.action.name, exposure]),
+      );
+      return {
+        ...authoredInstrument,
+        actions: authoredInstrument.actions.map((action) => {
+          const exposure = exposureByAction.get(action.name);
+          if (!exposure) return action;
+          return {
+            ...action,
+            origin: exposure.span,
+            slots: {
+              ...action.slots,
+              publicAction: exposure.publicName.name,
+            },
+          };
+        }),
+      };
+    },
+  );
+
+  const publishedInstruments = selected.map(({ instrument, origin }) => {
+    const projected = projectedPublishedInstrument(instrument, exposures);
+    return typedPublishedInstrument(
+      projected,
+      origin,
+      exposures.filter(
+        (exposure) => exposure.instrument.name === instrument.id,
+      ),
+      catalog.instruments,
+    );
+  });
+  const instruments = [...publishedInstruments, ...updatedAuthoredInstruments];
+  crossInstrumentReferenceDiagnostics(instruments, diagnostics);
+  if (
+    header &&
+    instruments.length === 0 &&
+    !diagnostics.some((diagnostic) => diagnostic.severity === "error")
+  ) {
+    report(
+      "HSX1502",
+      header.span,
+      `program ${header.name.name} emits no instruments`,
+      "declare or instantiate at least one instrument",
+    );
+  }
+
   const referencedSubjectKinds = new Set(
     selected.flatMap(({ instrument }) => instrument.subject?.kinds ?? []),
   );
+  const defaultSpan = uses[0]?.span ?? header?.span ?? program.span;
   const catalogSubjects = catalog.subjects
     .filter((subject) => referencedSubjectKinds.has(subject.kind))
-    .map((subject) =>
-      typedPublishedSubject(subject, uses[0]?.span ?? header.span),
-    );
+    .map((subject) => typedPublishedSubject(subject, defaultSpan));
   const catalogSubjectKinds = new Set(
     catalogSubjects.map((subject) => subject.kind),
   );
@@ -570,19 +727,14 @@ function checkPublishedProgram(
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
     return { diagnostics };
   }
+  const module = program.decls.find(
+    (decl): decl is ModuleDecl => decl.kind === "module",
+  );
+  const name = header?.name.name ?? module?.name.parts.at(-1)?.name ?? "module";
   const typed: TypedProgram = {
-    instruments: selected.map(({ instrument, origin }) => {
-      const projected = projectedPublishedInstrument(instrument, exposures);
-      return typedPublishedInstrument(
-        projected,
-        origin,
-        exposures.filter(
-          (exposure) => exposure.instrument.name === instrument.id,
-        ),
-      );
-    }),
+    instruments,
     kind: "typed_program",
-    name: header.name.name,
+    name,
     origin: program.span,
     subjects: [
       ...catalogSubjects,
@@ -590,7 +742,7 @@ function checkPublishedProgram(
         (subject) => !catalogSubjectKinds.has(subject.kind),
       ),
     ],
-    title: header.title?.value ?? sentenceCase(header.name.name),
+    title: header?.title?.value ?? sentenceCase(name),
   };
   return { diagnostics, program: typed };
 }
@@ -694,6 +846,7 @@ function typedPublishedInstrument(
   source: UdlInstrument,
   origin: Span,
   exposures: readonly ExposeDecl[],
+  catalog: readonly UdlInstrument[],
 ): TypedInstrument {
   const exposureByAction = new Map(
     exposures.map((exposure) => [exposure.action.name, exposure]),
@@ -724,7 +877,7 @@ function typedPublishedInstrument(
       origin,
       required: requiredFields.has(name),
       schema,
-      type: { kind: "unknown" },
+      type: publishedFieldType(schema, catalog),
     })),
     id: source.id,
     origin,
@@ -733,6 +886,31 @@ function typedPublishedInstrument(
       required: [...source.required],
     },
   };
+}
+
+/** Recover the semantic types retained by UDL before checking mixed relations. */
+function publishedFieldType(
+  schema: Readonly<Record<string, JsonValue>>,
+  catalog: readonly UdlInstrument[],
+): HsxType {
+  if (schema.type === "integer") return { kind: "integer" };
+  if (schema.type === "boolean") return { kind: "boolean" };
+  if (schema.type !== "string") return { kind: "unknown" };
+  if (
+    schema.pattern === MONEY_PATTERN ||
+    schema.pattern === OPTIONAL_MONEY_PATTERN
+  ) {
+    const currency = schema["x-hyperscale-currency"];
+    return typeof currency === "string"
+      ? { currency, kind: "money" }
+      : { kind: "money" };
+  }
+  const target = catalog.find(
+    (instrument) =>
+      schema.pattern ===
+      `^${instrument.idPrefix}_(sandbox|live)_[a-z0-9]{8,64}$`,
+  );
+  return target ? { kind: "ref", target: target.id } : { kind: "text" };
 }
 
 function typedPublishedSubject(
@@ -758,6 +936,7 @@ const applicationMetadataKeys = new Set([
   "action",
   "agent_description",
   "description",
+  "journeys",
   "nav",
   "navigation",
   "summary",
@@ -769,6 +948,7 @@ const applicationMetadataKeys = new Set([
 const applicationActionMetadataKeys = new Set([
   "agent_description",
   "description",
+  "examples",
   "public",
   "public_action",
   "summary",
@@ -873,6 +1053,74 @@ function mergeApplicationMetadata(
     };
   }
   return { ...body, entries };
+}
+
+function bindActionPorts(
+  candidates: ReturnType<typeof constructedInstruments>,
+  bindings: ReadonlyMap<string, PortDecl>,
+  reached: Set<PortDecl>,
+) {
+  const declarations = new Map(
+    [...bindings.values()].map((port) => [port.name.name, port]),
+  );
+  return candidates.map((candidate) => {
+    const ports = new Map<string, readonly PortDecl[]>();
+    const entries = candidate.body.entries.map((row) => {
+      if (row.key.name !== "action" || row.value.kind !== "block") return row;
+      const action = row.qualifiers[0]?.name;
+      if (!action) return row;
+      const declared = (row.conditionPorts ?? []).flatMap((name) => {
+        const port = declarations.get(name);
+        if (!port) return [];
+        reached.add(port);
+        return [port];
+      });
+      if (!declared.length) return row;
+      ports.set(action, declared);
+      if (entry(row.value, "port")) return row;
+      const source = declared[0]!;
+      const allowed = entry(source.body, "allowed")?.value;
+      const span = source.span;
+      return {
+        ...row,
+        value: {
+          ...row.value,
+          entries: [
+            ...row.value.entries,
+            {
+              key: { kind: "ident" as const, name: "port", span },
+              qualifiers: [],
+              span,
+              value: {
+                kind: "block" as const,
+                span,
+                entries: [
+                  {
+                    key: {
+                      kind: "ident" as const,
+                      name: "allowed_parties",
+                      span,
+                    },
+                    qualifiers: [],
+                    span,
+                    value:
+                      allowed?.kind === "list"
+                        ? allowed
+                        : {
+                            kind: "list" as const,
+                            span,
+                            items: allowed ? [allowed] : [],
+                          },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      };
+    });
+    return { ...candidate, body: { ...candidate.body, entries }, ports };
+  });
 }
 
 function constructedInstruments(
@@ -1089,7 +1337,10 @@ function instantiate(
   parties: ReadonlySet<string>,
   aliases: ReadonlyMap<string, Expr>,
   constants: ReadonlyMap<string, Expr>,
+  boundPorts: Map<string, PortDecl>,
 ): BlockExpr | undefined {
+  const loweredPortShapes = new Map<string, BlockExpr>();
+  const portDependencies = new Map<string, readonly string[]>();
   const partyKeyedParameters = partyKeyedBlockParameters(template, aliases);
   const named = new Map<string, Expr>();
   const positional: Expr[] = [];
@@ -1169,9 +1420,14 @@ function instantiate(
     if (value) values.set(parameter.name.name, value);
   });
   for (const [name, value] of named) values.set(name, value);
+  const resolvedArgs: Array<{
+    readonly parameter: InstrumentDecl["parameters"][number];
+    readonly value: Expr | undefined;
+  }> = [];
   let position = 0;
   for (const parameter of template.parameters) {
     const value = named.get(parameter.name.name) ?? positional[position++];
+    resolvedArgs.push({ parameter, value });
     if (!value) {
       if (optionalInner(parameter.type)) {
         values.set(parameter.name.name, booleanExpr(false, parameter.span));
@@ -1253,17 +1509,30 @@ function instantiate(
     } else {
       values.set(parameter.name.name, value);
     }
-    if (value.kind === "port_ref") {
+  }
+  for (const { parameter, value } of resolvedArgs) {
+    if (value?.kind === "port_ref") {
+      const port = ports.get(value.name.name);
+      if (port) boundPorts.set(parameter.name.name, port);
       bindPortCompileValues(
         values,
         parameter.name.name,
         value,
         ports,
         diagnostics,
+        aliases,
+        loweredPortShapes,
+        portDependencies,
       );
     }
   }
-  const selected = selectCompileTimeRows(template.body, values, diagnostics);
+  checkClaimAmountPortField(resolvedArgs, ports, aliases, diagnostics);
+  const selected = selectCompileTimeRows(
+    template.body,
+    values,
+    diagnostics,
+    portDependencies,
+  );
   const dependencyDiagnosticStart = diagnostics.length;
   for (const [name, parameter] of missingOptional) {
     if (!referencesIdentifier(selected, name, values)) continue;
@@ -1278,7 +1547,12 @@ function instantiate(
     });
   }
   if (diagnostics.length > dependencyDiagnosticStart) return undefined;
-  const body = substituteExpr(selected, values) as BlockExpr;
+  const body = expandComprehensions(
+    selected,
+    diagnostics,
+    values,
+    portDependencies,
+  );
   return {
     ...body,
     entries: body.entries.map((row) => {
@@ -1499,12 +1773,268 @@ function partyKeyedBlockParameters(
   );
 }
 
+function shapeTypeText(expr: Expr): string {
+  if (expr.kind === "ident") return expr.name;
+  if (expr.kind === "block") return "block";
+  if (expr.kind === "list") return "list";
+  if (expr.kind === "number") return expr.raw;
+  if (expr.kind === "string") return `"${expr.value}"`;
+  if (expr.kind === "boolean") return String(expr.value);
+  if (expr.kind === "call") {
+    const args = expr.args.map(shapeTypeText).join(", ");
+    return `${expr.callee.name}(${args})`;
+  }
+  if (expr.kind === "type_apply") {
+    const args = expr.args.map(shapeTypeText).join(", ");
+    return `${expr.callee.name}<${args}>`;
+  }
+  return nameText(expr);
+}
+
+function lowerPortShapeField(
+  port: PortDecl,
+  row: Entry,
+  aliases: ReadonlyMap<string, Expr>,
+  diagnostics: GeneralDiagnostic[],
+): Entry | undefined {
+  const type = typeOf(row.value, aliases);
+  if (
+    ![
+      "text",
+      "money",
+      "date",
+      "integer",
+      "boolean",
+      "account",
+      "ref",
+      "bps",
+      "percent",
+    ].includes(type.kind) ||
+    ((type.kind === "money" || type.kind === "account") &&
+      (!type.currency || !CURRENCY.test(type.currency)))
+  ) {
+    diagnostics.push({
+      code: "HSX1025",
+      fix: `declare ${row.key.name} as text, money(CUR), date, integer, boolean, account(CUR), ref<instrument_id>, id(instrument_id), bps, or percent`,
+      message: `decision port ${port.name.name} shape field ${row.key.name} has unknown type ${shapeTypeText(row.value)}`,
+      severity: "error",
+      span: row.value.span,
+    });
+    return undefined;
+  }
+  const extras: Record<string, string | number> = {};
+  if (type.kind === "text") {
+    extras.description =
+      "Required decision reference retained in the operation receipt";
+    extras.max_length = 180;
+    extras.min_length = 1;
+  } else if (type.kind === "money") {
+    extras.description = `Decided amount in ${type.currency} minor units`;
+  } else if (type.kind === "ref") {
+    extras.max_length = 180;
+    extras.min_length = 1;
+    if (type.target)
+      extras.pattern = `^${prefixFor(type.target)}_(sandbox|live)_[a-z0-9]{8,64}$`;
+  } else if (type.kind === "account") {
+    extras.pattern = ACCOUNT_PATTERN;
+  }
+  const scalarEntries = (
+    values: Readonly<Record<string, JsonValue>>,
+  ): Entry[] =>
+    Object.entries(values).map(([name, value]) => ({
+      key: { kind: "ident", name, span: row.span },
+      qualifiers: [],
+      span: row.span,
+      value:
+        typeof value === "number"
+          ? { kind: "number", raw: String(value), span: row.span }
+          : { kind: "string", value: String(value), span: row.span },
+    }));
+  // Port inputs require every key, but a caller-decided amount may be zero.
+  const field = lowerField(
+    {
+      ...row,
+      value: {
+        kind: "block",
+        span: row.span,
+        entries: [
+          {
+            key: { kind: "ident", name: "type", span: row.span },
+            qualifiers: [],
+            span: row.span,
+            value: row.value,
+          },
+          {
+            key: { kind: "ident", name: "optional", span: row.span },
+            qualifiers: [],
+            span: row.span,
+            value: { kind: "boolean", value: true, span: row.span },
+          },
+          ...scalarEntries(extras),
+        ],
+      },
+    },
+    aliases,
+    diagnostics,
+  );
+  const schema =
+    type.kind === "text"
+      ? {
+          type: field.schema.type!,
+          description: field.schema.description!,
+          ...field.schema,
+        }
+      : field.schema;
+
+  return {
+    key: row.key,
+    qualifiers: [],
+    span: row.span,
+    value: {
+      kind: "block",
+      span: row.span,
+      entries: scalarEntries(schema),
+    },
+  };
+}
+
+function lowerPortShape(
+  port: PortDecl,
+  rawShape: Expr,
+  aliases: ReadonlyMap<string, Expr>,
+  diagnostics: GeneralDiagnostic[],
+): BlockExpr {
+  if (rawShape.kind !== "block") {
+    diagnostics.push({
+      code: "HSX1025",
+      fix: "declare shape as a block of fields, like shape { note: text; }",
+      message: `decision port ${port.name.name} shape must be a block`,
+      severity: "error",
+      span: rawShape.span,
+    });
+    return { entries: [], kind: "block", span: rawShape.span };
+  }
+  const entries: Entry[] = [];
+  const names = new Set<string>();
+  for (const row of rawShape.entries) {
+    if (names.has(row.key.name)) {
+      diagnostics.push({
+        code: "HSX1004",
+        fix: `keep one ${row.key.name} field in decision port ${port.name.name}`,
+        message: `decision port ${port.name.name} shape field ${row.key.name} is declared twice`,
+        severity: "error",
+        span: row.key.span,
+      });
+      continue;
+    }
+    names.add(row.key.name);
+    const lowered = lowerPortShapeField(port, row, aliases, diagnostics);
+    if (lowered) entries.push(lowered);
+  }
+  return {
+    entries,
+    kind: "block",
+    span: rawShape.span,
+  };
+}
+
+function checkClaimAmountPortField(
+  resolvedArgs: ReadonlyArray<{
+    readonly parameter: InstrumentDecl["parameters"][number];
+    readonly value: Expr | undefined;
+  }>,
+  ports: ReadonlyMap<string, PortDecl>,
+  aliases: ReadonlyMap<string, Expr>,
+  diagnostics: GeneralDiagnostic[],
+): void {
+  for (const { value } of resolvedArgs) {
+    if (value?.kind !== "block") continue;
+    const fieldEntry = entry(value, "field");
+    const boundEntry = entry(value, "bound");
+    if (!fieldEntry || !boundEntry) continue;
+
+    const claimFieldName =
+      fieldEntry.value.kind === "ident"
+        ? fieldEntry.value.name
+        : fieldEntry.value.kind === "string"
+          ? fieldEntry.value.value
+          : undefined;
+    const boundFieldName =
+      boundEntry.value.kind === "ident"
+        ? boundEntry.value.name
+        : boundEntry.value.kind === "string"
+          ? boundEntry.value.value
+          : undefined;
+    if (!claimFieldName || !boundFieldName) continue;
+
+    const boundArg = resolvedArgs.find(
+      (arg) =>
+        (arg.value?.kind === "binding" &&
+          arg.value.name.name === boundFieldName) ||
+        arg.parameter.name.name === boundFieldName,
+    );
+    const boundTypeExpr =
+      boundArg?.value?.kind === "binding"
+        ? boundArg.value.type
+        : boundArg?.value;
+    if (!boundTypeExpr) continue;
+    const boundType = typeOf(boundTypeExpr, aliases);
+    if (boundType.kind !== "money") continue;
+
+    const portArg = resolvedArgs.find(
+      (arg) => arg.parameter.name.name === "claim",
+    );
+    if (portArg?.value?.kind !== "port_ref") continue;
+    const portDecl = ports.get(portArg.value.name.name);
+    if (!portDecl) continue;
+    const shapeExpr = entry(portDecl.body, "shape")?.value;
+    if (shapeExpr?.kind !== "block") continue;
+    const shapeField = entry(shapeExpr, claimFieldName);
+    if (!shapeField) {
+      diagnostics.push({
+        code: "HSX1011",
+        fix: `add ${claimFieldName}: money(${boundType.currency ?? "CUR"}) to the shape of decision port ${portDecl.name.name}`,
+        message: `decision port ${portDecl.name.name} shape lacks claim field ${claimFieldName}`,
+        severity: "error",
+        span: portArg.value.span,
+      });
+      continue;
+    }
+
+    const actualType = typeOf(shapeField.value, aliases);
+    if (actualType.kind !== "money") {
+      diagnostics.push({
+        code: "HSX1104",
+        fix: `pass money<${boundType.currency ?? "CUR"}> to ${shapeField.key.name}`,
+        message: `${shapeField.key.name} needs money<${boundType.currency ?? "CUR"}> but receives ${argumentWords(shapeField.value, aliases)}`,
+        severity: "error",
+        span: shapeField.value.span,
+      });
+    } else if (
+      actualType.currency &&
+      boundType.currency &&
+      actualType.currency !== boundType.currency
+    ) {
+      diagnostics.push({
+        code: "HSX1101",
+        fix: `pass money<${boundType.currency}> to ${shapeField.key.name}`,
+        message: `${shapeField.key.name} needs money<${boundType.currency}> but receives money<${actualType.currency}>`,
+        severity: "error",
+        span: shapeField.value.span,
+      });
+    }
+  }
+}
+
 function bindPortCompileValues(
   values: Map<string, Expr>,
   binding: string,
   value: Extract<Expr, { readonly kind: "port_ref" }>,
   ports: ReadonlyMap<string, PortDecl>,
   diagnostics: GeneralDiagnostic[],
+  aliases: ReadonlyMap<string, Expr> = new Map(),
+  loweredPortShapes: Map<string, BlockExpr> = new Map(),
+  dependencies: Map<string, readonly string[]> = new Map(),
 ): void {
   const port = ports.get(value.name.name);
   if (!port) {
@@ -1517,13 +2047,41 @@ function bindPortCompileValues(
     });
     return;
   }
-  const allowed = port ? entry(port.body, "allowed")?.value : undefined;
-  const shape = entry(port.body, "shape")?.value ?? {
-    entries: [],
-    kind: "block",
-    span: port.body.span,
-  };
-  if (allowed) values.set(`${binding}_allowed`, allowed);
+  for (const key of [binding, `${binding}_allowed`, `${binding}_fields`]) {
+    dependencies.set(key, [port.name.name]);
+  }
+  const allowed = entry(port.body, "allowed")?.value;
+  let shape = loweredPortShapes.get(value.name.name);
+  if (!shape) {
+    const rawShape = entry(port.body, "shape")?.value ?? {
+      entries: [],
+      kind: "block",
+      span: port.body.span,
+    };
+    const shapeDiagnostics: GeneralDiagnostic[] = [];
+    shape = lowerPortShape(port, rawShape, aliases, shapeDiagnostics);
+    for (const diagnostic of shapeDiagnostics) {
+      if (
+        !diagnostics.some(
+          (prior) =>
+            prior.code === diagnostic.code &&
+            prior.span === diagnostic.span &&
+            prior.message === diagnostic.message,
+        )
+      )
+        diagnostics.push(diagnostic);
+    }
+    loweredPortShapes.set(value.name.name, shape);
+  }
+  const normalizedAllowed: Expr | undefined =
+    allowed?.kind === "ident"
+      ? {
+          items: [allowed],
+          kind: "list",
+          span: allowed.span,
+        }
+      : allowed;
+  if (normalizedAllowed) values.set(`${binding}_allowed`, normalizedAllowed);
   values.set(`${binding}_fields`, shape);
   if (value.within) values.set(`${binding}_within`, value.within);
   if (value.deadline) values.set(`${binding}_deadline`, value.deadline);
@@ -1759,17 +2317,65 @@ function booleanExpr(value: boolean, span: Span): Expr {
   return { kind: "boolean", span, value };
 }
 
+function selectedControls(value: Expr): readonly string[] {
+  if (value.kind !== "block") return [];
+  return value.entries.flatMap((row) => [
+    ...(row.conditionPorts ?? []),
+    ...selectedControls(row.value),
+  ]);
+}
+
+// Retain dependencies before compile-time evaluation erases identifiers.
+function expressionPorts(
+  value: unknown,
+  dependencies: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value))
+    return [
+      ...new Set(value.flatMap((item) => expressionPorts(item, dependencies))),
+    ];
+  const node = value as Record<string, unknown>;
+  const found = new Set<string>(
+    (node.conditionPorts as readonly string[] | undefined) ?? [],
+  );
+  if (node.kind === "ident" && typeof node.name === "string") {
+    for (const port of dependencies.get(node.name.replace(/^\[|\]$/g, "")) ??
+      [])
+      found.add(port);
+  }
+  if (node.kind === "string" && typeof node.value === "string") {
+    for (const match of node.value.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
+      for (const port of dependencies.get(match[1]!) ?? []) found.add(port);
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (key === "span" || key === "conditionPorts") continue;
+    for (const port of expressionPorts(child, dependencies)) found.add(port);
+  }
+  return [...found];
+}
+
 function selectCompileTimeRows(
   block: BlockExpr,
   values: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  dependencies: ReadonlyMap<string, readonly string[]> = new Map(),
+  controls: readonly string[] = [],
 ): BlockExpr {
   const entries: Entry[] = [];
   const locals = new Map(values);
+  const localDependencies = new Map(dependencies);
   for (const row of block.entries) {
     if (row.key.name === "let") {
       const binding = row.qualifiers[0];
-      if (binding) locals.set(binding.name, substituteExpr(row.value, locals));
+      if (binding) {
+        localDependencies.set(
+          binding.name,
+          expressionPorts(row.value, localDependencies),
+        );
+        locals.set(binding.name, substituteExpr(row.value, locals));
+      }
       entries.push(row);
       continue;
     }
@@ -1809,13 +2415,53 @@ function selectCompileTimeRows(
       row.key.name !== "when_not" &&
       row.key.name !== "when_eq"
     ) {
-      entries.push({
-        ...row,
-        value:
-          row.value.kind === "block" && !row.iteration
-            ? selectCompileTimeRows(row.value, locals, diagnostics)
-            : row.value,
-      });
+      const value =
+        row.value.kind === "block" && !row.iteration
+          ? selectCompileTimeRows(
+              row.value,
+              locals,
+              diagnostics,
+              localDependencies,
+              controls,
+            )
+          : row.value;
+      const conditionPorts =
+        row.key.name === "action"
+          ? [
+              ...new Set([
+                ...(value.kind === "block" && entry(value, "due")
+                  ? []
+                  : controls),
+                ...row.qualifiers
+                  .filter((qualifier) => qualifier.name.startsWith("["))
+                  .flatMap((qualifier) =>
+                    expressionPorts(qualifier, localDependencies),
+                  ),
+                ...expressionPorts(
+                  value.kind === "block"
+                    ? entry(value, "port")?.value
+                    : undefined,
+                  localDependencies,
+                ),
+                ...expressionPorts(
+                  value.kind === "block"
+                    ? entry(value, "input")?.value
+                    : undefined,
+                  localDependencies,
+                ),
+                ...expressionPorts(
+                  value.kind === "block"
+                    ? entry(value, "capture_input", "captureInput")?.value
+                    : undefined,
+                  localDependencies,
+                ),
+                ...(value.kind === "block" && entry(value, "due")
+                  ? []
+                  : selectedControls(value)),
+              ]),
+            ]
+          : controls;
+      entries.push({ ...row, conditionPorts, value });
       continue;
     }
     const subject = row.qualifiers[0];
@@ -1842,7 +2488,18 @@ function selectCompileTimeRows(
     }
     if (include) {
       entries.push(
-        ...selectCompileTimeRows(row.value, locals, diagnostics).entries,
+        ...selectCompileTimeRows(
+          row.value,
+          locals,
+          diagnostics,
+          localDependencies,
+          [
+            ...new Set([
+              ...controls,
+              ...(subject ? expressionPorts(subject, localDependencies) : []),
+            ]),
+          ],
+        ).entries,
       );
     }
   }
@@ -2104,14 +2761,21 @@ function nameText(value: Expr): string {
 function expandComprehensions(
   block: BlockExpr,
   diagnostics: GeneralDiagnostic[],
+  values: ReadonlyMap<string, Expr> = new Map(),
+  dependencies: ReadonlyMap<string, readonly string[]> = new Map(),
 ): BlockExpr {
   const budget = { used: 0 };
   const expand = (
     current: BlockExpr,
     inherited: ReadonlyMap<string, Expr> = new Map(),
+    inheritedDependencies: ReadonlyMap<
+      string,
+      readonly string[]
+    > = dependencies,
   ): BlockExpr => {
     const entries: Entry[] = [];
     const locals = new Map(inherited);
+    const localDependencies = new Map(inheritedDependencies);
     for (const row of current.entries) {
       if (row.key.name === "let") {
         const binding = row.qualifiers[0];
@@ -2125,6 +2789,10 @@ function expandComprehensions(
           });
           continue;
         }
+        localDependencies.set(
+          binding.name,
+          expressionPorts(row.value, localDependencies),
+        );
         locals.set(binding.name, substituteExpr(row.value, locals));
         continue;
       }
@@ -2142,7 +2810,7 @@ function expandComprehensions(
             : compileTimeTruthy(actual);
         if (row.key.name === "when_not") include = !include;
         if (include && row.value.kind === "block") {
-          entries.push(...expand(row.value, locals).entries);
+          entries.push(...expand(row.value, locals, localDependencies).entries);
         }
         continue;
       }
@@ -2162,8 +2830,8 @@ function expandComprehensions(
         entries.push({
           ...substituted,
           value:
-            substituted.value.kind === "block"
-              ? expand(substituted.value, locals)
+            row.value.kind === "block"
+              ? expand(row.value, locals, localDependencies)
               : substituted.value,
         });
         continue;
@@ -2197,14 +2865,19 @@ function expandComprehensions(
           ...locals,
           [row.iteration.binding.name, value],
         ]);
-        const body = substituteExpr(row.value, substitutions);
-        if (body.kind === "block")
-          entries.push(...expand(body, substitutions).entries);
+        const body = selectCompileTimeRows(
+          row.value,
+          substitutions,
+          diagnostics,
+          localDependencies,
+          row.conditionPorts,
+        );
+        entries.push(...expand(body, substitutions, localDependencies).entries);
       }
     }
     return { ...current, entries };
   };
-  return expand(block);
+  return expand(block, values);
 }
 
 function finiteIterationValues(bound: Expr): readonly Expr[] | undefined {
@@ -2216,20 +2889,18 @@ function finiteIterationValues(bound: Expr): readonly Expr[] | undefined {
   if (bound.kind !== "number" || bound.raw.includes(".")) return undefined;
   const count = Number(bound.raw);
   if (!Number.isSafeInteger(count) || count < 0) return undefined;
-  return Array.from(
-    { length: count },
-    (_, index): Expr => ({
-      kind: "number",
-      raw: String(index + 1),
-      span: bound.span,
-    }),
-  );
+  return Array.from({ length: count }, (_, index): Expr => ({
+    kind: "number",
+    raw: String(index + 1),
+    span: bound.span,
+  }));
 }
 
 function checkInstrument(
   name: IdentExpr,
   body: BlockExpr,
   parties: ReadonlySet<string>,
+  ports: ReadonlyMap<string, readonly PortDecl[]>,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
 ): TypedInstrument | undefined {
@@ -2283,12 +2954,66 @@ function checkInstrument(
   }
   const slots: Record<string, JsonValue> = {};
   const partiesEntry = entry(body, "parties");
-  if (partiesEntry?.value.kind === "block") {
-    const roleObject = blockToObject(
-      partiesEntry.value,
-      new Map(),
-      diagnostics,
-    );
+  const roleObject = blockToObject(
+    partiesEntry?.value.kind === "block" ? partiesEntry.value : undefined,
+    new Map(),
+    diagnostics,
+  );
+  const partyAccounts = new Map(
+    [...parties].map((party) => [party, `${camel(party)}AccountId`]),
+  );
+  for (const [role, binding] of Object.entries(roleObject)) {
+    if (!isJsonObject(binding)) continue;
+    if (
+      typeof binding.party !== "string" ||
+      !parties.has(binding.party) ||
+      typeof binding.account !== "string" ||
+      !endpointFields.has(binding.account)
+    ) {
+      diagnostics.push({
+        code: "HSX1024",
+        fix: "bind a declared party to a declared account field",
+        message: `party role ${role} has an invalid party/account binding`,
+        severity: "error",
+        span: partiesEntry?.span ?? name.span,
+      });
+      continue;
+    }
+    partyAccounts.set(binding.party, binding.account);
+    roleObject[role] = binding.account;
+  }
+  const decisionRoles = new Map<string, string>();
+  const inferredDecisionFields = new Set<string>();
+  // Decision authority needs an identity binding, even when no money moves
+  // through that party. Reuse the same account binding as economic roles.
+  for (const action of body.entries) {
+    if (action.key.name !== "action" || action.value.kind !== "block") continue;
+    const port = entry(action.value, "port")?.value;
+    if (port?.kind !== "block") continue;
+    const allowed = entry(port, "allowed_parties", "allowedParties")?.value;
+    if (allowed?.kind !== "list") continue;
+    for (const item of allowed.items) {
+      const party = nameText(item);
+      if (!parties.has(party)) continue;
+      const accountField = partyAccounts.get(party)!;
+      const existing = Object.entries(roleObject).find(
+        ([, value]) => value === party || value === accountField,
+      );
+      let role = existing?.[0] ?? party;
+      for (
+        let suffix = 2;
+        !existing && Object.hasOwn(roleObject, role);
+        suffix++
+      )
+        role = `${party}_${suffix}`;
+      if (!existing) {
+        roleObject[role] = party;
+        inferredDecisionFields.add(accountField);
+      }
+      decisionRoles.set(party, role);
+    }
+  }
+  if (Object.keys(roleObject).length > 0) {
     for (const [role, value] of Object.entries(roleObject)) {
       if (typeof value !== "string") continue;
       if (fieldNames.has(value)) {
@@ -2304,11 +3029,11 @@ function checkInstrument(
         if (!fieldNames.has(field)) {
           fields.push({
             name: field,
-            origin: partiesEntry.span,
+            origin: partiesEntry?.span ?? name.span,
             required: true,
             schema: {
               description: `The ${value.replaceAll("_", " ")} account`,
-              pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+              pattern: ACCOUNT_PATTERN,
               type: "string",
               "x-hyperscale-reference-filter": {
                 column: "role",
@@ -2327,8 +3052,12 @@ function checkInstrument(
         message: `party role refers to ${String(value)}, which is not declared`,
         severity: "error",
         span:
-          partiesEntry.value.entries.find((entry) => entry.key.name === role)
-            ?.value.span ?? partiesEntry.span,
+          (partiesEntry?.value.kind === "block"
+            ? partiesEntry.value.entries
+            : []
+          ).find((entry) => entry.key.name === role)?.value.span ??
+          partiesEntry?.span ??
+          name.span,
       });
     }
     slots.parties = roleObject;
@@ -2370,7 +3099,7 @@ function checkInstrument(
             origin: actionEntry.span,
             required: true,
             schema: {
-              pattern: "^acct_(sandbox|live)_[a-z0-9]{8,64}$",
+              pattern: ACCOUNT_PATTERN,
               type: "string",
             },
             type: { kind: "account" },
@@ -2380,21 +3109,121 @@ function checkInstrument(
       }
     }
   }
-  const actions = actionEntries.flatMap((candidate) => {
-    const actionName = candidate.qualifiers[0];
-    if (!actionName || candidate.value.kind !== "block") return [];
-    return [
-      checkAction(
-        actionName,
-        candidate.value,
-        fields,
-        name.name,
-        endpointFields,
-        holdDestinations,
-        diagnostics,
-      ),
-    ];
-  });
+  const actions = actionEntries
+    .flatMap((candidate) => {
+      const actionName = candidate.qualifiers[0];
+      if (!actionName || candidate.value.kind !== "block") return [];
+      return [
+        checkAction(
+          actionName,
+          candidate.value,
+          fields,
+          name.name,
+          endpointFields,
+          holdDestinations,
+          diagnostics,
+        ),
+      ];
+    })
+    .map((action) => {
+      const port = action.slots.port;
+      if (
+        port === undefined ||
+        !isJsonObject(port) ||
+        !Array.isArray(port.allowedParties)
+      )
+        return action;
+      return {
+        ...action,
+        slots: {
+          ...action.slots,
+          port: {
+            ...port,
+            allowedParties: port.allowedParties.map((party) =>
+              typeof party === "string"
+                ? (decisionRoles.get(party) ?? party)
+                : party,
+            ),
+          },
+        },
+      };
+    });
+  for (const action of actions) {
+    for (const declared of ports.get(action.name) ?? []) {
+      const allowed = entry(declared.body, "allowed")?.value;
+      const allowedItems =
+        allowed?.kind === "list" ? allowed.items : allowed ? [allowed] : [];
+      if (allowedItems.length === 0) {
+        diagnostics.push({
+          code: "HSX1024",
+          fix: `declare a nonempty allowed list of declared parties on port ${declared.name.name}`,
+          message: `wired decision port ${declared.name.name} reaches action ${action.name} without declared allowed parties`,
+          severity: "error",
+          span: declared.name.span,
+        });
+        continue;
+      }
+      const port = action.slots.port;
+      if (
+        port === undefined ||
+        !isJsonObject(port) ||
+        !Array.isArray(port.allowedParties)
+      ) {
+        diagnostics.push({
+          code: "HSX1024",
+          fix: `emit the allowed parties of ${declared.name.name} in action ${action.name}'s port`,
+          message: `wired decision port ${declared.name.name} reaches action ${action.name} without a decision port`,
+          severity: "error",
+          span: action.origin,
+        });
+        continue;
+      }
+      const allowedFields = new Set<string>();
+      for (const item of allowedItems) {
+        const party = nameText(item);
+        const role =
+          decisionRoles.get(party) ??
+          Object.keys(roleObject).find(
+            (role) =>
+              roleObject[role] ===
+              (partyAccounts.get(party) ?? `${camel(party)}AccountId`),
+          );
+        const field = role === undefined ? undefined : roleObject[role];
+        if (typeof field === "string") {
+          allowedFields.add(field);
+          continue;
+        }
+        if (!parties.has(party)) continue;
+        diagnostics.push({
+          code: "HSX1024",
+          fix: `bind ${party} to an account field and use that binding in action ${action.name}'s port`,
+          message: `decision port ${action.name} allows party ${party}, but settlement ${name.name} does not bind that party to the decision action`,
+          severity: "error",
+          span: item.span,
+        });
+      }
+      if (
+        port.allowedParties.length === 0 ||
+        allowedFields.size !==
+          new Set(
+            port.allowedParties.map((role) => String(roleObject[String(role)])),
+          ).size ||
+        port.allowedParties.some(
+          (role) =>
+            typeof role !== "string" ||
+            !allowedFields.has(String(roleObject[role])),
+        )
+      ) {
+        diagnostics.push({
+          code: "HSX1024",
+          fix: `use only the account bindings allowed by ${declared.name.name}`,
+          message: `action ${action.name} does not preserve the allowed parties of decision port ${declared.name.name}`,
+          severity: "error",
+          span: action.origin,
+        });
+      }
+    }
+  }
   if (!actionNames.has("create")) {
     diagnostics.push({
       code: "HSX1504",
@@ -2479,8 +3308,47 @@ function checkInstrument(
   slots.summary ??= `${titleize(name.name)} instrument`;
   slots.title ??= titleize(name.name);
   linearityDiagnostics(actionEntries, diagnostics);
+  agentDescriptionDiagnostics(name, slots, actions, diagnostics);
+  if (Array.isArray(slots.required)) {
+    slots.required = [
+      ...new Set([...slots.required, ...inferredDecisionFields]),
+    ];
+  }
 
   return { actions, fields, id: name.name, origin: name.span, slots };
+}
+
+// Mirrors the catalog law agent_description_required: every action a caller
+// can reach becomes an agent tool whose description is authored, never
+// synthesized from the human-facing summary. System actions with a due clause
+// are exempt because no caller can reach them.
+function agentDescriptionDiagnostics(
+  name: IdentExpr,
+  slots: Readonly<Record<string, JsonValue>>,
+  actions: readonly TypedAction[],
+  diagnostics: GeneralDiagnostic[],
+): void {
+  const callable = actions.filter((action) => action.slots.due === undefined);
+  if (callable.length === 0) return;
+  if (slots.agentDescription === undefined) {
+    diagnostics.push({
+      code: "HSX1509",
+      fix: 'add agent_description: "..." telling an agent when to reach for this instrument',
+      message: `instrument ${name.name} exposes callable actions without an agent_description`,
+      severity: "error",
+      span: name.span,
+    });
+  }
+  for (const action of callable) {
+    if (action.slots.agentDescription !== undefined) continue;
+    diagnostics.push({
+      code: "HSX1509",
+      fix: 'add agent_description: "..." telling an agent when to call this action',
+      message: `action ${action.name} of ${name.name} is callable without an agent_description`,
+      severity: "error",
+      span: action.origin,
+    });
+  }
 }
 
 function checkRequiredFields(
@@ -2576,69 +3444,91 @@ function checkFields(
       continue;
     }
     names.add(name);
-    let typeExpr = row.value;
-    let description: string | undefined;
-    let required = true;
-    let extra: Record<string, JsonValue> = {};
-    if (row.value.kind === "block") {
-      const typeRow = entry(row.value, "type");
-      if (typeRow) typeExpr = typeRow.value;
-      const desc = entry(row.value, "description") ?? entry(row.value, "desc");
-      if (desc?.value.kind === "string") description = desc.value.value;
-      const optional = entry(row.value, "optional");
-      if (optional?.value.kind === "boolean") required = !optional.value.value;
-      extra = blockToObject(
-        {
-          ...row.value,
-          entries: row.value.entries.filter(
-            (item) =>
-              !["type", "description", "desc", "optional"].includes(
-                item.key.name,
-              ),
-          ),
-        },
-        new Map(),
-        diagnostics,
-      );
-    }
-    const type = typeOf(typeExpr, aliases);
-    const fixedMoneyIssue = invalidFixedMoneyBinding(typeExpr);
-    if (fixedMoneyIssue) {
-      diagnostics.push({
-        code: "HSX1103",
-        fix: `write ${name} as money(SAR, 2500) with a positive safe integer in minor units`,
-        message: `field ${name} ${fixedMoneyIssue}`,
-        severity: "error",
-        span: typeExpr.span,
-      });
-    }
-    if (
-      (typeExpr.kind === "ident" && typeExpr.name === "ref") ||
-      (type.kind === "ref" && !type.target)
-    ) {
-      diagnostics.push({
-        code: "HSX1007",
-        fix: "declare the target instrument as ref<instrument_id>",
-        message: `field ${name} declares ref without an instrument target`,
-        severity: "error",
-        span: typeExpr.span,
-      });
-    }
-    const structuralType = Object.hasOwn(extra, "items")
-      ? "array"
-      : Object.hasOwn(extra, "properties") ||
-          Object.hasOwn(extra, "additionalProperties")
-        ? "object"
-        : undefined;
-    const schema = {
-      ...schemaFor(type, required),
-      ...extra,
-      ...(structuralType ? { type: structuralType } : {}),
-      ...(description ? { description } : {}),
-    };
-    result.push({ name, origin: row.span, required, schema, type });
+    result.push(lowerField(row, aliases, diagnostics));
   }
   return result;
+}
+
+function lowerField(
+  row: Entry,
+  aliases: ReadonlyMap<string, Expr>,
+  diagnostics: GeneralDiagnostic[],
+): TypedField {
+  const name = camel(row.key.name);
+  let typeExpr = row.value;
+  let description: string | undefined;
+  let required = true;
+  let extra: Record<string, JsonValue> = {};
+  if (row.value.kind === "block") {
+    const typeRow = entry(row.value, "type");
+    if (typeRow) typeExpr = typeRow.value;
+    const desc = entry(row.value, "description") ?? entry(row.value, "desc");
+    if (desc?.value.kind === "string") description = desc.value.value;
+    const optional = entry(row.value, "optional");
+    if (optional?.value.kind === "boolean") required = !optional.value.value;
+    extra = blockToObject(
+      {
+        ...row.value,
+        entries: row.value.entries.filter(
+          (item) =>
+            !["type", "description", "desc", "optional"].includes(
+              item.key.name,
+            ),
+        ),
+      },
+      new Map(),
+      diagnostics,
+    );
+  }
+  const type = typeOf(typeExpr, aliases);
+  // Diagnostics point at the field's own type expression, not at an alias
+  // declaration that may live in an imported module.
+  const declaredSpan = typeExpr.span;
+  const seen = new Set<string>();
+  while (
+    typeExpr.kind === "ident" &&
+    aliases.has(typeExpr.name) &&
+    !seen.has(typeExpr.name)
+  ) {
+    seen.add(typeExpr.name);
+    typeExpr = aliases.get(typeExpr.name)!;
+  }
+  const fixedMoneyIssue = invalidFixedMoneyBinding(typeExpr);
+  if (fixedMoneyIssue) {
+    diagnostics.push({
+      code: "HSX1103",
+      fix: `write ${name} as money(SAR, 2500) with a positive safe integer in minor units`,
+      message: `field ${name} ${fixedMoneyIssue}`,
+      severity: "error",
+      span: declaredSpan,
+    });
+  }
+  if (
+    (typeExpr.kind === "ident" && typeExpr.name === "ref") ||
+    (type.kind === "ref" && !type.target)
+  ) {
+    diagnostics.push({
+      code: "HSX1007",
+      fix: "declare the target instrument as ref<instrument_id>",
+      message: `field ${name} declares ref without an instrument target`,
+      severity: "error",
+      span: declaredSpan,
+    });
+  }
+
+  const structuralType = Object.hasOwn(extra, "items")
+    ? "array"
+    : Object.hasOwn(extra, "properties") ||
+        Object.hasOwn(extra, "additionalProperties")
+      ? "object"
+      : undefined;
+  const schema = {
+    ...schemaFor(type, required),
+    ...extra,
+    ...(structuralType ? { type: structuralType } : {}),
+    ...(description ? { description } : {}),
+  };
+  return { name, origin: row.span, required, schema, type };
 }
 
 function checkLifecycle(
@@ -2775,6 +3665,19 @@ function checkAction(
       continue;
     }
     if (definition?.scope === "action") {
+      if (definition.target === "port" && row.value.kind === "block") {
+        const allowedEntry = entry(row.value, "allowed");
+        if (allowedEntry) {
+          diagnostics.push({
+            code: "HSX1508",
+            fix: "Use allowed_parties: [...] inside an action-level port clause; allowed: is for top-level port declarations.",
+            message:
+              "action-level port clause uses allowed: instead of allowed_parties:",
+            severity: "error",
+            span: allowedEntry.key.span,
+          });
+        }
+      }
       const rawValue = exprToJsonForUdlSlot(
         row.value,
         definition.target,
@@ -3109,10 +4012,24 @@ function crossInstrumentReferenceDiagnostics(
           );
         }
       }
+      const parentField = invariant.parentField;
+      const parent =
+        typeof parentField === "string"
+          ? fieldIn(owner, parentField)
+          : undefined;
       const childField = invariant.childField;
+      const childFieldDef =
+        typeof childField === "string"
+          ? fieldIn(child, childField)
+          : undefined;
+      const isIntegerSum =
+        invariant.count !== true &&
+        parent?.type.kind === "integer" &&
+        childFieldDef?.type.kind === "integer";
       if (
         typeof childField === "string" &&
-        fieldIn(child, childField)?.type.kind !== "money"
+        !isIntegerSum &&
+        childFieldDef?.type.kind !== "money"
       ) {
         report(
           owner,
@@ -3134,19 +4051,15 @@ function crossInstrumentReferenceDiagnostics(
           );
         }
       }
-      const parentField = invariant.parentField;
-      const parent =
-        typeof parentField === "string"
-          ? fieldIn(owner, parentField)
-          : undefined;
       if (
         typeof parentField === "string" &&
         (!parent ||
-          (invariant.count === true
+          (invariant.count === true || isIntegerSum
             ? parent.type.kind !== "integer"
             : parent.type.kind !== "money"))
       ) {
-        const expected = invariant.count === true ? "integer" : "money<C>";
+        const expected =
+          invariant.count === true || isIntegerSum ? "integer" : "money<C>";
         report(
           owner,
           owner.origin,
@@ -3792,16 +4705,15 @@ function schemaFor(
 ): Record<string, JsonValue> {
   switch (type.kind) {
     case "money":
-      return type.fixedAmount
-        ? {
-            const: type.fixedAmount,
-            pattern: MONEY_PATTERN,
-            type: "string",
-          }
-        : {
-            pattern: required ? MONEY_PATTERN : OPTIONAL_MONEY_PATTERN,
-            type: "string",
-          };
+      return {
+        ...(type.fixedAmount
+          ? { const: type.fixedAmount, pattern: MONEY_PATTERN }
+          : { pattern: required ? MONEY_PATTERN : OPTIONAL_MONEY_PATTERN }),
+        type: "string",
+        ...(type.currency && CURRENCY.test(type.currency)
+          ? { "x-hyperscale-currency": type.currency }
+          : {}),
+      };
     case "bps":
     case "percent":
       return { maximum: 10_000, minimum: 0, type: "integer" };
@@ -3813,6 +4725,8 @@ function schemaFor(
       return { format: "hyperscale-date-time", type: "string" };
     case "ref":
       return { type: "string" };
+    case "account":
+      return { pattern: ACCOUNT_PATTERN, type: "string" };
     default:
       return { type: "string" };
   }

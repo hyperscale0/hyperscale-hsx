@@ -26,20 +26,20 @@ function witnesses(): ReadonlyMap<string, string> {
 }
 
 const programs = witnesses();
-const modules = readdirSync(join(packageRoot, "std", "settlements"))
+const modules = readdirSync(join(packageRoot, "std", "money_flows"))
   .filter((file) => file.endsWith(".hsx") && file !== "index.hsx")
   .map((file) => file.slice(0, -4))
   .sort();
 
 if ([...programs.keys()].sort().join("\n") !== modules.join("\n")) {
-  throw new Error("the skill witness set does not match std/settlements");
+  throw new Error("the skill witness set does not match std/money_flows");
 }
 
 for (const name of modules) {
   const source = programs.get(name);
   if (!source) throw new Error(`${name} has no witness`);
   const result = compile(source, {
-    costTable: costTable as UdlCostTable,
+    costTable: costTable as readonly UdlCostTable[],
     moduleName: `examples/${name}/${name}.hsx`,
   });
   if (!result.artifacts || result.verdict !== "valid") {

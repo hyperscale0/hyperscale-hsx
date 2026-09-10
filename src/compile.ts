@@ -16,7 +16,7 @@ import { lineColIn, lineIndex } from "./ast.ts";
 import {
   buildCostManifest,
   type UdlCostManifest,
-  type UdlCostTable,
+  type UdlCostTables,
 } from "./cost.ts";
 import { lowerGeneralProgram, type OriginMapEntry } from "./emit.ts";
 import {
@@ -41,6 +41,8 @@ export interface CompileDiagnostic {
   readonly message: string;
   /** Source offsets in UTF-16 code units, matching parser and checker spans. */
   readonly span: { readonly end: number; readonly start: number };
+  /** UTF-8 byte span in root source, omitted when referring to an imported module. */
+  readonly byteSpan?: { readonly end: number; readonly start: number };
   readonly code?: string;
   readonly fix?: string;
   /** Canonical UDL path when lowering rejected an emitted clause. */
@@ -63,7 +65,8 @@ interface CompileArtifacts {
 
 export interface CompileOptions extends HsxCompilerHost {
   readonly composesCatalogBlueprint?: boolean;
-  readonly costTable?: UdlCostTable;
+  /** One table, or one per billing currency; the program's money fields pick. */
+  readonly costTable?: UdlCostTables;
 }
 
 export interface CompileOriginMapEntry {
@@ -113,7 +116,15 @@ export function compile(
     const position = origin ?? lineColIn(lines, span.start);
     diagnostics.push({
       column: position.column,
-      ...(origin ? { file: origin.moduleName } : {}),
+      ...(origin
+        ? { file: origin.moduleName }
+        : {
+            byteSpan: {
+              end:
+                byteOffsets[span.end] ?? byteOffsets[byteOffsets.length - 1]!,
+              start: byteOffsets[span.start] ?? 0,
+            },
+          }),
       line: position.line,
       message,
       span: { ...span },

@@ -396,7 +396,8 @@
         "contributionAmount": {
           "description": "Exact contribution in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",
@@ -648,6 +649,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Fund member a's cycle 1 contribution"
         },
@@ -1244,6 +1246,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "release",
           "steps": [],
           "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
         },
@@ -1609,7 +1612,8 @@
         "contributionAmount": {
           "description": "Exact contribution amount shared by every cycle",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",
@@ -1915,6 +1919,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Fund member b's cycle 1 contribution"
         },
@@ -2511,6 +2516,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "release",
           "steps": [],
           "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
         },
@@ -2876,7 +2882,8 @@
         "contributionAmount": {
           "description": "Exact contribution amount shared by every cycle",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",
@@ -3182,6 +3189,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Fund member c's cycle 1 contribution"
         },
@@ -3778,6 +3786,7 @@
               ]
             }
           ],
+          "sandboxFailurePoint": "release",
           "steps": [],
           "summary": "Pay this member's stored contribution into cycle 1's shared pot recipient"
         },
@@ -4143,7 +4152,8 @@
         "contributionAmount": {
           "description": "Exact contribution amount shared by every cycle",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",

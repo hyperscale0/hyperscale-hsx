@@ -108,7 +108,8 @@
         "netPayable": {
           "description": "Amount instructed to the supplier in minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "settleBy": {
           "description": "Instant the expectation stops waiting and the unmatched amount becomes a break",
@@ -265,7 +266,8 @@
         "unmatchedAmount": {
           "description": "Difference between the instructed amount and the evidence, in minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "supplier_payout_break",

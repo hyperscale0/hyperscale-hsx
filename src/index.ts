@@ -12,6 +12,7 @@ export {
   type HsxEffectKind,
   type UdlCostManifest,
   type UdlCostTable,
+  type UdlCostTables,
 } from "./cost.ts";
 export {
   hsxDiagnostics,
@@ -27,7 +28,7 @@ export {
   type ProgramEntryOverrideValue,
 } from "./entry-overrides.ts";
 export { type OriginMapEntry } from "./emit.ts";
-export { lowerGeneralProgram } from "./emit.ts";
+export { lowerGeneralProgram, originForUdlPath } from "./emit.ts";
 export { parseProgram } from "./parse.ts";
 export { checkGeneralProgram, type GeneralCheckOptions } from "./typecheck.ts";
 export {

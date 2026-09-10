@@ -1,5 +1,5 @@
 program facility_draws "Facility draws"
-import { credit_facility, scheduled } from "std/settlements"
+import { credit_facility, scheduled } from "std/money_flows"
 
 party lender: business
 party borrower: business

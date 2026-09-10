@@ -9,7 +9,7 @@
 
 program financed_retention "Financed construction retention"
 
-import { advance, held_payment, scheduled } from "std/settlements"
+import { advance, held_payment, scheduled } from "std/money_flows"
 
 party contractor:    business
 party subcontractor: business

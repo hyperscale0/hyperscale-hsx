@@ -126,6 +126,7 @@
             }
           ],
           "publicAction": "payPiece1Transfer",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Pay piece 1 of the amount through"
         },
@@ -233,12 +234,14 @@
         "carvedFeeAmount": {
           "description": "The carved platform fee selected from transferAmount",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "checkoutFee": {
           "description": "Immutable exact customer fee in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "currency": {
           "description": "ISO 4217 currency code",
@@ -261,7 +264,8 @@
         "highValueFee": {
           "description": "Immutable exact merchant fee in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "merchantAccountId": {
           "description": "The merchant account",
@@ -277,7 +281,8 @@
         "netOfCarvedFeeAmount": {
           "description": "The remainder of transferAmount after the carved platform fee",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "platformAccountId": {
           "description": "The product fee collection account",
@@ -295,7 +300,8 @@
         "transferAmount": {
           "description": "The gross amount in SAR minor units; the piece fields below partition it exactly",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "transfer",

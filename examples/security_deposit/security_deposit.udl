@@ -37,9 +37,10 @@
             "additionalProperties": false,
             "properties": {
               "damageAmount": {
-                "description": "Caller-decided amount in minor units",
+                "description": "Decided amount in SAR minor units",
                 "pattern": "^(0|[1-9][0-9]{0,17})$",
-                "type": "string"
+                "type": "string",
+                "x-hyperscale-currency": "SAR"
               },
               "evidence": {
                 "description": "Required decision reference retained in the operation receipt",
@@ -168,12 +169,19 @@
             }
           ],
           "publicAction": "placeDepositSecurityDeposit",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Reserve the depositAmount against the renter's account"
         },
         "return_deposit": {
           "agentDescription": "Return the held deposit to the renter. The deposit must be in held and unclaimed. This releases the reservation whole and the owner receives nothing.",
           "effects": {
+            "decides": [
+              {
+                "signature": "decides.tenant_port",
+                "source": "port"
+              }
+            ],
             "moves": [
               {
                 "signature": "moves.transfer.internal",
@@ -197,6 +205,11 @@
               "operation": "internal_transfer.void"
             }
           ],
+          "port": {
+            "allowedParties": [
+              "beneficiary"
+            ]
+          },
           "publicAction": "returnDepositSecurityDeposit",
           "steps": [],
           "summary": "Return the deposit to the renter through return_deposit"
@@ -215,7 +228,8 @@
         "depositAmount": {
           "description": "The deposit amount in SAR minor units, reserved in full and fully accounted on claim or return",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "ownerAccountId": {
           "description": "The owner account",

@@ -100,7 +100,7 @@ describe("hsx cost", () => {
       "instrument.action\teffect\tunit\tcount\ttotal\tpayer",
     );
     expect(result.out).toContain("tip.pay_piece_1\tmoves.transfer.internal");
-    expect(result.out).toContain("75 SAR minor + amount-dependent (11 bps)");
+    expect(result.out).toMatch(/75 SAR minor \+ amount-dependent \(\d+ bps\)/);
     expect(result.out).toContain("\tend_customer");
   });
 

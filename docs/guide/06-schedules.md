@@ -4,7 +4,7 @@ HSX schedules are finite. A literal `count`, an interval, and a first due date l
 
 ```hsx
 program installments "Installments"
-import { scheduled } from "std/settlements"
+import { scheduled } from "std/money_flows"
 party buyer: person
 party seller: business
 settlement plan = scheduled {

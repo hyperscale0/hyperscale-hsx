@@ -16,7 +16,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: 1.4.2
 
       - run: bun install --frozen-lockfile
 
@@ -59,7 +59,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.4.0"
+          bun-version: 1.4.2
 
       - name: Package editor
         working-directory: editors/vscode

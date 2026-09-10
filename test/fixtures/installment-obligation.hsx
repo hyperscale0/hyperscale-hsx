@@ -1,5 +1,5 @@
 program installment_obligation "Installment obligation"
-import { scheduled } from "std/settlements"
+import { scheduled } from "std/money_flows"
 
 party debtor: person
 party repayment_source: business

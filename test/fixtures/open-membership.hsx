@@ -1,5 +1,5 @@
 program open_membership "Open membership"
-import { recurring_collection, scheduled } from "std/settlements"
+import { recurring_collection, scheduled } from "std/money_flows"
 
 party member: person
 party club: business

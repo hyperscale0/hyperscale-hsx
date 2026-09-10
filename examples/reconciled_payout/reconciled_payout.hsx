@@ -1,5 +1,5 @@
 program reconciled_payout_example "Reconciled payout example"
-import { reconciled_payout } from "std/settlements"
+import { reconciled_payout } from "std/money_flows"
 party treasury: business
 party supplier: business
 settlement supplier_payout = reconciled_payout {

@@ -6,7 +6,7 @@ export interface StandardLibrary {
 
 export const bundledStandardLibrary: StandardLibrary = {
   source(specifier: string, name: string): string | undefined {
-    if (specifier !== "std/settlements") return undefined;
-    return BUNDLED_STD_FILES.get(`settlements/${name}.hsx`);
+    if (specifier !== "std/money_flows") return undefined;
+    return BUNDLED_STD_FILES.get(`money_flows/${name}.hsx`);
   },
 };

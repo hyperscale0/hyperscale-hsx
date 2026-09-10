@@ -1,6 +1,6 @@
 program equipment_rental "Equipment rental"
 
-import { security_deposit } from "std/settlements"
+import { security_deposit } from "std/money_flows"
 
 party renter: person
 party owner: business

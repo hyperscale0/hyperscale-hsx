@@ -1,5 +1,5 @@
 program explicit_collection "Explicit collection"
-import { recurring_collection, scheduled } from "std/settlements"
+import { recurring_collection, scheduled } from "std/money_flows"
 
 party debtor: person
 party repayment_source: business

@@ -1,5 +1,4 @@
 import {
-  serializeUdl,
   validateUdl,
   type UdlDocument,
   type UdlIssueCode,
@@ -25,7 +24,6 @@ export type GeneralLowerResult =
   | {
       readonly ok: true;
       readonly value: {
-        readonly canonicalUdl: string;
         readonly document: UdlDocument;
         readonly originMap: readonly OriginMapEntry[];
       };
@@ -72,7 +70,9 @@ export function lowerGeneralProgram(program: TypedProgram): GeneralLowerResult {
       ok: false,
     };
   }
-  const validation = validateUdl(candidate);
+  const validation = validateUdl(candidate, {
+    requireDecisionPartyBindings: true,
+  });
   if (!validation.ok) {
     const origins = originMapFor(program);
     return {
@@ -94,7 +94,6 @@ export function lowerGeneralProgram(program: TypedProgram): GeneralLowerResult {
   return {
     ok: true,
     value: {
-      canonicalUdl: serializeUdl(document),
       document,
       originMap: originMapFor(program),
     },
@@ -129,21 +128,36 @@ function unresolvedCompilerMarkers(
   });
 }
 
-function originForUdlPath(
+export function originForUdlPath<T extends { readonly path: string }>(
   path: string,
-  origins: readonly OriginMapEntry[],
-): OriginMapEntry | undefined {
-  return (
-    [...origins]
-      .filter(
-        (entry) =>
-          path === entry.path ||
-          path.startsWith(`${entry.path}.`) ||
-          path.startsWith(`${entry.path}[`),
-      )
-      .sort((left, right) => right.path.length - left.path.length)[0] ??
-    origins.find((entry) => entry.path === "$")
-  );
+  origins: readonly T[],
+): T | undefined {
+  let longestMatch: T | undefined;
+  let longestLength = -1;
+  let rootFallback: T | undefined;
+
+  for (let i = 0; i < origins.length; i += 1) {
+    const entry = origins[i]!;
+    const entryPath = entry.path;
+    if (rootFallback === undefined && entryPath === "$") {
+      rootFallback = entry;
+    }
+    const entryLen = entryPath.length;
+    if (
+      path === entryPath ||
+      (path.length > entryLen &&
+        (path.charCodeAt(entryLen) === 46 ||
+          path.charCodeAt(entryLen) === 91) &&
+        path.startsWith(entryPath))
+    ) {
+      if (entryLen > longestLength) {
+        longestMatch = entry;
+        longestLength = entryLen;
+      }
+    }
+  }
+
+  return longestMatch ?? rootFallback;
 }
 
 export function requiredFields(instrument: TypedInstrument): string[] {

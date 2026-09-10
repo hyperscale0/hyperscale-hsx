@@ -1,5 +1,5 @@
 program payout_batch "Payout batch"
-import { settlement_batch } from "std/settlements"
+import { settlement_batch } from "std/money_flows"
 
 party settlement_account: business
 party payout_destination: business

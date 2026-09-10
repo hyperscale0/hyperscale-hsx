@@ -1,5 +1,5 @@
 program instant_transfer_example "Instant transfer example"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 party customer: person
 party merchant: business
 settlement transfer = instant_transfer {

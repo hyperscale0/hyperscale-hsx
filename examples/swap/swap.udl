@@ -160,7 +160,7 @@
           "summary": "Create a exchange atomic trade"
         },
         "dispute": {
-          "agentDescription": "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. Either trading party may call it.",
+          "agentDescription": "Claw back a released trade inside its dispute window. Both cross-payment reservations void and both principals return from escrow in one batch. The trade must be released and the clawback moment must not have passed. The dispute port's declared parties may call it.",
           "deadline": {
             "field": "clawbackAt"
           },
@@ -515,6 +515,7 @@
             }
           ],
           "publicAction": "fundExchange",
+          "sandboxFailurePoint": "funding",
           "steps": [],
           "summary": "Fund both trade sides and collect on-top fees atomically"
         },
@@ -566,7 +567,7 @@
           "summary": "Post both trade reservations when the clawback window matures"
         },
         "release": {
-          "agentDescription": "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. Either trading party may call it.",
+          "agentDescription": "Reserve each side's principal for the other side and start the dispute window. The trade must be funded. Money is reserved, not settled. It posts on its own when the window matures, and dispute unwinds it before then. The release port's declared parties may call it.",
           "effects": {
             "decides": [
               {
@@ -694,6 +695,7 @@
             ]
           },
           "publicAction": "releaseExchange",
+          "sandboxFailurePoint": "release",
           "setsAt": {
             "field": "clawbackAt",
             "offset": "P7D"
@@ -744,12 +746,14 @@
         "buyerAmount": {
           "description": "Side A amount in SAR minor units, held against the whole trade",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "buyerFee": {
           "description": "Immutable exact buyer service fee in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "clawbackAt": {
           "description": "Machine-owned end of the P7D whole-trade dispute window",
@@ -790,12 +794,14 @@
         "sellerAmount": {
           "description": "Side B amount in SAR minor units, held against the whole trade",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "sellerFee": {
           "description": "Immutable exact seller service fee in SAR minor units",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "exchange",

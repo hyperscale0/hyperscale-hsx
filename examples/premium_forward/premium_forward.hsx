@@ -1,5 +1,5 @@
 program premium_forward_example "Premium forward example"
-import { premium_forward } from "std/settlements"
+import { premium_forward } from "std/money_flows"
 party policyholder: person
 party carrier: business
 settlement premium = premium_forward {

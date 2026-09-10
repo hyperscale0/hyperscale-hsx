@@ -268,6 +268,8 @@ export type Expr =
  * and `on_cancel(funded) { ... }` (key + qualifiers + block value).
  */
 export interface Entry {
+  /** Port dependencies retained through compile-time selection and substitution. */
+  readonly conditionPorts?: readonly string[];
   /** `for item in bound { ... }`, expanded before binding or UDL lowering. */
   readonly iteration?: {
     readonly binding: IdentExpr;
@@ -305,7 +307,7 @@ export interface ExposeDecl {
   readonly span: Span;
 }
 
-/** `import { held_payment } from "std/settlements"`. */
+/** `import { held_payment } from "std/money_flows"`. */
 export interface ImportDecl {
   readonly from: StringExpr;
   readonly kind: "import";
@@ -347,7 +349,7 @@ export interface PortDecl {
   readonly span: Span;
 }
 
-/** `module std.settlements` gives a file its importable module name. */
+/** `module std.money_flows` gives a file its importable module name. */
 export interface ModuleDecl {
   readonly kind: "module";
   readonly name: PathExpr;

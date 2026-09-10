@@ -7,13 +7,15 @@ export interface HsxDiagnosticCatalogEntry {
   readonly reason?: string;
 }
 
-const instrument = (
-  body: string,
-): string => `program catalog_probe "Catalog probe"
+const instrument = (body: string, fields = ""): string => `program catalog_probe "Catalog probe"
 instrument probe {
-  fields {}
+  agent_description: "Probe instrument for catalog diagnostics.";
+  fields { ${fields} }
   lifecycle { states created; initial created; }
-  action create { steps: []; }
+  action create {
+    agent_description: "Create a probe instance.";
+    steps: [];
+  }
   ${body}
 }`;
 
@@ -201,8 +203,8 @@ instrument probe = template(value: "one", value: "two")`,
   {
     code: "HSX1022",
     stage: "typecheck",
-    title: "Authored instrument in a composition",
-    fix: "Publish the instrument separately, then select it with use.",
+    title: "Authored instrument collides with published catalog",
+    fix: "Rename the authored instrument to avoid colliding with published catalog instruments.",
     // This diagnostic requires a compiler-host published catalog.
     example: null,
     reason: "This refusal requires a compiler-host published catalog.",
@@ -213,6 +215,44 @@ instrument probe = template(value: "one", value: "two")`,
     title: "Invalid required-field list",
     fix: "List declared, non-optional field names once each.",
     example: instrument("required: missing;"),
+  },
+  {
+    code: "HSX1024",
+    stage: "typecheck",
+    title: "Decision party has no matching account binding",
+    fix: "Bind the allowed party to an account field and use that binding in the decision action.",
+    example: `program decision_binding "Decision binding"
+party buyer: person
+party seller: business
+port approve { allowed: [buyer] }
+instrument gated(decision: condition) {
+  fields {}
+  parties { payer: seller }
+  lifecycle { states created done; initial created; on approve: created -> done; }
+  action create { steps: []; }
+  action [decision] { steps: []; port { allowed_parties: [payer]; } }
+}
+instrument gate = gated(decision: port approve)`,
+  },
+  {
+    code: "HSX1025",
+    stage: "typecheck",
+    title: "Unknown decision port shape type",
+    fix: "Declare the shape field as text, money(CUR), date, integer, boolean, account(CUR), ref<instrument_id>, id(instrument_id), bps, or percent.",
+    example: `program catalog_probe "Catalog probe"
+import { security_deposit } from "std/money_flows"
+party buyer: person
+party seller: business
+settlement hold = security_deposit {
+  payer: buyer
+  holder: seller
+  amount: depositAmount: money(SAR)
+  claim: port report_damage
+  claim_amount: { field: damageAmount, bound: depositAmount, remainder: return }
+  return: port pass_inspection
+}
+port report_damage { allowed: [seller] shape { damageAmount: money(SAR) } }
+port pass_inspection { allowed: [seller] shape { invalidField: mystery_type } }`,
   },
   {
     code: "HSX1101",
@@ -297,6 +337,20 @@ action pay { computes remainder rest { amount_ref: total; on_zero: refuse; total
     example: null,
     reason:
       "This refusal requires an invalid compiler-host cost-table currency.",
+  },
+  {
+    code: "HSX1304",
+    stage: "typecheck",
+    title: "Unpriced ledger currency",
+    fix: "Move money in a currency the shipped cost tables price.",
+    example: instrument("", "amount: money<JPY>;"),
+  },
+  {
+    code: "HSX1305",
+    stage: "typecheck",
+    title: "More than one ledger currency",
+    fix: "Move all money in one currency; a program bills in one ledger currency.",
+    example: instrument("", "amount: money<SAR>; fee: money<USD>;"),
   },
   {
     code: "HSX1401",
@@ -411,6 +465,34 @@ instrument probe = template()`,
     example: `program catalog_probe "Catalog probe"
 export instrument template() { fields {}; lifecycle { states created; initial created; }; action create { steps: []; }; }
 instrument probe = template() { fields: {}; }`,
+  },
+  {
+    code: "HSX1508",
+    stage: "typecheck",
+    title: "Invalid action-level port syntax",
+    fix: "Use allowed_parties: [...] inside an action-level port clause; allowed: is for top-level port declarations.",
+    example: `program catalog_probe "Catalog probe"
+party approver: person
+instrument probe {
+  fields {}
+  lifecycle { states created; initial created; }
+  action create {
+    steps: [];
+    port { allowed: [approver]; }
+  }
+}`,
+  },
+  {
+    code: "HSX1509",
+    stage: "typecheck",
+    title: "Callable action without an agent description",
+    fix: "Add agent_description: \"...\" to the instrument and to every action a caller can reach; composer.check refuses the program without them.",
+    example: `program catalog_probe "Catalog probe"
+instrument probe {
+  fields {}
+  lifecycle { states created; initial created; }
+  action create { steps: []; }
+}`,
   },
   {
     code: "HSX1601",

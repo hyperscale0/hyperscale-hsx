@@ -12,7 +12,7 @@
 
 import { fileURLToPath } from "node:url";
 import { compile, type CompileResult } from "./compile.ts";
-import type { UdlCostManifest, UdlCostTable } from "./cost.ts";
+import type { UdlCostManifest, UdlCostTables } from "./cost.ts";
 import { hsxDiagnostics } from "./diagnostics.ts";
 import { format } from "./format.ts";
 import { startLspServer } from "./lsp/server.ts";
@@ -124,7 +124,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return OK;
   }
 
-  let costTable: UdlCostTable;
+  let costTable: UdlCostTables;
   try {
     costTable = await readDefaultCostTable(io);
   } catch (cause) {
@@ -300,7 +300,7 @@ async function writeOutput(
   return OK;
 }
 
-async function readDefaultCostTable(io: Io): Promise<UdlCostTable> {
+async function readDefaultCostTable(io: Io): Promise<UdlCostTables> {
   const candidates = [
     fileURLToPath(new URL("../examples/cost-table.json", import.meta.url)),
     fileURLToPath(new URL("../../examples/cost-table.json", import.meta.url)),
@@ -308,7 +308,7 @@ async function readDefaultCostTable(io: Io): Promise<UdlCostTable> {
   let lastError: unknown;
   for (const path of candidates) {
     try {
-      return JSON.parse(await io.readFile(path)) as UdlCostTable;
+      return JSON.parse(await io.readFile(path)) as UdlCostTables;
     } catch (cause) {
       lastError = cause;
     }

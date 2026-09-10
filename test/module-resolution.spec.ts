@@ -1,13 +1,18 @@
 import { describe, expect, it } from "bun:test";
+import type { UdlDocument } from "@hyperscale0/udl";
 import { parseProgram } from "../src/index.ts";
 import { compile } from "./compile.ts";
 import { resolveProgramModules } from "../src/modules.ts";
 
 const simpleTemplate = `export instrument simple_template() {
   title: "Simple";
+  agent_description: "A simple template for module tests.";
   fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a simple template record.";
+    moves: []; steps: [];
+  }
 }`;
 
 function resolver(modules: Readonly<Record<string, string>>) {
@@ -75,12 +80,20 @@ import { ready } from "decision"
           return {
             name: specifier,
             source: `module decision
+party payer: person
 port local_release { allowed: [payer] }
 export instrument decision_template(release: condition) {
+  agent_description: "A decision template for resolution tests.";
   fields {}
   lifecycle { states created released; initial created; on [release]: created -> released; }
-  action create { moves: []; steps: []; }
-  action [release] { port: { allowed_parties: release_allowed; }; moves: []; steps: []; }
+  action create {
+    agent_description: "Create a decision record.";
+    moves: []; steps: [];
+  }
+  action [release] {
+    agent_description: "Release the decision.";
+    port: { allowed_parties: release_allowed; }; moves: []; steps: [];
+  }
 }
 export instrument ready = decision_template(release: port local_release)
 `,
@@ -195,10 +208,17 @@ export instrument ready = simple_template()
 party ${party}: person
 port private_release { allowed: [${party}] }
 export instrument private_template(release: condition) {
+  agent_description: "A private template for scope tests.";
   fields {}
   lifecycle { states created released; initial created; on [release]: created -> released; }
-  action create { moves: []; steps: []; }
-  action [release] { port: { allowed_parties: release_allowed; }; moves: []; steps: []; }
+  action create {
+    agent_description: "Create a private template record.";
+    moves: []; steps: [];
+  }
+  action [release] {
+    agent_description: "Release the private record.";
+    port: { allowed_parties: release_allowed; }; moves: []; steps: [];
+  }
 }
 export instrument ${name}_ready = private_template(release: port private_release)
 `;
@@ -246,9 +266,13 @@ import { ready } from "identical"
 party payer: person
 export instrument party_template(member: party) {
   title: words(member);
+  agent_description: "A party template for identity tests.";
   fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a party template record.";
+    moves: []; steps: [];
+  }
 }
 export instrument ready = party_template(member: payer)
 `,
@@ -307,10 +331,17 @@ party payer: person
 port local_release { allowed: [payer] }
 import { ready } from "unrelated"
 instrument local_template(release: condition) {
+  agent_description: "A local template for reviewer tests.";
   fields {}
   lifecycle { states created released; initial created; on [release]: created -> released; }
-  action create { moves: []; steps: []; }
-  action [release] { port: { allowed_parties: release_allowed; }; moves: []; steps: []; }
+  action create {
+    agent_description: "Create a local template record.";
+    moves: []; steps: [];
+  }
+  action [release] {
+    agent_description: "Release the local record.";
+    port: { allowed_parties: release_allowed; }; moves: []; steps: [];
+  }
 }
 instrument local_hold = local_template(release: port local_release)
 `,
@@ -346,9 +377,13 @@ import { ready } from "constant"
 const local_title: text = "Ready from module"
 export instrument titled_template() {
   title: local_title;
+  agent_description: "A titled template for constant tests.";
   fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a titled record.";
+    moves: []; steps: [];
+  }
 }
 export instrument ready = titled_template()
 `,
@@ -372,9 +407,13 @@ import { ready } from "computed"
           computed: `module computed
 const field_name: text = amount
 export instrument computed_template() {
+  agent_description: "A computed template for key tests.";
   fields { [field_name] { type: text; } }
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a computed record.";
+    moves: []; steps: [];
+  }
 }
 export instrument ready = computed_template()
 `,
@@ -421,9 +460,13 @@ import { ready } from "typed"
           typed: `module typed
 type SaudiMoney = money<SAR>
 export instrument typed_template(amount: SaudiMoney) {
+  agent_description: "A typed template for money tests.";
   fields { amount: SaudiMoney; }
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a typed record.";
+    moves: []; steps: [];
+  }
 }
 export instrument ready = typed_template(amount: SAR 1.00)
 `,
@@ -446,9 +489,13 @@ const local_title: text = "Concrete from module"
 type LocalAmount = money<SAR>
 export instrument ready {
   title: local_title;
+  agent_description: "A concrete instrument for closure tests.";
   fields { amount: LocalAmount; }
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a concrete record.";
+    moves: []; steps: [];
+  }
 }
 `;
     const direct = compile(source);
@@ -486,9 +533,13 @@ export instrument ready = dependency_template()
 const dependency_title: text = "Transitive title"
 export instrument dependency_template() {
   title: dependency_title;
+  agent_description: "A dependency template for transitive tests.";
   fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a dependency record.";
+    moves: []; steps: [];
+  }
 }
 `,
         }),
@@ -507,9 +558,13 @@ export instrument dependency_template() {
 const local_title: text = "Equal application"
 export instrument equality_template(label: text) {
   title: local_title;
+  agent_description: "An equality template for emission tests.";
   fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create an equality record.";
+    moves: []; steps: [];
+  }
 }
 export instrument ready = equality_template(label: "unused")
 `;
@@ -548,5 +603,50 @@ import { ready } from "zero_equality"
     expect(emittedInstrument(direct, "simple_template")).toBeUndefined();
     expect(emittedInstrument(direct, "ready")).toBeDefined();
     expect(imported.artifacts?.document).toEqual(direct.artifacts?.document);
+  });
+
+  describe("std absorption", () => {
+    function compileThresholdWording(wording: string) {
+      return compile(`program wording_probe "Wording probe"
+import { threshold_pool } from "std/money_flows"
+party contributor: person
+party beneficiary: business
+settlement wording_pool = threshold_pool {
+  contributor: contributor
+  beneficiary: beneficiary
+  target: targetAmount: money(SAR)
+  commitment: amount: money(SAR)
+  max_contributors: 3
+  close_by: closeBy
+  close_policy: threshold
+  overfund_policy: reject
+  cancel_policy: before_close
+  fail_policy: whole_commitment_refund
+  wording: { ${wording} }
+}
+`);
+    }
+
+    it("threshold pool wording defaults missing keys", () => {
+      const result = compileThresholdWording(
+        'pool_summary: "A named contribution pool"',
+      );
+      expect(result.verdict).toBe("valid");
+      const document = result.artifacts?.document as unknown as UdlDocument;
+      expect(document.instruments[0]?.summary).toBe(
+        "A named contribution pool",
+      );
+    });
+
+    it("threshold pool wording refuses one unknown key once", () => {
+      const result = compileThresholdWording('unknown_copy: "No"');
+      expect(result.verdict).toBe("invalid");
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          code: "HSX1407",
+          message: "threshold_pool wording contains an unknown key",
+        }),
+      ]);
+    });
   });
 });

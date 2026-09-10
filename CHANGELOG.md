@@ -5,18 +5,29 @@ All notable changes to this package are documented here. The format follows
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The IR format version (`"hsx": 1`, stamped into every compiled document) moves
-independently of the package version. While the package is below 1.0.0, an
-alpha release may change what IR version 1 contains; every such change is
-listed here.
+independently of the package version.
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-09-10
+
+### Added
 
 - Added `hsx lsp` over stdio with diagnostics and formatting, and a VS Code language client.
 - Added a static browser playground under `playground/` with debounced compilation, diagnostics inspection, span navigation, canonical UDL and cost manifest inspection, and inlined examples.
 - Bundled standard library sources as data in `src/std-bundle.ts` and decoupled compiler module resolution from Node filesystem imports.
+- Lowered money fields with an `x-hyperscale-currency` schema marker so consumers read the ledger currency without parsing descriptions.
+- Accepted an array of cost tables (`examples/cost-table.json` now ships one card per priced currency); the compiler prices the card matching the program's ledger currency, reporting `HSX1304` for an unpriced currency and `HSX1305` for a program that moves money in two currencies.
+- Reported `HSX1509` when an instrument, or an action a caller can reach, lacks an `agent_description`.
+- Declared `sandbox_failure_point` on the std money-flow fund and release actions so sandbox failures land on a named step.
+- Added `share_offering` and `share_allocation` std instruments with an integer-sum supply invariant, `dispute` and `resume` on `held_payment`, and `quote_refund` and `confirm_refund` on policy Blueprints.
+- Bound decision port parties through declared account fields; a decision-only party binds to an account and decides without holding money, and every action a port reaches carries its allowed parties.
 
 ### Changed
 
+- Lowered `account<CUR>` fields with the `acct_(sandbox|live)_...` pattern.
+- Diagnosed `allowed:` written on an action instead of its port, and refused ports whose allowed parties are not declared (`HSX1024`).
+- Field descriptions are prose in the lowered document and no longer part of the frozen schema.
 - Moved LSP server exports (`startLspServer`, `createHostForUri`, and LSP types) from the package root to `@hyperscale0/hsx/lsp`.
 
 ### Removed
@@ -25,7 +36,7 @@ listed here.
 
 ## [1.0.0] - 2026-09-04
 
-This release is byte-identical to 1.0.0-rc.1. Later changes bump under the contract-diff tiers.
+This release is byte-identical to 1.0.0-rc.1.
 
 ## [1.0.0-rc.1] - 2026-09-02
 

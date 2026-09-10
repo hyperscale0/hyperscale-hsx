@@ -1,5 +1,5 @@
 program capital_pool_example "Capital pool example"
-import { threshold_pool } from "std/settlements"
+import { threshold_pool } from "std/money_flows"
 party contributor: person
 party company: business
 settlement round = threshold_pool {

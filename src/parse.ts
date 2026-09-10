@@ -367,7 +367,7 @@ class Parser {
     if (
       !this.expectPunct(
         "{",
-        'import lists its names in braces: import { held_payment } from "std/settlements"',
+        'import lists its names in braces: import { held_payment } from "std/money_flows"',
       )
     ) {
       return undefined;
@@ -385,7 +385,7 @@ class Parser {
     if (!this.at("keyword") || this.peek().text !== "from") {
       this.error(
         this.peek().span,
-        'import needs from: import { held_payment } from "std/settlements"',
+        'import needs from: import { held_payment } from "std/money_flows"',
       );
       return undefined;
     }
@@ -393,7 +393,7 @@ class Parser {
     if (!this.at("string")) {
       this.error(
         this.peek().span,
-        'the import source must be a quoted module name like "std/settlements"',
+        'the import source must be a quoted module name like "std/money_flows"',
       );
       return undefined;
     }

@@ -1,5 +1,5 @@
 program scheduled_example "Scheduled example"
-import { scheduled } from "std/settlements"
+import { scheduled } from "std/money_flows"
 party payer: business
 party payee: business
 settlement installments = scheduled {

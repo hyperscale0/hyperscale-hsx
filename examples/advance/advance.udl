@@ -215,7 +215,8 @@
         "feeAmount": {
           "description": "2.5% of principal, the funder's discount repaid on top of the advance",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "firstDueAt": {
           "description": "Due date of the first repayment; repayment k falls P30D after its predecessor",
@@ -236,7 +237,8 @@
         "principal": {
           "description": "The advanced amount in SAR minor units, disbursed to the recipient up front",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "recipientAccountId": {
           "description": "The recipient account",
@@ -252,17 +254,20 @@
         "repayableAmount": {
           "description": "principal + feeAmount: the total the repayment fields below partition exactly",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "repayment1Amount": {
           "description": "Repayment 1 of 2 (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         },
         "repayment2Amount": {
           "description": "Repayment 2 of 2: about 33.33% of repayableAmount, collected on its own stored-date anchor",
           "pattern": "^[1-9][0-9]{0,17}$",
-          "type": "string"
+          "type": "string",
+          "x-hyperscale-currency": "SAR"
         }
       },
       "id": "advance_payment",

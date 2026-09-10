@@ -136,9 +136,13 @@ describe("LSP server over stdio", () => {
 
       const badSource = `program badName "Bad Name"
 instrument test {
+  agent_description: "A test instrument.";
   title: "Test"; fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a test record.";
+    moves: []; steps: [];
+  }
 }
 `;
       client.send({
@@ -170,9 +174,13 @@ instrument test {
 
       const fixedSource = `program bad_name "Bad Name"
 instrument test {
+  agent_description: "A test instrument.";
   title: "Test"; fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a test record.";
+    moves: []; steps: [];
+  }
 }
 `;
       client.send({
@@ -322,7 +330,7 @@ action create { moves: []; steps: []; }
       await client.readNext();
 
       const source = `program payer_fee_transfer "Payer fee transfer"
-import { instant_transfer } from "std/settlements"
+import { instant_transfer } from "std/money_flows"
 
 party student: person
 party tutor: business
@@ -563,9 +571,13 @@ instrument test {
 
       const badSource = `program badName "Bad Name"
 instrument test {
+  agent_description: "A test instrument.";
   title: "Test"; fields {}
   lifecycle { states created; initial created; }
-  action create { moves: []; steps: []; }
+  action create {
+    agent_description: "Create a test record.";
+    moves: []; steps: [];
+  }
 }
 `;
       client.send({
