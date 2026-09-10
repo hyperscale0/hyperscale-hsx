@@ -1,5 +1,46 @@
 module std.money_flows.pooled_split
 
+// Fixed multi-recipient revenue or period pool funded share-by-share and released automatically on a due date.
+//
+// ### Purpose
+// `pooled_split` pools a period total from one payer and splits it across a fixed roster of recipients
+// according to predetermined percentage shares (with integer division remainder assigned to `remainder_to`).
+// Callers fund the pool share-by-share, and payouts disburse automatically to each recipient on `payout_due`.
+//
+// ### Selection guidance
+// - vs `weighted_distribution`: `pooled_split` hardcodes a fixed set of recipients and static percentage shares
+//   directly in the contract. `weighted_distribution` handles dynamic recipient counts where arbitrary weights
+//   are recorded as child records and frozen via a snapshot port before distribution.
+// - vs `settlement_batch`: `settlement_batch` aggregates multiple payments from many sources into one net payout.
+//   `pooled_split` takes one period total from one payer and partitions it out to multiple recipients.
+//
+// ### Parameters
+// - `payer`: The funding party providing the pooled amount.
+// - `amount`: Total pooled amount in minor units of currency `C`.
+// - `payout_due`: Stored payout date when the pool distributes to all recipients.
+// - `split`: Block declaring each recipient's percentage share and `remainder_to` recipient for rounding remainders.
+//
+// ### Decision ports
+// None. Payout distribution triggers automatically from the stored `payout_due` date.
+//
+// ### Example
+// ```hsx
+// program pooled_split_example "Pooled split example"
+// import { pooled_split } from "std/money_flows"
+// party payer: business
+// party first_recipient: business
+// party second_recipient: business
+// settlement pool = pooled_split {
+//   payer: payer
+//   amount: poolAmount: money(SAR)
+//   payout_due: payoutDueAt
+//   split {
+//     first_recipient: 60%
+//     second_recipient: 40%
+//     remainder_to: first_recipient
+//   }
+// }
+// ```
 export instrument pooled_split<C>(payer: party, amount: money<C>, payout_due: date, split: block) {
   let(recipients): keys_except(split, "remainder_to");
   let(recipient_count): len(recipients);

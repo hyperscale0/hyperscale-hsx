@@ -150,4 +150,84 @@ describe("held payment standard library family", () => {
       "disputed",
     );
   });
+  test("quoted cancellation: prices the charge and the refund, pays the net to the payer, and sweeps the charge to the payee", () => {
+    const document = compileFixture(
+      "test/fixtures/held-payment-quoted-cancellation.hsx",
+    );
+    const deal = document.instruments.find(
+      (instrument) => instrument.id === "deal",
+    );
+    expect(deal).toBeDefined();
+    if (!deal) return;
+
+    expect(deal.lifecycle.transitions.quote_cancellation).toEqual({
+      from: ["funded"],
+      to: "cancellation_quoted",
+    });
+    expect(deal.lifecycle.transitions.cancel).toEqual({
+      from: ["cancellation_quoted"],
+      to: "cancelled",
+    });
+    expect(deal.lifecycle.transitions.retain_cancellation_charge).toEqual({
+      from: ["cancelled"],
+      to: "settled",
+    });
+    // A quote nobody spends never traps the money: the release still fires.
+    expect(deal.lifecycle.transitions.confirm_delivery?.from).toEqual([
+      "funded",
+      "cancellation_quoted",
+    ]);
+
+    expect(deal.actions.quote_cancellation?.quote).toEqual({
+      baseField: "price",
+      chargeRef: "cancellationChargeAmount",
+      charges: [{ bps: 500 }],
+      expires: { offset: "PT30M" },
+      fixes: ["price", "buyerAccountId"],
+      netDestinationField: "buyerAccountId",
+      netRef: "cancellationRefundAmount",
+    });
+    expect(deal.actions.quote_cancellation?.moves).toEqual([]);
+
+    expect(deal.actions.cancel?.commit).toBe("quote_cancellation");
+    expect(deal.actions.cancel?.moves?.[0]?.bind.amount).toEqual({
+      from: "instance",
+      path: "refs.cancellationRefundAmount",
+    });
+    expect(deal.actions.cancel?.moves?.[0]?.bind.sourceAccountId).toEqual({
+      from: "instance",
+      path: "refs.escrowAccountId",
+    });
+    expect(deal.actions.cancel?.moves?.[0]?.bind.destinationAccountId).toEqual({
+      from: "instance",
+      path: "fields.buyerAccountId",
+    });
+
+    expect(
+      deal.actions.retain_cancellation_charge?.moves?.[0]?.bind.amount,
+    ).toEqual({ from: "instance", path: "refs.cancellationChargeAmount" });
+    expect(
+      deal.actions.retain_cancellation_charge?.moves?.[0]?.bind.sourceAccountId,
+    ).toEqual({ from: "instance", path: "refs.escrowAccountId" });
+    expect(
+      deal.actions.retain_cancellation_charge?.moves?.[0]?.bind
+        .destinationAccountId,
+    ).toEqual({ from: "instance", path: "fields.sellerAccountId" });
+  });
+  test("quoted cancellation refuses static on_cancel splits: one settlement cannot price its cancellation twice", () => {
+    const source = readFileSync(
+      join(packageRoot, "test/fixtures/held-payment-quoted-cancellation.hsx"),
+      "utf8",
+    ).replace(
+      "  cancel_charge_bps: 500\n",
+      "  on_cancel(funded) { buyer: 100% }\n  cancel_charge_bps: 500\n",
+    );
+
+    const result = compile(source, { moduleName: "on-cancel-clash" });
+
+    expect(result.diagnostics[0]?.code).toBe("HSX1110");
+    expect(result.diagnostics[0]?.message).toContain(
+      "a quoted cancellation cannot combine with on_cancel splits",
+    );
+  });
 });

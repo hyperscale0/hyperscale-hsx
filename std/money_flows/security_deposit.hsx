@@ -1,5 +1,63 @@
 module std.money_flows.security_deposit
 
+// Collateral deposit reserved against a payer's account in favor of a holder, returned in full or claimed against damages.
+//
+// ### Purpose
+// `security_deposit` reserves collateral funds for vehicle rentals, property leasing, equipment hire, and security bonds.
+// Funds remain held until the rental or lease concludes. The holder can either return the deposit in full
+// or assess damages, claim a decided partial amount, and return the exact unspent remainder.
+//
+// ### Selection guidance
+// - vs `held_payment`: `security_deposit` holds collateral where the standard outcome is returning 100% of the funds
+//   to the payer, and claims are partial damage assessments. `held_payment` holds payment consideration where the
+//   standard outcome is releasing 100% of the funds to the payee upon delivery.
+// - vs `cancellable_booking`: `cancellable_booking` holds booking fees and applies time-based cancellation penalties.
+//   `security_deposit` holds damage collateral and supports arbitrary damage claims with remainder refund.
+//
+// ### Parameters
+// - `payer`: The customer providing the deposit collateral.
+// - `holder`: The merchant or owner holding the deposit rights.
+// - `amount`: Total reserved deposit amount in minor units of currency `C`.
+// - `claim`: Optional condition port triggering a damage claim.
+// - `return`: Optional condition port triggering full return of the deposit.
+// - `claim_amount`: Optional block defining partial claim logic (`field`, `bound`, `remainder`).
+// - `deadline`: Optional stored date anchor for automatic deposit release or expiry.
+// - `claim_to`: Optional alternate destination for claimed funds.
+// - `return_to`: Optional alternate destination for returned funds.
+// - `memo`: Optional memo text stored on the deposit record.
+// - `claim_input`: Optional custom input schema for the claim action.
+// - `claim_capture`: Optional capture mappings for claim evidence.
+// - `fund_failure_point`: Optional configuration for deposit funding failure.
+// - `id_prefix_override`: Optional custom prefix for generated instrument IDs.
+//
+// ### Decision ports
+// - `claim`: Port permitting the holder to submit a damage claim.
+// - `return`: Port permitting the holder to return the deposit to the payer.
+//
+// ### Example
+// ```hsx
+// program deposit_example "Deposit example"
+// import { security_deposit } from "std/money_flows"
+// party renter: person
+// party owner: business
+// settlement security_deposit = security_deposit {
+//   payer: renter
+//   holder: owner
+//   amount: depositAmount: money(SAR)
+//   claim: port assess_damage
+//   claim_amount: decided {
+//     field: damageAmount
+//     bound: depositAmount
+//     remainder: return
+//   }
+//   return: port return_deposit
+// }
+// port assess_damage {
+//   allowed: [owner]
+//   shape: { damageAmount: money(SAR), evidence: text }
+// }
+// port return_deposit { allowed: [owner] }
+// ```
 export instrument security_deposit<C>(payer: party, holder: party, amount: money<C>, claim: optional<condition>, return: optional<condition>, claim_amount: optional<block>, deadline: optional<date>, claim_to: optional<party>, return_to: optional<party>, memo: optional<text>, claim_input: optional<block>, claim_capture: optional<block>, fund_failure_point: optional<text>, id_prefix_override: optional<text>) {
   let(claim_name): claim;
   let(return_name): return;

@@ -1,5 +1,56 @@
 module std.money_flows.settlement_batch
 
+// Periodic aggregation of capture lineage, fee entries, and adjustments into a single net calculated payout.
+//
+// ### Purpose
+// `settlement_batch` settles merchant balances, marketplace vendor earnings, and partner clearing accounts.
+// Individual payment captures, platform fees, and reversal adjustments accumulate into an open batch over a period.
+// On `close_trigger`, the batch freezes. The platform calculates the signed net payable from gross captures plus credit
+// adjustments minus debit adjustments. If positive, an outbound bank payout is instructed and acknowledged.
+//
+// ### Selection guidance
+// - vs `reconciled_payout`: `settlement_batch` aggregates multiple transactions and adjustments over a billing cycle
+//   to compute a single net payable. `reconciled_payout` manages bank instruction dispatch and statement line reconciliation
+//   for an individual payout amount.
+// - vs `weighted_distribution`: `settlement_batch` consolidates many inbound transactions into one net outbound payout.
+//   `weighted_distribution` splits one funding pool into many recipient payouts.
+//
+// ### Parameters
+// - `settlement_account`: The source clearing account holding captured funds and paying the batch.
+// - `source_capture_refs`: Binding name for gross capture references included in the batch.
+// - `fee_entries`: Binding name for fee deductions applied to the batch.
+// - `external_reversal_offsets`: Binding name for reversal adjustments applied to the batch.
+// - `close_trigger`: Date when the batch closes and ceases accepting new transaction entries.
+// - `payout_destination`: The merchant or partner account receiving the net payout.
+// - `negative_position`: Policy when calculated net payable is zero or negative (`reject`).
+// - `payout_acknowledgement`: Condition port confirming bank receipt of the payout.
+// - `payout_beneficiary_ref`: Beneficiary identifier for external bank dispatch.
+//
+// ### Decision ports
+// - `payout_acknowledgement`: Port recording external bank or partner receipt confirmation.
+//
+// ### Example
+// ```hsx
+// program settlement_batch_example "Settlement batch example"
+// import { settlement_batch } from "std/money_flows"
+// party settlement_account: business
+// party payout_destination: business
+// settlement batch = settlement_batch {
+//   settlement_account: settlement_account
+//   source_capture_refs: captureReference
+//   fee_entries: feeReference
+//   external_reversal_offsets: reversalReference
+//   close_trigger: closeAt
+//   payout_destination: payout_destination
+//   negative_position: reject
+//   payout_acknowledgement: port acknowledge_payout
+//   payout_beneficiary_ref: payoutBeneficiaryId
+// }
+// port acknowledge_payout {
+//   allowed: [payout_destination]
+//   shape: { acknowledgementReference: text }
+// }
+// ```
 export instrument settlement_batch<C>(
   settlement_account: party,
   source_capture_refs: text,

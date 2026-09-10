@@ -11,7 +11,7 @@ Use this skill when a task creates or changes an `.hsx` program, chooses a money
 
 One file declares one `program`. Declare parties and assets before using them. Import money flows from `std/money_flows`. Apply each selected instrument as a `settlement`, and declare every decision port it names. A program may also declare general instruments and subjects.
 
-Start with [the first-program guide](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/01-first-program.md). Read the generated [grammar](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/grammar.md), [types](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/types.md), and [money flows reference](https://github.com/hyperscale0/hyperscale-hsx/tree/main/docs/reference/std) for the exact surface.
+Start with [the first-program guide](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/01-first-program.md). Read the [instruments](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/03-instruments.md), [lifecycles](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/04-lifecycles.md), [composition](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/07-composition.md), and [writing a module](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/08-writing-a-module.md) chapters for instrument architecture. Read the generated [grammar](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/grammar.md), [types](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/types.md), and [money flows reference](https://github.com/hyperscale0/hyperscale-hsx/tree/main/docs/reference/std) for the exact surface.
 
 ## Choose a money flow
 
@@ -39,7 +39,7 @@ The money flows are demonstrated below. The marker before each program lets the 
 
 ## Diagnostic loop
 
-Run `hsx check` after each coherent edit. Read the first error code, open the [diagnostics reference](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/diagnostics.md), apply the catalog fix, and compile again. Match tools on the stable `HSX####` code, not the message. Never patch emitted UDL to bypass a refusal.
+Run `hsx check` after each coherent edit. Read the first error code, open the [diagnostics guide](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/guide/10-diagnostics.md) and [diagnostics reference](https://github.com/hyperscale0/hyperscale-hsx/blob/main/docs/reference/diagnostics.md), apply the catalog fix, and compile again. Match tools on the stable `HSX####` code, not the message. Never patch emitted UDL to bypass a refusal.
 
 ## Money rules
 

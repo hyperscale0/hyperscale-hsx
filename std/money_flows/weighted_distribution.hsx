@@ -1,5 +1,59 @@
 module std.money_flows.weighted_distribution
 
+// Frozen largest-remainder distribution splitting one pool across dynamic recipients by recorded weights.
+//
+// ### Purpose
+// `weighted_distribution` distributes dividend pools, creator royalties, liquidation proceeds, and investment returns.
+// Child entitlement rows are recorded for each recipient with their respective weight. Once all recipients are recorded,
+// an evidence-backed snapshot freezes the entitlement set. Each recipient is then paid their exact largest-remainder
+// share such that all payouts sum exactly to `amount` without rounding leaks.
+//
+// ### Selection guidance
+// - vs `pooled_split`: `weighted_distribution` handles dynamic recipient rosters recorded as child rows and frozen
+//   via snapshot. `pooled_split` hardcodes a fixed set of recipients and static percentages at definition time.
+// - vs `settlement_batch`: `weighted_distribution` splits one funding pool out to many recipients.
+//   `settlement_batch` aggregates many inbound charges and adjustments into a single net payout.
+//
+// ### Parameters
+// - `source`: The funding party providing the distribution pool.
+// - `recipient`: The archetype party representing entitled recipients.
+// - `amount`: Total distribution pool in minor units of currency `C`.
+// - `record_at`: Date when entitlement eligibility is established.
+// - `weight`: Binding name for individual recipient weight amounts.
+// - `max_recipients`: Exact number of entitlement rows required before snapshotting.
+// - `snapshot`: Port freezing the entitlement set against stored decision evidence.
+// - `rounding_policy`: Mathematical rounding policy (`largest_remainder`).
+// - `withholding_policy`: Tax or withholding policy (`refuse`).
+// - `correction_policy`: Error correction policy (`new_distribution`).
+// - `flat`: Optional flat distribution configuration block.
+// - `id_prefix_override`: Optional custom prefix for generated instrument IDs.
+//
+// ### Decision ports
+// - `snapshot`: Port freezing the entitlement set with an evidence reference, preventing further entries.
+//
+// ### Example
+// ```hsx
+// program weighted_distribution_example "Weighted distribution example"
+// import { weighted_distribution } from "std/money_flows"
+// party distribution_source: business
+// party recipient: business
+// settlement proceeds = weighted_distribution {
+//   source: distribution_source
+//   recipient: recipient
+//   amount: distributableAmount: money(SAR)
+//   weight: entitlementWeight: money(SAR)
+//   max_recipients: 12
+//   record_at: recordAt
+//   snapshot: port snapshot_entitlements
+//   rounding_policy: largest_remainder
+//   withholding_policy: refuse
+//   correction_policy: new_distribution
+// }
+// port snapshot_entitlements {
+//   allowed: [distribution_source]
+//   shape: { evidenceReference: text }
+// }
+// ```
 export instrument weighted_distribution<C>(
   source: party,
   recipient: party,

@@ -1,5 +1,51 @@
 module std.money_flows.conditional_disbursement
 
+// Capped disbursement from a source party to a destination party gated on stored external decision evidence.
+//
+// ### Purpose
+// `conditional_disbursement` manages evidence-contingent payouts subject to a cumulative cap.
+// It fits insurance claim settlements, grant tranches, subsidy distributions, and escrow milestones
+// where each approved payment requires explicit external evidence and the total paid must not exceed `cap`.
+//
+// ### Selection guidance
+// - vs `advance`: `conditional_disbursement` disburses non-repayable funds against external evidence
+//   up to a declared cap. `advance` pays money up front with the expectation of repayment through carved
+//   hold releases or scheduled installments.
+// - vs `instant_transfer`: `instant_transfer` moves money immediately with no evidence gate or cap.
+//   `conditional_disbursement` requires an external decision port and evidence reference before any child amount moves.
+//
+// ### Parameters
+// - `source`: The funding party providing the money.
+// - `destination`: The beneficiary party receiving approved disbursements.
+// - `cap`: Maximum total amount that can be disbursed across all child approvals in minor units of currency `C`.
+// - `amount`: Binding name for child approval amount values.
+// - `decision`: Port conditioning approval, requiring evidence reference.
+// - `reopen_policy`: Policy for reopening closed disbursements (`refuse`).
+// - `recovery_policy`: Policy for recovering overpayments (`separate_transfer`).
+//
+// ### Decision ports
+// - `decision`: External port providing decision evidence required to approve child disbursement amounts.
+//
+// ### Example
+// ```hsx
+// program conditional_disbursement_example "Conditional disbursement example"
+// import { conditional_disbursement } from "std/money_flows"
+// party source: business
+// party claimant: person
+// settlement claim_payment = conditional_disbursement {
+//   source: source
+//   destination: claimant
+//   cap: policyLimit: money(SAR)
+//   amount: approvedAmount: money(SAR)
+//   decision: port approve_claim
+//   reopen_policy: refuse
+//   recovery_policy: separate_transfer
+// }
+// port approve_claim {
+//   allowed: [source]
+//   shape: { evidenceReference: text }
+// }
+// ```
 export instrument conditional_disbursement<C>(
   source: party,
   destination: party,

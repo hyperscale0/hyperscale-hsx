@@ -1,5 +1,47 @@
 module std.money_flows.reconciled_payout
 
+// Outbound bank payout instruction with end-to-end reconciliation against external bank statement feeds.
+//
+// ### Purpose
+// `reconciled_payout` manages high-assurance payouts to external suppliers, partners, or customers where payment
+// is not complete until confirmed by bank statement data. An instruction is dispatched to the beneficiary and an expectation
+// record is opened. Incoming statement debit lines match against the expectation within configurable tolerance thresholds
+// (`matched_within`, `matched_ceiling`). If the statement debit does not match before `settle_by`, a formal break row is raised.
+//
+// ### Selection guidance
+// - vs `settlement_batch`: `reconciled_payout` executes and reconciles an individual bank payout instruction.
+//   `settlement_batch` aggregates periodic captures, fees, and signed adjustments to calculate a net payable batch.
+// - vs `instant_transfer`: `instant_transfer` executes an immediate internal ledger transfer between platform accounts.
+//   `reconciled_payout` dispatches funds across external banking rails with reconciliation tolerances and break tracking.
+//
+// ### Parameters
+// - `payer`: The funding party providing the payout.
+// - `beneficiary`: The beneficiary party receiving the external payout.
+// - `amount`: Instructed payout amount in minor units of currency `C`.
+// - `beneficiary_ref`: Registered external beneficiary ID for bank routing.
+// - `settle_by`: Cut-off date when unmatched expectation amounts become formal break records.
+// - `matched_within`: Match tolerance window in basis points or minor units.
+// - `matched_ceiling`: Maximum acceptable tolerance ceiling between instructed amount and settled debit.
+//
+// ### Decision ports
+// None. Payout dispatch and settlement matching follow the declared schedule, bank statement lines, and tolerance rules.
+//
+// ### Example
+// ```hsx
+// program reconciled_payout_example "Reconciled payout example"
+// import { reconciled_payout } from "std/money_flows"
+// party treasury: business
+// party supplier: business
+// settlement supplier_payout = reconciled_payout {
+//   payer: treasury
+//   beneficiary: supplier
+//   amount: netPayable: money(SAR)
+//   beneficiary_ref: supplierBeneficiaryId
+//   settle_by: settleBy
+//   matched_within: 100
+//   matched_ceiling: 500
+// }
+// ```
 export instrument reconciled_payout<C>(
   payer: party,
   beneficiary: party,

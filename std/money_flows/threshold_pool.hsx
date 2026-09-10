@@ -1,5 +1,56 @@
 module std.money_flows.threshold_pool
 
+// All-or-nothing capital accumulation pool collecting commitments toward a target amount before a close deadline.
+//
+// ### Purpose
+// `threshold_pool` powers all-or-nothing crowdfunding, capital calls, collective purchasing, and consortium rounds.
+// Multiple contributors pledge commitments toward a monetary `target`. Commitments sit in escrow until the pool
+// reaches the target before `close_by` (activating and settling funds to the beneficiary), or fails (triggering full refunds).
+//
+// ### Selection guidance
+// - vs `rotating_pool`: `threshold_pool` is all-or-nothing fundraising where many contributors fund a single beneficiary.
+//   `rotating_pool` is a peer savings circle where members contribute identically in each cycle and rotate who receives the pot.
+// - vs `weighted_distribution`: `threshold_pool` pools funds inward from many contributors to one beneficiary.
+//   `weighted_distribution` pays funds outward from one source pool to many weighted recipients.
+//
+// ### Parameters
+// - `contributor`: The archetype party representing individual contributors.
+// - `beneficiary`: The beneficiary party receiving the settled pool if the target is met.
+// - `target`: Total target funding threshold in minor units of currency `C`.
+// - `commitment`: Binding name for individual contributor commitment amounts.
+// - `max_contributors`: Optional maximum count of admitted contributors.
+// - `close_by`: Stored date deadline by which the target must be met.
+// - `close_policy`: Policy determining pool close behavior (`threshold`).
+// - `overfund_policy`: Policy on commitments exceeding the target (`reject`).
+// - `cancel_policy`: Contributor withdrawal policy before close (`before_close`).
+// - `fail_policy`: Refund policy if the pool fails to hit target (`whole_commitment_refund`).
+// - `beneficiary_account`: Optional direct account reference for the beneficiary.
+// - `memo`: Optional memo text stored on the pool.
+// - `contribution_instrument`: Optional custom contribution child instrument block.
+// - `wording`: Optional custom UI wording block.
+//
+// ### Decision ports
+// None. Lifecycle transitions (`activate`, `fail`, `close`) are driven by target threshold evaluation and the `close_by` date.
+//
+// ### Example
+// ```hsx
+// program capital_pool_example "Capital pool example"
+// import { threshold_pool } from "std/money_flows"
+// party contributor: person
+// party company: business
+// settlement round = threshold_pool {
+//   contributor: contributor
+//   beneficiary: company
+//   target: targetAmount: money(SAR)
+//   commitment: commitmentAmount: money(SAR)
+//   max_contributors: 100
+//   close_by: closeBy
+//   close_policy: threshold
+//   overfund_policy: reject
+//   cancel_policy: before_close
+//   fail_policy: whole_commitment_refund
+// }
+// ```
 export instrument threshold_pool<C>(
   contributor: optional<party>,
   beneficiary: optional<party>,

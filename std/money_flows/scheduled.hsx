@@ -1,5 +1,58 @@
 module std.money_flows.scheduled
 
+// Calendar-anchored payments supporting fixed installment plans, recurring subscriptions, or debt obligations.
+//
+// ### Purpose
+// `scheduled` automates time-anchored payment series between one payer and one payee.
+// It supports three modes:
+// 1. Installment plan: Partitions a fixed total amount into `count` installments, each collected on its own stored date.
+// 2. Open recurring subscription: Charges a recurring amount on an interval `every` until an `until` port fires.
+// 3. Debt obligation: Manages legally binding multi-installment debt with delinquency tracking, mandate evidence, and child payment records.
+//
+// ### Selection guidance
+// - vs `metered`: `scheduled` executes calendar-based recurring charges or fixed installment plans.
+//   `metered` bills variable usage per event based on a committed rate card.
+// - vs `recurring_collection`: `scheduled` actively moves ledger balances and partitions amounts.
+//   `recurring_collection` is a lightweight status tracker for collection runs without balance transfers.
+// - vs `rotating_pool`: `scheduled` coordinates one payer to one payee on a calendar.
+//   `rotating_pool` coordinates a multi-party peer circle where members rotate turns receiving the entire pot.
+//
+// ### Parameters
+// - `payer`: The paying party (or repayment source).
+// - `payee`: The beneficiary party receiving installment funds.
+// - `amount`: Total amount to partition into installments or recurring charge amount in minor units of currency `C`.
+// - `count`: Optional number of installments for installment or obligation modes.
+// - `every`: Recurrence cadence duration string (e.g. `"P30D"`, `"P1M"`).
+// - `first_due`: Stored date anchor for the first installment or charge.
+// - `mode`: Optional mode selector (`obligation`). Omit for standard installment plans.
+// - `debtor`: Optional debtor party when distinct from the payment source in obligation mode.
+// - `advance_to`: Optional third-party receiving upfront advance disbursements in obligation mode.
+// - `until`: Optional condition port triggering cancellation of recurring subscription runs.
+// - `month_end`: Optional handling policy for calendar month-end adjustments.
+// - `period_liability`: Optional liability policy for billing periods.
+// - `termination_drain`: Optional policy for draining balances on early termination.
+// - `mandate`: Optional condition port supplying formal debit mandate evidence.
+// - `derived_amount`: Optional calculated markup or fee rules.
+//
+// ### Decision ports
+// - `until`: Port terminating recurring subscriptions.
+// - `mandate`: Port supplying mandate verification evidence for direct debit obligations.
+//
+// ### Example
+// ```hsx
+// program scheduled_example "Scheduled example"
+// import { scheduled } from "std/money_flows"
+// party payer: business
+// party payee: business
+// settlement installments = scheduled {
+//   payer: payer
+//   payee: payee
+//   amount: totalAmount: money(SAR)
+//   count: 3
+//   every: P30D
+//   first_due: firstDueAt
+// }
+// ```
 export instrument scheduled<C>(
   payer: party,
   payee: party,

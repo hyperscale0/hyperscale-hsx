@@ -1,5 +1,56 @@
 module std.money_flows.rotating_pool
 
+// Rotating savings and credit association (ROSCA) pool where members contribute fixed amounts and take turns receiving the pot.
+//
+// ### Purpose
+// `rotating_pool` coordinates peer savings circles, chit funds, tandas, and committee savings groups.
+// A fixed group of members contributes an identical contribution amount each cycle. In each cycle, one designated member
+// receives the entire pooled pot according to a predefined `payout_order` until all members have taken their turn.
+//
+// ### Selection guidance
+// - vs `threshold_pool`: `rotating_pool` coordinates recurring multi-party peer savings with rotating payouts.
+//   `threshold_pool` is all-or-nothing capital accumulation toward a single threshold for one beneficiary.
+// - vs `scheduled`: `scheduled` coordinates a single payer to a single payee. `rotating_pool` orchestrates
+//   a closed circular group of members taking sequential turns.
+//
+// ### Parameters
+// - `members`: List of parties belonging to the rotating group.
+// - `contribution`: Fixed contribution amount required from each member per cycle in minor units of currency `C`.
+// - `count`: Total number of cycles in the rotation (matching the member count).
+// - `every`: Recurrence interval between contribution cycles (e.g. `"P30D"`).
+// - `first_due`: Due date for the first cycle's contribution.
+// - `payout_order`: Ordered list of member parties defining the cycle payout sequence.
+// - `default_policy`: Policy for handling missed contributions (`due_condition`).
+// - `guarantee_policy`: Policy for backing defaulted contributions (`funded_only`).
+// - `guarantor`: Optional guarantor party covering member defaults.
+// - `exit_policy`: Policy governing member departures (`before_activation_only`).
+// - `memo`: Optional memo text stored on the pool.
+// - `membership`: Optional custom membership configuration block.
+//
+// ### Decision ports
+// None. Cycle advancement and pot payouts follow the declared schedule and membership actions.
+//
+// ### Example
+// ```hsx
+// program rotating_pool_example "Rotating pool example"
+// import { rotating_pool } from "std/money_flows"
+// party member_a: person
+// party member_b: person
+// party member_c: person
+// party guarantor: business
+// settlement pool = rotating_pool {
+//   members: [member_a, member_b, member_c]
+//   contribution: contributionAmount: money(SAR)
+//   count: 3
+//   every: P30D
+//   first_due: firstContributionAt
+//   payout_order: [member_b, member_c, member_a]
+//   default_policy: due_condition
+//   guarantee_policy: funded_only
+//   guarantor: guarantor
+//   exit_policy: before_activation_only
+// }
+// ```
 export instrument rotating_pool<C>(members: optional<list<party>>, contribution: money<C>, count: integer, every: optional<text>, first_due: date, payout_order: optional<list<party>>, default_policy: optional<text>, guarantee_policy: optional<text>, guarantor: optional<party>, exit_policy: optional<text>, memo: optional<text>, membership: optional<block>) {
   when_not(membership) {
   let(member_fields): suffix_each(members, "AccountId");

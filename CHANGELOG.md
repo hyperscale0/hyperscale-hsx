@@ -9,6 +9,18 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-10
+
+### Added
+
+- `held_payment` takes an opt-in quoted cancellation with an authored flat charge, so a cancellation quote can name the amount the refund source keeps.
+- `std/money_flows/weighted_distribution` flow.
+- Every std flow describes itself: the reference pages carry parameters and an example for each flow, and the guide documents the sandbox.
+
+### Removed
+
+- The GitHub Actions workflows. Publishing runs from the platform release lane.
+
 ## [2.0.1] - 2026-09-10
 
 Published in lockstep with UDL 2.0.1.

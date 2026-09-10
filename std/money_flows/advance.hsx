@@ -1,5 +1,50 @@
 module std.money_flows.advance
 
+// Upfront capital disbursement repaid by carving future held payment releases or over scheduled installments.
+//
+// ### Purpose
+// `advance` provides working capital, merchant cash advances, or contractor pre-funding from a funder to a recipient.
+// Repayment occurs either automatically by intercepting (carving) releases from a linked escrow hold (`against`),
+// or over calendar-anchored installment repayments (`count`, `every`, `first_due`).
+//
+// ### Selection guidance
+// - vs `credit_facility`: `advance` disburses a single upfront lump-sum principal that is repaid over time.
+//   `credit_facility` establishes a reusable revolving credit line with multiple draws up to a limit,
+//   where repayments restore available borrowing capacity.
+// - vs `conditional_disbursement`: `advance` expects repayment of the advanced principal plus optional fees.
+//   `conditional_disbursement` disburses non-repayable grants, claims, or milestone payments against external evidence.
+// - vs `held_payment`: `held_payment` holds customer funds in escrow until delivery. An `advance` can carve repayments
+//   directly out of a `held_payment`'s release using `against`.
+//
+// ### Parameters
+// - `funder`: The party providing the upfront capital.
+// - `to`: The party receiving the advance and responsible for repayment.
+// - `amount`: Total advanced principal in minor units of currency `C`.
+// - `fee`: Optional markup percentage fee charged on the advance (basis points precision).
+// - `count`: Optional number of scheduled installment repayments.
+// - `every`: Optional recurrence duration between installments (e.g. `"P30D"`).
+// - `first_due`: Optional date for the first installment repayment.
+// - `against`: Optional reference to a hold instrument whose release will be carved to repay the advance.
+//
+// ### Decision ports
+// None. Repayment is driven by linked hold releases or scheduled calendar dates.
+//
+// ### Example
+// ```hsx
+// program advance_example "Advance example"
+// import { advance } from "std/money_flows"
+// party funder: business
+// party recipient: business
+// settlement advance_payment = advance {
+//   funder: funder
+//   to: recipient
+//   amount: principal: money(SAR)
+//   fee: 2.5%
+//   count: 2
+//   every: P30D
+//   first_due: firstDueAt
+// }
+// ```
 export instrument advance<C>(
   funder: party,
   to: party,

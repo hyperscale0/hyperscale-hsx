@@ -1,5 +1,60 @@
 module std.money_flows.captured_payment
 
+// Two-phase authorization and capture payment flow for card and merchant processing.
+//
+// ### Purpose
+// `captured_payment` reserves funds against a payer's account and allows the payee to capture the authorized
+// balance in one or multiple slices before a reservation expiry date (`reserve_until`). It fits ecommerce checkouts,
+// card processing, hotel authorizations, and pay-at-pump fuel payments where final amounts vary or settle later.
+//
+// ### Selection guidance
+// - vs `instant_transfer`: `instant_transfer` immediately transfers money from payer to payee in a single irreversible
+//   step without reservation or settlement delays. `captured_payment` separates authorization from capture, allowing
+//   incremental captures, voids, amount corrections via the `correction` port, and external network reversals via `external_reversal`.
+// - vs `held_payment`: `held_payment` holds the full amount in third-party escrow pending release. `captured_payment`
+//   reserves funds directly on payer balance and settles incrementally directly to payee.
+//
+// ### Parameters
+// - `payer`: Party whose account balance is reserved during authorization.
+// - `payee`: Beneficiary party capturing authorized funds.
+// - `amount`: Maximum authorized reservation in minor units of currency `C`.
+// - `reserve_until`: Expiration date for the authorization hold.
+// - `correction`: Condition port allowing post-settlement amount corrections.
+// - `external_reversal`: Condition port allowing external processor chargebacks/reversals.
+// - `capture_mode`: Text specifying capture behavior (`"slice"` or `"full"`).
+// - `correction_mode`: Text specifying correction behavior.
+// - `negative_position`: Text policy when correction creates an overdraft.
+// - `timeout`: Timeout duration string for pending authorizations.
+// - `derived_amount`: Optional block declaring percentage fee calculation.
+//
+// ### Decision ports
+// - `correction`: Condition allowing payee or processor to submit an amount correction after settlement.
+// - `external_reversal`: Condition allowing bank or card network to execute an external reversal.
+//
+// ### Example
+// ```hsx
+// program captured_payment_example "Captured payment example"
+// import { captured_payment } from "std/money_flows"
+// party payer: person
+// party payee: business
+// settlement card_payment = captured_payment {
+//   payer: payer
+//   payee: payee
+//   amount: authorizedAmount: money(SAR)
+//   reserve_until: reserveUntil
+//   correction: port correct_capture
+//   external_reversal: port reverse_capture within P14D
+//   capture_mode: partial_then_full
+//   correction_mode: full_only
+//   negative_position: reject
+//   timeout: reject
+// }
+// port correct_capture { allowed: [payee] }
+// port reverse_capture {
+//   allowed: [payee]
+//   shape: { externalReference: text }
+// }
+// ```
 export instrument captured_payment<C>(payer: party, payee: party, amount: money<C>, reserve_until: date, correction: condition, external_reversal: condition, capture_mode: text, correction_mode: text, negative_position: text, timeout: text, derived_amount: optional<block>) {
   let(correction_name): correction;
   let(reversal_name): external_reversal;

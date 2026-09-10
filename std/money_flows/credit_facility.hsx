@@ -1,5 +1,62 @@
 module std.money_flows.credit_facility
 
+// Revolving credit line providing reusable borrowing capacity up to a limit backed by scheduled obligations.
+//
+// ### Purpose
+// `credit_facility` manages revolving commercial credit, inventory financing, and overdraft facilities.
+// A borrower can draw funds multiple times up to `limit` into `draw_destination`. Each draw creates a child
+// record linked to a scheduled `obligation`. Repayments restore available borrowing capacity until `expires_at`.
+//
+// ### Selection guidance
+// - vs `advance`: `credit_facility` provides revolving, reusable credit lines where multiple draws can occur
+//   and repayments restore capacity. `advance` is a single upfront lump-sum disbursement with a fixed repayment plan.
+// - vs `scheduled`: `scheduled` defines repayment installments or recurring transfers. `credit_facility` delegates
+//   draw repayments to a `scheduled` obligation while tracking total facility utilization and limit compliance.
+//
+// ### Parameters
+// - `lender`: The financing institution or party providing the credit capacity.
+// - `borrower`: The borrowing party authorized to draw against the facility limit.
+// - `draw_destination`: Account or party receiving disbursed draw proceeds.
+// - `limit`: Total revolving borrowing limit in minor units of currency `C`.
+// - `expires_at`: Expiration date after which new draws cannot be opened.
+// - `obligation`: Reference to a scheduled obligation instrument handling draw repayments.
+// - `availability_policy`: Facility capacity availability policy (`revolving`).
+// - `expiry_policy`: Policy on facility expiration (`freeze_draws`).
+// - `close_policy`: Policy on facility closure (`no_open_draws`).
+//
+// ### Decision ports
+// None on the facility itself. Mandates and decision ports are declared on the linked `obligation` instrument.
+//
+// ### Example
+// ```hsx
+// program credit_facility_example "Credit facility example"
+// import { credit_facility, scheduled } from "std/money_flows"
+// party lender: business
+// party borrower: business
+// party draw_destination: business
+// party repayment_source: business
+// settlement repayment = scheduled {
+//   mode: obligation
+//   payer: repayment_source
+//   payee: lender
+//   debtor: borrower
+//   amount: principal: money(SAR)
+//   count: 2
+//   every: P30D
+//   first_due: firstDueAt
+// }
+// settlement facility = credit_facility {
+//   lender: lender
+//   borrower: borrower
+//   draw_destination: draw_destination
+//   limit: facilityLimit: money(SAR)
+//   expires_at: expiresAt
+//   obligation: repayment.obligation
+//   availability_policy: revolving
+//   expiry_policy: freeze_draws
+//   close_policy: no_open_draws
+// }
+// ```
 export instrument credit_facility<C>(
   lender: party,
   borrower: party,

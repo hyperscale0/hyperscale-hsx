@@ -1,5 +1,46 @@
 module std.money_flows.metered
 
+// Usage-based billing against a committed rate card over an open period until a stored close date.
+//
+// ### Purpose
+// `metered` bills customers for variable resource consumption such as API requests, compute hours,
+// storage gigabytes, or utility consumption. The rate card is fixed when the period opens, and individual
+// usage events are charged incrementally until the billing period closes on `close_by`.
+//
+// ### Selection guidance
+// - vs `scheduled`: `metered` charges variable amounts per event calculated from consumed units and committed
+//   rate card prices. `scheduled` executes transfers on fixed calendar recurrence intervals (`every`, `first_due`)
+//   with predetermined amounts or installments.
+// - vs `recurring_collection`: `metered` calculates and executes real ledger transfers for each usage charge.
+//   `recurring_collection` is a lightweight status tracker for collection runs without balance transfers or rate cards.
+// - vs `instant_transfer`: `instant_transfer` executes a single immediate payment. `metered` manages a stateful
+//   open billing cycle accepting multiple usage charges under a fixed rate card.
+//
+// ### Parameters
+// - `payer`: The customer being billed for usage.
+// - `payee`: The service provider receiving usage revenue.
+// - `close_by`: Date when the metering period closes, preventing further usage charges.
+// - `rates`: Block mapping rate metric names to their per-unit money prices committed at period open.
+//
+// ### Decision ports
+// None. Charges are driven by caller billing actions and period closure.
+//
+// ### Example
+// ```hsx
+// program metered_example "Metered example"
+// import { metered } from "std/money_flows"
+// party customer: business
+// party provider: business
+// settlement usage = metered {
+//   payer: customer
+//   payee: provider
+//   close_by: periodEnd
+//   rates {
+//     api_call: callRate: money(SAR)
+//     storage_gib: storageRate: money(SAR)
+//   }
+// }
+// ```
 export instrument metered(
   payer: party,
   payee: party,

@@ -1,5 +1,50 @@
 module std.money_flows.cancellable_booking
 
+// Time-anchored reservation holding booking funds in escrow with dynamically quoted cancellation penalties.
+//
+// ### Purpose
+// `cancellable_booking` holds booking fees in escrow from a guest for a host until a scheduled start date.
+// It fits hospitality, travel reservations, studio rentals, event tickets, and appointments where guests
+// can cancel prior to start, but cancellation penalties depend on how close to the start date cancellation occurs.
+//
+// ### Selection guidance
+// - vs `held_payment`: Both hold money in escrow and both quote a cancellation before it is spent.
+//   `cancellable_booking` prices the penalty against the time left before `starts_at`, so the charge moves
+//   as the start approaches; `held_payment` has no start date and quotes one flat charge.
+//   Choose `cancellable_booking` whenever cancellation fees are time-sensitive.
+// - vs `security_deposit`: `security_deposit` holds funds to cover damages claimed by the holder.
+//   `cancellable_booking` holds the service fee itself and releases to the host upon `starts_at` or refunds net of penalty.
+//
+// ### Parameters
+// - `guest`: The booking customer paying the fee and receiving refunds.
+// - `host`: The service provider receiving the payout or retained cancellation penalty.
+// - `amount`: Total booking price in minor units of currency `C`.
+// - `starts_at`: Stored ISO 8601 date when the booking begins.
+// - `late_penalty_bps`: Penalty in basis points applied when cancelling within the late window.
+// - `late_within`: ISO 8601 duration defining the late window before `starts_at` (e.g. `"P2D"` for 2 days).
+// - `early_penalty_bps`: Penalty in basis points applied when cancelling before the late window.
+// - `offer_life`: ISO 8601 duration defining how long a quoted cancellation offer remains valid (e.g. `"PT30M"`).
+//
+// ### Decision ports
+// None. Action transitions are driven by guest API calls (`take`, `cancel`, `confirm`) and scheduled completion (`complete` due at `starts_at`).
+//
+// ### Example
+// ```hsx
+// program studio_booking "Studio booking"
+// import { cancellable_booking } from "std/money_flows"
+// party guest: person
+// party studio: business
+// settlement studio_session = cancellable_booking {
+//   guest: guest
+//   host: studio
+//   amount: sessionPrice: money(SAR)
+//   starts_at: startsAt
+//   late_penalty_bps: 5000
+//   late_within: "P2D"
+//   early_penalty_bps: 1000
+//   offer_life: "PT30M"
+// }
+// ```
 export instrument cancellable_booking<C>(
   guest: party,
   host: party,

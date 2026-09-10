@@ -1,4 +1,57 @@
 module std.money_flows.swap;
+
+// Atomic two-sided trade between two parties where neither leg settles alone.
+//
+// ### Purpose
+// `swap` executes atomic delivery-versus-payment (DvP) or payment-versus-payment (PvP) exchanges between two named parties.
+// Both sides fund their declared principal amounts and platform fees into a shared escrow. The exchange settles atomically
+// upon triggering the `release` condition port, paying each party the other's funded amount. If a `dispute` occurs,
+// both legs unwind and refund simultaneously. Half-funded or half-released states cannot occur.
+//
+// ### Selection guidance
+// - vs `held_payment`: `swap` is a bilateral trade where both sides must deposit funds into escrow and receive each other's
+//   disbursements simultaneously. `held_payment` is unilateral escrow where a single payer funds a payment held for a payee.
+// - vs `instant_transfer`: `instant_transfer` executes an immediate one-way transfer. `swap` coordinates two reciprocal transfers
+//   held atomically in escrow until release confirmation.
+//
+// ### Parameters
+// - `between`: List containing exactly two trade participant parties (`[side_a, side_b]`).
+// - `amounts`: Block declaring the principal money amounts for each party.
+// - `fees`: Block declaring the platform fee money amounts for each party.
+// - `release`: Condition port required to execute the atomic swap release.
+// - `dispute`: Condition port triggering unwinding and refunding of both trade legs.
+// - `side_names`: Optional custom naming block for the two sides (`first`, `second`).
+// - `lifecycle_state_order`: Optional custom ordering for lifecycle states.
+// - `action_bindings`: Optional custom action names.
+// - `parked_states`: Optional configuration for parked states.
+// - `fixed_prefix`: Optional custom prefix for generated instrument IDs.
+//
+// ### Decision ports
+// - `release`: Port authorizing atomic settlement of both trade legs.
+// - `dispute`: Port triggering atomic cancellation and refund of both parties.
+//
+// ### Example
+// ```hsx
+// program swap_example "Swap example"
+// import { swap } from "std/money_flows"
+// party buyer: business
+// party seller: business
+// settlement exchange = swap {
+//   between: [buyer, seller]
+//   amounts {
+//     buyer: buyerAmount: money(SAR)
+//     seller: sellerAmount: money(SAR)
+//   }
+//   fees {
+//     buyer: buyerFee: money(SAR)
+//     seller: sellerFee: money(SAR)
+//   }
+//   release: port release_exchange
+//   dispute: port dispute_exchange within P7D
+// }
+// port release_exchange { allowed: [buyer, seller] }
+// port dispute_exchange { allowed: [buyer, seller] }
+// ```
 export instrument swap<C>(between: list<party>, amounts: block, fees: block, release: condition, dispute: condition, side_names: optional<block>, lifecycle_state_order: optional<list<text>>, action_bindings: optional<block>, parked_states: optional<block>, fixed_prefix: optional<text>) {
   let(side_a): at(between, 1);
   let(side_b): at(between, 2);
