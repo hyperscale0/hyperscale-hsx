@@ -316,6 +316,14 @@ port report_damage { allowed: [seller] shape { damageAmount: money(SAR) } }
 port pass_inspection { allowed: [seller] shape { invalidField: mystery_type } }
 ```
 
+## HSX1026: Decision port input type mismatch with instrument capture field
+
+Stage: `typecheck`
+
+Fix: Declare the decision port input field with the type expected by the instrument capture field.
+
+No source-only witness exists. This refusal requires a compiler-host published catalog.
+
 ## HSX1101: Currency mismatch
 
 Stage: `typecheck`

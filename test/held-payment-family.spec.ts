@@ -161,7 +161,7 @@ describe("held payment standard library family", () => {
     if (!deal) return;
 
     expect(deal.lifecycle.transitions.quote_cancellation).toEqual({
-      from: ["funded"],
+      from: ["funded", "cancellation_quoted"],
       to: "cancellation_quoted",
     });
     expect(deal.lifecycle.transitions.cancel).toEqual({
@@ -171,6 +171,10 @@ describe("held payment standard library family", () => {
     expect(deal.lifecycle.transitions.retain_cancellation_charge).toEqual({
       from: ["cancelled"],
       to: "settled",
+    });
+    expect(deal.lifecycle.transitions.dispute).toEqual({
+      from: ["funded", "cancellation_quoted"],
+      to: "disputed",
     });
     // A quote nobody spends never traps the money: the release still fires.
     expect(deal.lifecycle.transitions.confirm_delivery?.from).toEqual([
@@ -203,6 +207,7 @@ describe("held payment standard library family", () => {
       path: "fields.buyerAccountId",
     });
 
+    expect(deal.actions.retain_cancellation_charge?.moves).toHaveLength(1);
     expect(
       deal.actions.retain_cancellation_charge?.moves?.[0]?.bind.amount,
     ).toEqual({ from: "instance", path: "refs.cancellationChargeAmount" });
@@ -213,6 +218,32 @@ describe("held payment standard library family", () => {
       deal.actions.retain_cancellation_charge?.moves?.[0]?.bind
         .destinationAccountId,
     ).toEqual({ from: "instance", path: "fields.sellerAccountId" });
+  });
+  test("quoted cancellation admits dispute while cancellation is quoted: preserves escrow before cancel is committed", () => {
+    const document = compileFixture(
+      "test/fixtures/held-payment-quoted-cancellation.hsx",
+    );
+    const deal = document.instruments.find(
+      (instrument) => instrument.id === "deal",
+    );
+    expect(deal).toBeDefined();
+    if (!deal) return;
+
+    expect(deal.lifecycle.transitions.dispute).toEqual({
+      from: ["funded", "cancellation_quoted"],
+      to: "disputed",
+    });
+    expect(deal.lifecycle.transitions.resume).toEqual({
+      from: ["disputed"],
+      to: "funded",
+    });
+    expect(deal.lifecycle.transitions.quote_cancellation?.from).not.toContain(
+      "disputed",
+    );
+    expect(deal.lifecycle.transitions.cancel?.from).not.toContain("disputed");
+    expect(
+      deal.lifecycle.transitions.retain_cancellation_charge?.from,
+    ).not.toContain("disputed");
   });
   test("quoted cancellation refuses static on_cancel splits: one settlement cannot price its cancellation twice", () => {
     const source = readFileSync(
@@ -228,6 +259,51 @@ describe("held payment standard library family", () => {
     expect(result.diagnostics[0]?.code).toBe("HSX1110");
     expect(result.diagnostics[0]?.message).toContain(
       "a quoted cancellation cannot combine with on_cancel splits",
+    );
+  });
+  test("zero cancel charge bps retains quoted cancellation with a zero fee", () => {
+    const document = compileFixture(
+      "test/fixtures/held-payment-zero-cancellation-charge.hsx",
+    );
+    const deal = document.instruments.find(
+      (instrument) => instrument.id === "deal",
+    );
+    expect(deal).toBeDefined();
+    if (!deal) return;
+
+    expect(deal.lifecycle.states).toContain("cancellation_quoted");
+    expect(deal.lifecycle.transitions.quote_cancellation).toEqual({
+      from: ["funded", "cancellation_quoted"],
+      to: "cancellation_quoted",
+    });
+    expect(deal.lifecycle.transitions.cancel).toEqual({
+      from: ["cancellation_quoted"],
+      to: "cancelled",
+    });
+    expect(deal.lifecycle.transitions.retain_cancellation_charge).toEqual({
+      from: ["cancelled"],
+      to: "settled",
+    });
+    expect(deal.lifecycle.transitions.dispute).toEqual({
+      from: ["funded", "cancellation_quoted"],
+      to: "disputed",
+    });
+    expect(deal.actions.quote_cancellation?.quote?.charges).toEqual([
+      { bps: 0 },
+    ]);
+    expect(deal.actions.retain_cancellation_charge?.moves).toEqual([]);
+  });
+  test("cancel offer life without cancel charge bps refuses compilation", () => {
+    const source = readFileSync(
+      join(packageRoot, "test/fixtures/held-payment-quoted-cancellation.hsx"),
+      "utf8",
+    ).replace("  cancel_charge_bps: 500\n", "");
+
+    const result = compile(source, { moduleName: "missing-charge-bps" });
+
+    expect(result.diagnostics[0]?.code).toBe("HSX1110");
+    expect(result.diagnostics[0]?.message).toContain(
+      "cancel_offer_life needs cancel_charge_bps to quote",
     );
   });
 });

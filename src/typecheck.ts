@@ -1,6 +1,7 @@
 import {
   deriveUdlActionEffects,
   udlClauseVocabulary,
+  type UdlAction,
   type UdlDocument,
   type UdlInstrument,
 } from "@hyperscale0/udl";
@@ -54,6 +55,7 @@ type ClauseDefinition = (typeof udlClauseVocabulary)[number];
 interface ConcreteInstrument {
   readonly aliases: ReadonlyMap<string, Expr>;
   readonly body: BlockExpr;
+  readonly callee?: string;
   readonly generatedPrefix: boolean;
   readonly name: IdentExpr;
   readonly parties: ReadonlySet<string>;
@@ -350,6 +352,7 @@ export function checkGeneralProgram(
         ).map((candidate) => ({
           ...candidate,
           aliases: scoped.aliases,
+          callee: candidate.name.name,
           parties: scoped.parties,
         })),
       );
@@ -397,11 +400,21 @@ export function checkGeneralProgram(
           constructedInstruments(decl.name, merged, diagnostics),
           boundPorts,
           applicationPorts,
-        ).map((candidate) => ({
-          ...candidate,
-          aliases: scoped.aliases,
-          parties: scoped.parties,
-        })),
+        ).map((candidate) => {
+          let candidateCallee = callee;
+          if (
+            candidate.name.name !== decl.name.name &&
+            candidate.name.name.startsWith(`${decl.name.name}_`)
+          ) {
+            candidateCallee = `${callee}${candidate.name.name.slice(decl.name.name.length)}`;
+          }
+          return {
+            ...candidate,
+            aliases: scoped.aliases,
+            callee: candidateCallee,
+            parties: scoped.parties,
+          };
+        }),
       );
       for (const port of boundPorts.values()) {
         if (applicationPorts.has(port)) reachedPorts.add(port);
@@ -421,6 +434,15 @@ export function checkGeneralProgram(
   }
 
   const allocated = allocateGeneratedPrefixes(concrete);
+
+  if (options.publishedCatalog) {
+    checkPortCaptureTypes(
+      allocated,
+      options.publishedCatalog,
+      aliases,
+      diagnostics,
+    );
+  }
 
   const instruments: TypedInstrument[] = [];
   const ids = new Set<string>();
@@ -911,6 +933,149 @@ function publishedFieldType(
       `^${instrument.idPrefix}_(sandbox|live)_[a-z0-9]{8,64}$`,
   );
   return target ? { kind: "ref", target: target.id } : { kind: "text" };
+}
+
+const STRING_BACKED_PORT_KINDS: ReadonlySet<HsxType["kind"]> = new Set([
+  "account",
+  "condition",
+  "date",
+  "party",
+  "ref",
+  "text",
+]);
+const INTEGER_BACKED_PORT_KINDS: ReadonlySet<HsxType["kind"]> = new Set([
+  "bps",
+  "integer",
+  "percent",
+]);
+
+/**
+ * A published schema keeps less than the HSX type: dates and accounts publish
+ * as plain strings, percents and bps as integers. Compare by the family the
+ * schema can still express so the check never rejects a richer declared type.
+ */
+function samePortType(declared: HsxType, captured: HsxType): boolean {
+  if (captured.kind === "unknown" || declared.kind === "unknown") return true;
+  if (captured.kind === "text")
+    return STRING_BACKED_PORT_KINDS.has(declared.kind);
+  if (captured.kind === "integer") {
+    return INTEGER_BACKED_PORT_KINDS.has(declared.kind);
+  }
+  if (declared.kind !== captured.kind) return false;
+  if (captured.currency && declared.currency !== captured.currency) {
+    return false;
+  }
+  if (captured.target && declared.target !== captured.target) {
+    return false;
+  }
+  return true;
+}
+
+function portTypeWords(type: HsxType): string {
+  if (type.kind === "ref" && type.target) return `ref<${type.target}>`;
+  return typeWords(type);
+}
+
+function getFieldSchemaFromAction(
+  action: UdlAction,
+  fieldName: string,
+): Readonly<Record<string, JsonValue>> | undefined {
+  if (!action.captureInput) return undefined;
+  const properties = action.input?.properties as
+    | Record<string, Record<string, JsonValue>>
+    | undefined;
+  if (!properties) return undefined;
+
+  for (const inputKey of Object.values(action.captureInput)) {
+    if (inputKey !== fieldName && camel(inputKey) !== camel(fieldName)) {
+      continue;
+    }
+    const schema = properties[inputKey] ?? properties[camel(inputKey)];
+    if (schema && typeof schema === "object") return schema;
+  }
+
+  return undefined;
+}
+
+function findCapturedFieldSchema(
+  catalogInstrument: UdlInstrument,
+  actionName: string,
+  fieldName: string,
+): Readonly<Record<string, JsonValue>> | undefined {
+  const targetAction = catalogInstrument.actions[actionName];
+  return targetAction
+    ? getFieldSchemaFromAction(targetAction, fieldName)
+    : undefined;
+}
+
+function checkPortCaptureTypes(
+  candidates: readonly ConcreteInstrument[],
+  publishedCatalog: UdlDocument,
+  topLevelAliases: ReadonlyMap<string, Expr>,
+  diagnostics: GeneralDiagnostic[],
+): void {
+  const catalogById = new Map<string, UdlInstrument>(
+    publishedCatalog.instruments.map((instrument) => [
+      instrument.id,
+      instrument,
+    ]),
+  );
+
+  for (const candidate of candidates) {
+    const catalogInstrument =
+      catalogById.get(candidate.name.name) ??
+      (candidate.callee ? catalogById.get(candidate.callee) : undefined);
+    if (!catalogInstrument) continue;
+
+    const aliases = new Map([...topLevelAliases, ...candidate.aliases]);
+
+    for (const [actionName, declaredPorts] of candidate.ports) {
+      for (const port of declaredPorts) {
+        const rawShape = entry(port.body, "shape")?.value;
+        if (rawShape?.kind !== "block") continue;
+
+        for (const fieldEntry of rawShape.entries) {
+          const fieldName = fieldEntry.key.name;
+          const capturedSchema = findCapturedFieldSchema(
+            catalogInstrument,
+            actionName,
+            fieldName,
+          );
+          if (!capturedSchema) continue;
+
+          const capturedType = publishedFieldType(
+            capturedSchema,
+            publishedCatalog.instruments,
+          );
+          const declaredType = typeOf(fieldEntry.value, aliases);
+
+          if (!samePortType(declaredType, capturedType)) {
+            const declaredWords = portTypeWords(declaredType);
+            const capturedWords = portTypeWords(capturedType);
+            const message = `decision port ${port.name.name} field ${fieldName} declares ${declaredWords} but instrument ${catalogInstrument.id} captures it as ${capturedWords}`;
+            const fix = `declare ${fieldName} as ${capturedWords} in decision port ${port.name.name}`;
+            if (
+              !diagnostics.some(
+                (prior) =>
+                  prior.code === "HSX1026" &&
+                  prior.span.start === fieldEntry.value.span.start &&
+                  prior.span.end === fieldEntry.value.span.end &&
+                  prior.message === message,
+              )
+            ) {
+              diagnostics.push({
+                code: "HSX1026",
+                fix,
+                message,
+                severity: "error",
+                span: fieldEntry.value.span,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 function typedPublishedSubject(

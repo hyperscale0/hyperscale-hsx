@@ -9,6 +9,20 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-09-11
+
+Published in lockstep with UDL 2.0.4.
+
+### Added
+
+- Diagnostic `HSX1026` reports a decision port field whose declared type differs from the type its instrument captures for that field. It runs only when the compiler is given a published catalog, so plain CLI compiles are unchanged.
+
+### Fixed
+
+- The standard `held_payment` flow accepts `quote_cancellation` again from `cancellation_quoted`, so an expired offer can be re-quoted instead of trapping the deal.
+- `held_payment` admits a dispute from `cancellation_quoted`.
+- A `held_payment` cancellation with `cancel_charge_bps` of zero settles without emitting a zero-amount retain transfer.
+
 ## [2.0.3] - 2026-09-10
 
 Published in lockstep with UDL 2.0.3.

@@ -39,6 +39,7 @@ module std.money_flows.held_payment
 // - `cancel_charge_bps`: Optional cancellation charge in basis points. Declaring it gives the settlement a
 //   quoted cancellation: `quote_cancellation` prices the charge and the refund and freezes both,
 //   `cancel` pays the refund to the payer, and `retain_cancellation_charge` pays the charge to the payee.
+//   A zero charge keeps the flow with a zero fee.
 // - `cancel_offer_life`: ISO 8601 duration a cancellation quote stays open, required with `cancel_charge_bps`.
 //
 // ### Decision ports
@@ -70,6 +71,8 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
   let(payee_fee): get(fees, payee);
   let(payer_fee_kind): kind(payer_fee);
   let(payee_fee_kind): kind(payee_fee);
+  let(has_cancel_quote): if_eq(kind(cancel_charge_bps), "boolean", false, true);
+  let(has_charge): if_eq(cancel_charge_bps, 0, false, true);
   when_eq(payee_fee_kind, binding) {
     when(on_cancel) {
       unsupported {
@@ -79,7 +82,7 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
       }
     }
   }
-  when(cancel_charge_bps) {
+  when(has_cancel_quote) {
     when(on_cancel) {
       unsupported {
         code: HSX1110;
@@ -110,10 +113,10 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
     }
   }
   when(cancel_offer_life) {
-    when_not(cancel_charge_bps) {
+    when_not(has_cancel_quote) {
       unsupported {
         code: HSX1110;
-        message: "cancel_offer_life needs a nonzero cancel_charge_bps to quote";
+        message: "cancel_offer_life needs cancel_charge_bps to quote";
         fix: "declare the cancellation charge in basis points, or drop cancel_offer_life";
       }
     }
@@ -202,7 +205,7 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
       when_not(cancel_splits) {
         states created funded disputed released;
         when(on_cancel) { states cancelled; }
-        when(cancel_charge_bps) { states cancellation_quoted cancelled settled; }
+        when(has_cancel_quote) { states cancellation_quoted cancelled settled; }
         states abandoned;
       }
       when(cancel_splits) { states created funding_1 funded disputed releasing_1 released cancelling_1 cancelled abandoned; }
@@ -219,14 +222,14 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
     when_not(payee_fee) {
       when_not(cancel_splits) {
         on fund_piece_1: created -> funded;
-        when_not(cancel_charge_bps) {
+        when_not(has_cancel_quote) {
           on [release_name]: funded -> released;
           when(release_deadline) { on release_on_deadline: funded -> released; }
         }
-        when(cancel_charge_bps) {
+        when(has_cancel_quote) {
           on [release_name]: funded | cancellation_quoted -> released;
           when(release_deadline) { on release_on_deadline: funded | cancellation_quoted -> released; }
-          on quote_cancellation: funded -> cancellation_quoted;
+          on quote_cancellation: funded | cancellation_quoted -> cancellation_quoted;
           on cancel: cancellation_quoted -> cancelled;
           on retain_cancellation_charge: cancelled -> settled;
         }
@@ -275,7 +278,12 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
         on unfund_piece_1: funding_1 | abandoning_1 -> abandoned;
       }
     }
-    on dispute: funded -> disputed;
+    when_not(has_cancel_quote) {
+      on dispute: funded -> disputed;
+    }
+    when(has_cancel_quote) {
+      on dispute: funded | cancellation_quoted -> disputed;
+    }
     on resume: disputed -> funded;
     on abandon: created -> abandoned;
   }
@@ -520,7 +528,7 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
       steps: [];
     }
   }
-  when(cancel_charge_bps) {
+  when(has_cancel_quote) {
     action quote_cancellation {
       agent_description: concat("Price the cancellation and hold that price open. No money moves. The charge the ", words(payee), " keeps and the refund the ", words(payer), " gets back are worked out here and frozen for ", cancel_offer_life, ", after which a fresh call prices it again. Call cancel to spend the quote.");
       summary: "Price the cancellation and hold that price open";
@@ -554,7 +562,12 @@ export instrument held_payment<C>(payer: party, payee: party, amount: money<C>, 
       let(metadata_phase): "metadata.phase";
       agent_description: concat("Pay the quoted cancellation charge out of escrow to the ", words(payee), ". This moves money and does not reverse. The settlement must already be cancelled, so the figure is the one the quote fixed and the escrow ends empty.");
       summary: concat("Pay the quoted cancellation charge to the ", words(payee));
-      moves: [{ key: charge; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.cancellationChargeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: retain_cancellation_charge; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { retainCancellationChargeTransferId: transferId; }; }];
+      when(has_charge) {
+        moves: [{ key: charge; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.cancellationChargeAmount; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", payee_account_field); }; [metadata_instrument]: { from: const; value: instrument; }; [metadata_instance]: { from: instance; path: instrumentInstanceId; }; [metadata_phase]: { from: const; value: retain_cancellation_charge; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: refs.escrowAccountId; }; }; capture: { retainCancellationChargeTransferId: transferId; }; }];
+      }
+      when_not(has_charge) {
+        moves: [];
+      }
       steps: [];
     }
   }
