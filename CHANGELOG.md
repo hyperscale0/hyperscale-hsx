@@ -9,6 +9,13 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-09-11
+
+### Fixed
+
+- Print diagnostic codes next to severity, stage, and location on compiler and formatter error paths so `hsx explain <code>` works.
+- Reconcile `version.ts` with `package.json`.
+
 ## [2.0.4] - 2026-09-11
 
 Published in lockstep with UDL 2.0.4.

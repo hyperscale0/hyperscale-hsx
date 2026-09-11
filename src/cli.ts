@@ -116,7 +116,10 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     const result = format(source);
     if (!result.ok) {
       for (const diagnostic of result.diagnostics) {
-        io.err(`${parsed.file}:1:1: error [parse] ${diagnostic.message}`);
+        const codePrefix = diagnostic.code ? `${diagnostic.code}: ` : "";
+        io.err(
+          `${parsed.file}:1:1: error [parse] ${codePrefix}${diagnostic.message}`,
+        );
       }
       return REFUSED;
     }
@@ -321,10 +324,10 @@ function diagnosticLines(
   file: string,
   result: CompileResult,
 ): readonly string[] {
-  return result.diagnostics.map(
-    (diagnostic) =>
-      `${diagnostic.file ?? file}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.severity} [${diagnostic.stage}] ${diagnostic.message}`,
-  );
+  return result.diagnostics.map((diagnostic) => {
+    const codePrefix = diagnostic.code ? `${diagnostic.code}: ` : "";
+    return `${diagnostic.file ?? file}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.severity} [${diagnostic.stage}] ${codePrefix}${diagnostic.message}`;
+  });
 }
 
 function messageOf(cause: unknown): string {

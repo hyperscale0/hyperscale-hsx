@@ -49,9 +49,21 @@ describe("hsx check", () => {
     expect(result.code).toBe(1);
     // Binding one bad party no longer suppresses the independent bad port.
     expect(result.err.split("\n")).toEqual([
-      `${BROKEN}:17:17: error [typecheck] decision port confirm_pickup is not declared`,
-      `${BROKEN}:15:12: error [bind] party role refers to grocer, which is not declared`,
+      `${BROKEN}:17:17: error [typecheck] HSX1008: decision port confirm_pickup is not declared`,
+      `${BROKEN}:15:12: error [bind] HSX1001: party role refers to grocer, which is not declared`,
     ]);
+  });
+
+  it("captures an emitted diagnostic code and passes it to explain", async () => {
+    const result = await run(["check", BROKEN]);
+    expect(result.code).toBe(1);
+    const match = result.err.match(/\b(HSX\d+)\b/);
+    expect(match).not.toBeNull();
+    const code = match?.[1] ?? "";
+    const explainResult = await run(["explain", code]);
+    expect(explainResult.code).toBe(0);
+    expect(explainResult.out).toContain(code);
+    expect(explainResult.out).toContain("Fix:");
   });
 });
 
@@ -170,9 +182,33 @@ describe("hsx format", () => {
     );
     expect(result.written.size).toBe(0);
   });
+
+  it("refuses malformed source with diagnostic code and exits 1", async () => {
+    const result = await run(["format", "bad.hsx"], {
+      "bad.hsx": '{ "bad": true }',
+    });
+    expect(result.code).toBe(1);
+    expect(result.err).toBe(
+      "bad.hsx:1:1: error [parse] HSX1014: JSON is not HSX",
+    );
+    expect(result.out).toBe("");
+    const match = result.err.match(/\b(HSX\d+)\b/);
+    expect(match).not.toBeNull();
+    const code = match?.[1] ?? "";
+    const explainResult = await run(["explain", code]);
+    expect(explainResult.code).toBe(0);
+    expect(explainResult.out).toContain("HSX1014");
+  });
 });
 
 describe("hsx usage", () => {
+  it("asserts version.ts and package.json versions agree", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
+    ) as { version: string };
+    expect(HSX_VERSION).toBe(packageJson.version);
+    expect(HSX_VERSION).toBe("2.0.5");
+  });
   it("prints usage and exits 2 with no arguments", async () => {
     const result = await run([]);
     expect(result.code).toBe(2);
