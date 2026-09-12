@@ -1,8 +1,16 @@
-![HSX: Write a financial product. Compile its contract.](docs/assets/hsx.svg)
+<p align="left">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/hsx-horizontal-white.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/hsx-horizontal.svg">
+  <img src="docs/assets/brand/hsx-horizontal.svg" alt="Hyperscale™ HSX" width="335">
+</picture>
+</p>
 
 # HSX
 
-HSX is the strictly typed programming language for money on the Hyperscale operating system. It defines general instruments, composes money flows from the money flows library (open/hsx/std), checks currency-indexed linear money, and calculates deterministic execution costs at compile time. HSX compiles each accepted program to canonical UDL. It does not execute settlements, open network sockets, or manage provider accounts.
+Hyperscale™ HSX. Compile financial programs to canonical UDL.
+
+HSX is the strictly typed programming language for money on the Hyperscale operating system. It defines general instruments, composes money flows from the [money flows library](std/), checks currency-indexed linear money, and calculates deterministic execution costs at compile time. HSX compiles each accepted program to canonical UDL. It does not execute settlements, open network sockets, or manage provider accounts.
 
 ## Install
 
@@ -78,3 +86,7 @@ Programmatic compilation requires a `costTable` parameter. See the [cost documen
 HSX is licensed under AGPL-3.0-only, with a commercial license available from Hyperscale LLC. See [LICENSE](LICENSE), [LICENSING.md](LICENSING.md), and [TRADEMARKS.md](TRADEMARKS.md).
 
 Vulnerability reports go through private disclosure as described in [SECURITY.md](SECURITY.md).
+
+---
+
+Hyperscale™ is a trademark of Hyperscale LLC. Code licenses do not grant rights to the name or marks.
