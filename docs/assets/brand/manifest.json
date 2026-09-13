@@ -1,0 +1,30 @@
+{
+  "releaseRevision": "7c80d03cced6a85395be53cdcf30bd3269dbd5b6",
+  "tag": "v0.2.0",
+  "assets": [
+    {
+      "source": "assets/exports/hsx-horizontal.svg",
+      "destination": "hsx-horizontal.svg",
+      "sourceSha256": "4915004484e69ae25db996b82314fb575a31307f27e45dbd8057cd5fcc473243",
+      "destinationSha256": "4915004484e69ae25db996b82314fb575a31307f27e45dbd8057cd5fcc473243"
+    },
+    {
+      "source": "assets/exports/hsx-horizontal-white.svg",
+      "destination": "hsx-horizontal-white.svg",
+      "sourceSha256": "b30bdc6e4c718281df464b9713700480e6a807f3563466449fd2401d34d6e4a0",
+      "destinationSha256": "b30bdc6e4c718281df464b9713700480e6a807f3563466449fd2401d34d6e4a0"
+    },
+    {
+      "source": "assets/exports/hsx-stacked.svg",
+      "destination": "hsx-stacked.svg",
+      "sourceSha256": "0a20ee3bdf0a8dce2294702a9ad6ea1b4bc6701117ed87b34da5c22121304e94",
+      "destinationSha256": "0a20ee3bdf0a8dce2294702a9ad6ea1b4bc6701117ed87b34da5c22121304e94"
+    },
+    {
+      "source": "assets/exports/hsx-stacked-white.svg",
+      "destination": "hsx-stacked-white.svg",
+      "sourceSha256": "c25863b4716e224b29c91f9754e78d21b73720919bad38243eb6066b74f8f73d",
+      "destinationSha256": "c25863b4716e224b29c91f9754e78d21b73720919bad38243eb6066b74f8f73d"
+    }
+  ]
+}

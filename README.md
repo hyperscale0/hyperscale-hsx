@@ -1,5 +1,7 @@
 <p align="left">
 <picture>
+  <source media="(max-width: 600px) and (prefers-color-scheme: dark)" srcset="docs/assets/brand/hsx-stacked-white.svg">
+  <source media="(max-width: 600px)" srcset="docs/assets/brand/hsx-stacked.svg">
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/hsx-horizontal-white.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/hsx-horizontal.svg">
   <img src="docs/assets/brand/hsx-horizontal.svg" alt="Hyperscale™ HSX" width="335">
@@ -24,7 +26,7 @@ Install the compiler globally or run it with `npx`:
 npm install -g @hyperscale0/hsx
 ```
 
-The VS Code extension package is available at https://hyperscale0.ai/downloads/hsx-vscode.vsix. The extension runs `hsx lsp` over stdio to provide diagnostics and document formatting.
+The VS Code extension package is available at https://hyperscale0.ai/downloads/hsx-vscode.vsix. Your editor extension runs `hsx lsp` to report diagnostics and format your document. It communicates through standard input and output.
 
 ## First program
 

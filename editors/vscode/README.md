@@ -1,7 +1,7 @@
 # HSX for VS Code
 
-This extension adds syntax highlighting, standard-library snippets, language
-server diagnostics, and formatting for `.hsx` files.
+The Hyperscale™ HSX extension adds syntax highlighting, standard-library snippets,
+language server diagnostics, and formatting for `.hsx` files.
 
 The language client runs `hsx lsp` over stdio. Install the compiler binary
 globally:
@@ -41,3 +41,5 @@ To package the extension from this directory:
 ```sh
 bun run package
 ```
+
+Hyperscale™ is a trademark of Hyperscale LLC.

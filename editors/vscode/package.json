@@ -1,6 +1,6 @@
 {
   "name": "hsx-vscode",
-  "displayName": "HSX",
+  "displayName": "Hyperscale HSX",
   "description": "Syntax highlighting, language server diagnostics, and formatting for the HSX settlement language.",
   "version": "1.0.0",
   "publisher": "hyperscale0",
@@ -64,7 +64,7 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "HSX",
+      "title": "Hyperscale HSX",
       "properties": {
         "hsx.serverPath": {
           "type": "string",
