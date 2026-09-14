@@ -543,4 +543,71 @@ instrument probe {
     fix: "Correct compile-time block keys or parameter bindings.",
     example: instrument('title: "__hsx_none__";'),
   },
+  {
+    code: "HSX1610",
+    stage: "typecheck",
+    title: "Invalid piece partition",
+    fix: "Bind immutable money and account fields to one declared partition.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
+  {
+    code: "HSX1611",
+    stage: "typecheck",
+    title: "Invalid piece stage",
+    fix: "Use a declared piece stage and let the compiler derive pieceId.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
+  {
+    code: "HSX1612",
+    stage: "typecheck",
+    title: "Invalid action graph",
+    fix: "Declare an acyclic action graph within the expansion bound.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
+  {
+    code: "HSX1613",
+    stage: "typecheck",
+    title: "Invalid static call binding",
+    fix: "Bind declared typed targets with unique captures and money consumption.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
+  {
+    code: "HSX1614",
+    stage: "typecheck",
+    title: "Incompatible action boundary",
+    fix: "Keep the parent principal, approval and recovery boundary.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
+  {
+    code: "HSX1615",
+    stage: "typecheck",
+    title: "Invalid leaf evidence or effects",
+    fix: "Declare evidence and the exact effects of each expanded leaf.",
+    example: null,
+    reason:
+      "The shared UDL action-plan validator supplies the code and source path.",
+  },
 ] as const;
+
+/** Preserve the UDL diagnostic family when reporting a typed clause. */
+export function hsxClauseDiagnosticCode(code: string): string {
+  const codes: Readonly<Record<string, string>> = {
+    UDL4002: "HSX1610",
+    UDL5013: "HSX1611",
+    UDL2010: "HSX1612",
+    UDL2011: "HSX1613",
+    UDL2012: "HSX1614",
+    UDL2013: "HSX1615",
+  };
+  return codes[code] ?? "HSX1602";
+}

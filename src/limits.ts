@@ -6,6 +6,8 @@
  * on. The deepest nests 5 levels; the largest is 13,934 bytes.
  */
 export const HSX_LIMITS = Object.freeze({
+  /** Shared ceiling for finite comprehensions and action-call expansion. */
+  maxExpansions: 256,
   /**
    * How deep the recursive-descent productions may nest. Measured on this
    * machine, the parser exhausted the call stack at 9,217 nested blocks and

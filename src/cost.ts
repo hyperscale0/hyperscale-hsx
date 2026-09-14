@@ -1,5 +1,6 @@
 import {
   udlEffectKinds,
+  resolveUdlActionPlans,
   type UdlDocument,
   type UdlEffectKind,
 } from "@hyperscale0/udl";
@@ -247,8 +248,17 @@ export function buildUdlCostManifest(
   const rowsBySignature = indexCostRows(table);
   const actions: UdlCostManifest["actions"][number][] = [];
   for (const instrument of document.instruments) {
-    for (const [actionName, action] of Object.entries(instrument.actions)) {
-      const effects = (action.effects ?? {}) as Readonly<
+    const resolved = resolveUdlActionPlans(instrument);
+    if (resolved.issues.length > 0)
+      throw new Error(resolved.issues[0]!.message);
+    for (const actionName of instrument.actionOrder) {
+      const action = instrument.actions[actionName]!;
+      const plan = resolved.plans.find(
+        (candidate) => candidate.action === actionName,
+      );
+      const effects = (
+        action.calls && plan ? plan.effects : (action.effects ?? {})
+      ) as Readonly<
         Partial<
           Record<
             HsxEffectKind,
@@ -526,7 +536,15 @@ function typedStructuralCounts(
     aggregate += arrayValue(instrument.slots.aggregateInvariants).length;
     for (const action of instrument.actions) {
       flow += 1;
-      move += arrayValue(action.slots.moves).length;
+      const plan = instrument.actionPlans?.find(
+        (plan) => plan.action === action.name,
+      );
+      move +=
+        action.slots.calls && plan
+          ? plan.leaves.filter((leaf) =>
+              leaf.step.operation.startsWith("internal_transfer."),
+            ).length
+          : arrayValue(action.slots.moves).length;
       gate += arrayValue(action.slots.requiresRefs).length;
       if (action.slots.deadline !== undefined) timer += 1;
       if (action.slots.due !== undefined) timer += 1;
@@ -565,9 +583,18 @@ function udlStructuralCounts(
     if (Object.values(instrument.actions).some((action) => action.quote))
       unwind += 1;
     aggregate += instrument.aggregateInvariants?.length ?? 0;
-    for (const action of Object.values(instrument.actions)) {
+    const resolved = resolveUdlActionPlans(instrument);
+    if (resolved.issues.length > 0)
+      throw new Error(resolved.issues[0]!.message);
+    for (const [name, action] of Object.entries(instrument.actions)) {
       flow += 1;
-      move += action.moves.length;
+      const plan = resolved.plans.find((plan) => plan.action === name);
+      move +=
+        action.calls && plan
+          ? plan.leaves.filter((leaf) =>
+              leaf.step.operation.startsWith("internal_transfer."),
+            ).length
+          : action.moves.length;
       gate += action.requiresRefs?.length ?? 0;
       if (action.deadline) timer += 1;
       if (action.due) timer += 1;

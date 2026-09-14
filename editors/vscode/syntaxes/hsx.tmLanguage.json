@@ -30,7 +30,7 @@
   ],
   "repository": {
     "clauses": {
-      "match": "\\b(?:agent_description|capture_input|commit|quote|decided_amount|deadline|decision|computes_distribute|description|due|earnable|event_name|examples|input|moves|payout|port|principal|public_action|reconcile|computes_remainder|requires_aggregate|requires_checks|requires_drained|requires_exposure|requires_refs|sandbox_failure_point|sets_at|computes_signed_sum|steps|summary|updates|notify|agent_description|aggregate_invariants|caller_parked_states|description|dials|distinct_parties|computes_derived|computes_fees|id_prefix|journeys|nav|partitions|subject|summary|surface_visibility|template_id|title|update)\\b",
+      "match": "\\b(?:action_library|agent_description|calls|capture_input|commit|quote|decided_amount|deadline|decision|computes_distribute|description|due|earnable|event_name|examples|input|moves|payout|piece_plan|piece_stage|port|principal|public_action|reconcile|computes_remainder|requires_aggregate|requires_checks|requires_drained|requires_exposure|requires_refs|sandbox_failure_point|sets_at|computes_signed_sum|steps|summary|updates|notify|agent_description|aggregate_invariants|caller_parked_states|description|dials|distinct_parties|computes_derived|computes_fees|id_prefix|journeys|nav|partitions|subject|summary|surface_visibility|template_id|title|update)\\b",
       "name": "support.function.clause.hsx"
     },
     "comments": {

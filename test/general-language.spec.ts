@@ -3,7 +3,9 @@ import { serializeUdl, validateUdl, type UdlDocument } from "@hyperscale0/udl";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Program } from "../src/ast.ts";
+import type { JsonValue } from "../src/ir.ts";
 import { format } from "../src/format.ts";
+import { emitUdlClause, lowerGeneralProgram } from "../src/emit.ts";
 import {
   checkGeneralProgram,
   compile as compileHsx,
@@ -2784,4 +2786,189 @@ instrument policy_quote {
       ?.quote;
     expect(quote?.chargeRetainedBy).toBe("beneficiary");
   });
+});
+
+const PIECE_CALL_SOURCE = `program piece_calls "Piece calls"
+instrument escrow {
+  agent_description: "Move a declared piece between its bound accounts.";
+  fields {
+    total: money(SAR, 100);
+    firstAmount: money(SAR, 30);
+    secondAmount: money(SAR, 70);
+    sourceAccountId: account;
+    sellerAccountId: account;
+    feeAccountId: account;
+  }
+  partitions: [{ totalField: "total"; pieceFields: ["firstAmount", "secondAmount"]; }];
+  lifecycle { states ready closed; initial ready; on release: ready -> closed; }
+  piece_plan: {
+    id: "price"; total: "total";
+    pieces: [
+      { id: "seller"; amount: "firstAmount"; release_to: "sellerAccountId"; refund_to: "sourceAccountId"; },
+      { id: "platform_fee"; amount: "secondAmount"; release_to: "feeAccountId"; refund_to: "sourceAccountId"; }
+    ];
+    fund_order: ["seller", "platform_fee"];
+    release_order: ["platform_fee", "seller"];
+    refund_order: ["seller", "platform_fee"];
+    unfund_order: ["platform_fee", "seller"];
+  };
+  action_library: {
+    settlement_piece: {
+      actionOrder: ["move_piece"];
+      actions: {
+        move_piece: {
+          parameters: { piece: { kind: "piece"; }; settlement: { kind: "instance"; }; };
+          principal: "api_key"; approval: "inherit"; recovery: "local";
+          order: ["transfer"]; calls: [];
+          leaves: [{
+            id: "transfer"; operation: "internal_transfer.create";
+            bind: {
+              amount: "$piece.amount"; currency: "$piece.currency";
+              sourceAccountId: "$settlement.fields.sourceAccountId";
+              destinationAccountId: "$piece.release_to";
+            };
+            effects: [{ kind: "moves"; signature: "moves.transfer.internal"; }];
+            evidence: "transferId";
+          }];
+        };
+      };
+    };
+  };
+  action create { agent_description: "Declare the immutable piece amounts and accounts."; steps: []; }
+  action release {
+    agent_description: "Release the selected piece to its declared account.";
+    piece_stage: { plan: "price"; stage: "release"; };
+    calls: [{ id: "move_piece"; action: "settlement_piece.move_piece"; bind: { piece: "$piece"; settlement: "$instance"; }; }];
+    steps: [];
+  }
+}`;
+
+describe("piece plans through generic clauses", () => {
+  it("round-trips source calls and piece plans without publishing private actions", () => {
+    const first = compile(PIECE_CALL_SOURCE);
+    if (!first.artifacts) throw new Error(JSON.stringify(first.diagnostics));
+    const instrument = (first.artifacts.document as unknown as UdlDocument)
+      .instruments[0]!;
+    const source = PIECE_CALL_SOURCE.replace(
+      /  piece_plan: \{[\s\S]*?\n  \};/,
+      `  ${emitUdlClause("instrument", "piecePlan", instrument.piecePlan!)}`,
+    )
+      .replace(
+        /  action_library: \{[\s\S]*?\n  \};/,
+        `  ${emitUdlClause("instrument", "actionLibrary", instrument.actionLibrary! as unknown as JsonValue)}`,
+      )
+      .replace(
+        /    piece_stage: [^\n]+/,
+        `    ${emitUdlClause("action", "pieceStage", instrument.actions.release!.pieceStage!)}`,
+      )
+      .replace(
+        /    calls: [^\n]+/,
+        `    ${emitUdlClause("action", "calls", instrument.actions.release!.calls!)}`,
+      );
+    const libraryModule = `module piece_library\n${emitUdlClause("instrument", "actionLibrary", instrument.actionLibrary! as unknown as JsonValue).replace("action_library:", "export const settlement_library =")}`;
+    const imported = source
+      .replace(
+        /  action_library: [^\n]+/,
+        "  action_library: settlement_library;",
+      )
+      .replace(
+        'program piece_calls "Piece calls"',
+        'program piece_calls "Piece calls"\nimport { settlement_library } from "piece-library.hsx"',
+      );
+    const second = compile(imported, {
+      moduleName: "piece-calls.hsx",
+      resolveModule: () => ({
+        name: "piece-library.hsx",
+        source: libraryModule,
+      }),
+    });
+    expect({
+      canonical: second.artifacts && serializeUdl(second.artifacts.document),
+      actions: instrument.actionOrder,
+      pieceInput: instrument.actions.release!.input,
+    }).toEqual({
+      canonical: serializeUdl(first.artifacts.document),
+      actions: ["create", "release"],
+      pieceInput: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pieceId"],
+        properties: {
+          pieceId: { type: "string", enum: ["platform_fee", "seller"] },
+        },
+      },
+    });
+  });
+
+  it("refuses caller-authored piece selectors and amount overrides", () => {
+    const inputs = [
+      '{ type: "object"; properties: { amount: { type: "string"; }; }; }',
+      '{ type: "object"; properties: { pieceId: { type: "string"; }; }; }',
+    ];
+    expect(
+      inputs.map((input) =>
+        compile(
+          PIECE_CALL_SOURCE.replace(
+            "piece_stage:",
+            `input: ${input}; piece_stage:`,
+          ),
+        ).diagnostics.some((issue) => issue.code === "HSX1611"),
+      ),
+    ).toEqual([true, true]);
+  });
+});
+
+it("lowers published and authored calls to the same leaf origins", () => {
+  const compiled = compile(PIECE_CALL_SOURCE);
+  if (!compiled.artifacts)
+    throw new Error(JSON.stringify(compiled.diagnostics));
+  const authored = checkGeneralProgram(parseProgram(PIECE_CALL_SOURCE).program);
+  const published = checkGeneralProgram(
+    parseProgram(`program reuse "Reuse"
+use escrow
+expose escrow.release as releasePiece
+`).program,
+    { publishedCatalog: compiled.artifacts.document as unknown as UdlDocument },
+  );
+  if (!authored.program || !published.program)
+    throw new Error(
+      JSON.stringify([authored.diagnostics, published.diagnostics]),
+    );
+  const left = lowerGeneralProgram(authored.program);
+  const right = lowerGeneralProgram(published.program);
+  if (!left.ok || !right.ok)
+    throw new Error("action-plan lowering refused a checked program");
+  expect({
+    published: right.value.actionPlans,
+    origins: left.value.actionPlans
+      ?.filter((plan) => plan.action === "release")
+      .map((plan) => ({
+        piece: plan.pieceId,
+        paths: plan.leaves.map((leaf) => leaf.originPath),
+      })),
+  }).toEqual({
+    published: left.value.actionPlans,
+    origins: [
+      { piece: "platform_fee", paths: [["release", "move_piece", "transfer"]] },
+      { piece: "seller", paths: [["release", "move_piece", "transfer"]] },
+    ],
+  });
+});
+
+it("retains fatal UDL codes when checking call boundaries in HSX", () => {
+  const checked = checkGeneralProgram(
+    parseProgram(
+      PIECE_CALL_SOURCE.replace(
+        'principal: "api_key"',
+        'principal: "user_session"',
+      ),
+    ).program,
+  );
+  expect(checked.diagnostics).toContainEqual(
+    expect.objectContaining({
+      code: "HSX1614",
+      udlCode: "UDL2012",
+      severity: "error",
+    }),
+  );
 });

@@ -1,5 +1,7 @@
 import {
   deriveUdlActionEffects,
+  resolveUdlActionPlans,
+  udlDocumentSchema,
   udlClauseVocabulary,
   type UdlAction,
   type UdlDocument,
@@ -24,7 +26,14 @@ import type {
   SubjectDecl,
   UseDecl,
 } from "./ast.ts";
-import { requiredFields } from "./emit.ts";
+import {
+  requiredFields,
+  generalInstrumentValue,
+  hasActionPlanClauses,
+  lowerGeneralProgram,
+} from "./emit.ts";
+import { hsxClauseDiagnosticCode } from "./diagnostics.ts";
+import { HSX_LIMITS } from "./limits.ts";
 import type {
   GeneralCheckResult,
   GeneralDiagnostic,
@@ -43,7 +52,7 @@ const CURRENCY = /^[A-Z]{3}$/;
 const MONEY_PATTERN = "^[1-9][0-9]{0,17}$";
 const OPTIONAL_MONEY_PATTERN = "^(0|[1-9][0-9]{0,17})$";
 const ACCOUNT_PATTERN = "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
-const MAX_COMPREHENSION_EXPANSIONS = 256;
+
 const NONE_SENTINEL = "__hsx_none__";
 
 export interface GeneralCheckOptions {
@@ -517,7 +526,7 @@ export function checkGeneralProgram(
     subjects,
     title: header?.title?.value ?? sentenceCase(name),
   };
-  return { diagnostics, program: typed };
+  return prepareActionPlanProgram(typed, diagnostics);
 }
 
 function checkPublishedProgram(
@@ -766,7 +775,7 @@ function checkPublishedProgram(
     ],
     title: header?.title?.value ?? sentenceCase(name),
   };
-  return { diagnostics, program: typed };
+  return prepareActionPlanProgram(typed, diagnostics);
 }
 
 function projectedPublishedInstrument(
@@ -3014,11 +3023,11 @@ function expandComprehensions(
         });
         continue;
       }
-      if (budget.used + values.length > MAX_COMPREHENSION_EXPANSIONS) {
+      if (budget.used + values.length > HSX_LIMITS.maxExpansions) {
         diagnostics.push({
           code: "HSX1404",
-          fix: `reduce the fixed expansion to at most ${MAX_COMPREHENSION_EXPANSIONS} rows`,
-          message: `bounded comprehensions expand past the ${MAX_COMPREHENSION_EXPANSIONS}-row compiler limit`,
+          fix: `reduce the fixed expansion to at most ${HSX_LIMITS.maxExpansions} rows`,
+          message: `bounded comprehensions expand past the ${HSX_LIMITS.maxExpansions}-row compiler limit`,
           severity: "error",
           span: bound.span,
         });
@@ -3481,7 +3490,10 @@ function checkInstrument(
     ];
   }
 
-  return { actions, fields, id: name.name, origin: name.span, slots };
+  return derivePieceInputs(
+    { actions, fields, id: name.name, origin: name.span, slots },
+    diagnostics,
+  );
 }
 
 // Mirrors the catalog law agent_description_required: every action a caller
@@ -4787,6 +4799,7 @@ function blockToObject(
   block: BlockExpr | undefined,
   substitutions: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  literalKeys = false,
 ): Record<string, JsonValue> {
   if (!block) return {};
   const result: Record<string, JsonValue> = {};
@@ -4802,10 +4815,8 @@ function blockToObject(
       });
       continue;
     }
-    result[row.key.quoted ? row.key.name : camel(row.key.name)] = exprToJson(
-      value,
-      diagnostics,
-    );
+    result[literalKeys || row.key.quoted ? row.key.name : camel(row.key.name)] =
+      exprToJson(value, diagnostics, literalKeys);
   }
   return result;
 }
@@ -4832,10 +4843,21 @@ function exprToJsonForUdlSlot(
       ]),
     );
   }
-  return exprToJson(expr, diagnostics);
+  // Declaration maps retain their authored keys; field-spelling aliases still normalize.
+  const literalKeys = udlClauseVocabulary.some(
+    (clause) =>
+      clause.target === slot &&
+      "literalKeys" in clause &&
+      clause.literalKeys === true,
+  );
+  return exprToJson(expr, diagnostics, literalKeys);
 }
 
-function exprToJson(expr: Expr, diagnostics: GeneralDiagnostic[]): JsonValue {
+function exprToJson(
+  expr: Expr,
+  diagnostics: GeneralDiagnostic[],
+  literalKeys = false,
+): JsonValue {
   switch (expr.kind) {
     case "boolean":
       return expr.value;
@@ -4880,9 +4902,11 @@ function exprToJson(expr: Expr, diagnostics: GeneralDiagnostic[]): JsonValue {
     case "settlement_ref":
       return `${expr.owner.name}.${expr.member.name}`;
     case "list":
-      return expr.items.map((item) => exprToJson(item, diagnostics));
+      return expr.items.map((item) =>
+        exprToJson(item, diagnostics, literalKeys),
+      );
     case "block":
-      return blockToObject(expr, new Map(), diagnostics);
+      return blockToObject(expr, new Map(), diagnostics, literalKeys);
     case "call":
       return `${expr.callee.name}(${expr.args.map((arg) => String(exprToJson(arg, diagnostics))).join(",")})`;
     case "type_apply":
@@ -5054,4 +5078,111 @@ function titleize(value: string): string {
 function sentenceCase(value: string): string {
   const words = value.replaceAll("_", " ");
   return `${words[0]?.toUpperCase() ?? ""}${words.slice(1)}`;
+}
+
+function prepareActionPlanProgram(
+  program: TypedProgram,
+  diagnostics: GeneralDiagnostic[],
+): GeneralCheckResult {
+  if (!program.instruments.some(hasActionPlanClauses))
+    return { diagnostics, program };
+  const instruments = program.instruments.map((instrument): TypedInstrument => {
+    if (!hasActionPlanClauses(instrument)) return instrument;
+    const parsed = udlDocumentSchema.shape.instruments.element.safeParse(
+      generalInstrumentValue(instrument),
+    );
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues)
+        diagnostics.push({
+          code: "HSX1601",
+          severity: "error",
+          span: instrument.origin,
+          message: `${instrument.id}.${issue.path.join(".")}: ${issue.message}`,
+          fix: "match the typed UDL clause declaration",
+        });
+      return instrument;
+    }
+    const resolved = resolveUdlActionPlans(parsed.data);
+    for (const issue of resolved.issues)
+      diagnostics.push({
+        code: hsxClauseDiagnosticCode(issue.code),
+        severity: "error",
+        span: instrument.origin,
+        message: `${instrument.id}${issue.path}: ${issue.message}`,
+        udlCode: issue.code,
+        path: issue.path,
+        fix: issue.fix,
+      });
+    return {
+      ...instrument,
+      actionPlans: resolved.plans,
+      actions: instrument.actions.map((action) => {
+        if (!action.slots.calls) return action;
+        const plan = resolved.plans.find((plan) => plan.action === action.name);
+        if (!plan) return action;
+        const effects = plan.effects;
+        return {
+          ...action,
+          effects,
+          slots: { ...action.slots, effects: effects as JsonValue },
+        };
+      }),
+    };
+  });
+  if (diagnostics.some((issue) => issue.severity === "error"))
+    return { diagnostics };
+  const prepared = { ...program, instruments };
+  const lowered = lowerGeneralProgram(prepared);
+  if (!lowered.ok) {
+    for (const issue of lowered.issues)
+      diagnostics.push({
+        code: issue.code,
+        fix: issue.fix,
+        message: issue.message,
+        udlCode: issue.udlCode,
+        path: issue.path,
+        severity: "error",
+        span: issue.span,
+      });
+    return { diagnostics };
+  }
+  return { diagnostics, program: prepared };
+}
+
+function derivePieceInputs(
+  instrument: TypedInstrument,
+  diagnostics: GeneralDiagnostic[],
+): TypedInstrument {
+  return {
+    ...instrument,
+    actions: instrument.actions.map((action) => {
+      const stage = jsonObject(action.slots.pieceStage);
+      if (!stage) return action;
+      if (action.slots.input !== undefined) {
+        diagnostics.push({
+          code: "HSX1611",
+          severity: "error",
+          span: action.origin,
+          message: `action ${action.name} overrides its compiler-derived pieceId input`,
+          fix: "remove input; piece_stage derives the strict pieceId enum",
+        });
+        return action;
+      }
+      const plan = jsonObject(instrument.slots.piecePlan);
+      const order = plan?.[`${stage.stage}_order`];
+      if (!Array.isArray(order) || order.length === 0) return action;
+      return {
+        ...action,
+        slots: {
+          ...action.slots,
+          input: {
+            type: "object",
+            additionalProperties: false,
+            required: ["pieceId"],
+            properties: { pieceId: { type: "string", enum: order } },
+          },
+        },
+      };
+    }),
+  };
 }

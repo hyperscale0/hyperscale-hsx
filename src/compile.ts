@@ -12,6 +12,7 @@
  */
 
 import type { UdlIssueCode } from "@hyperscale0/udl";
+import type { ResolvedProgramActionPlan } from "./ir.ts";
 import { lineColIn, lineIndex } from "./ast.ts";
 import {
   buildCostManifest,
@@ -55,6 +56,7 @@ export interface CompileDiagnostic {
 }
 
 interface CompileArtifacts {
+  readonly actionPlans?: readonly ResolvedProgramActionPlan[];
   /** The canonical UDL document. */
   readonly document: Json;
   /** Canonical UDL paths bound to their narrowest authored source terms. */
@@ -173,7 +175,12 @@ export function compile(
       diagnostic.severity,
       diagnostic.message,
       diagnostic.span,
-      { code: diagnostic.code, fix: diagnostic.fix },
+      {
+        code: diagnostic.code,
+        fix: diagnostic.fix,
+        ...(diagnostic.path ? { path: diagnostic.path } : {}),
+        ...(diagnostic.udlCode ? { udlCode: diagnostic.udlCode } : {}),
+      },
       moduleOrigin,
     );
   }
@@ -190,7 +197,12 @@ export function compile(
         diagnostic.severity,
         diagnostic.message,
         diagnostic.span,
-        { code: diagnostic.code, fix: diagnostic.fix },
+        {
+          code: diagnostic.code,
+          fix: diagnostic.fix,
+          ...(diagnostic.path ? { path: diagnostic.path } : {}),
+          ...(diagnostic.udlCode ? { udlCode: diagnostic.udlCode } : {}),
+        },
       );
     }
     return { diagnostics, verdict: "invalid" };
@@ -223,6 +235,9 @@ export function compile(
   return {
     artifacts: {
       document: lowered.value.document,
+      ...(lowered.value.actionPlans
+        ? { actionPlans: lowered.value.actionPlans }
+        : {}),
       costManifest: cost.manifest,
       originMap: lowered.value.originMap.map(compileOrigin),
     },

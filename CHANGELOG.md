@@ -9,6 +9,22 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-14
+
+Published in lockstep with UDL 2.1.0.
+
+### Added
+
+- `piece_plan` declares a partitioned total with named pieces, immutable release and refund payees, and fund, release, refund and unfund orders. `piece_stage` on an action moves one piece and derives the `pieceId` input from the selected order.
+- `calls` on an action invoke typed private actions from an `action_library`, binding parameters and capturing results. Public and authored calls lower to the same leaf origins, and the compiled document round-trips calls and piece plans losslessly.
+- Diagnostics `HSX1610` (piece partition), `HSX1611` (piece stage), `HSX1612` (action graph), `HSX1613` (static call binding), `HSX1614` (action boundary) and `HSX1615` (leaf evidence and effects), each mapped from its UDL counterpart. `HSX1601` and `HSX1602` now take their fix text from the diagnostic table.
+- The cost kernel prices every expanded leaf of a call and refuses a leaf without a price (`HSX1301`).
+
+### Changed
+
+- The VS Code extension is titled "Hyperscale HSX". The README and playground carry the design-language brand assets.
+- `HSX_LIMITS.maxExpansions` (256) bounds action-graph expansion; the typechecker's own limit is gone.
+
 ## [2.0.5] - 2026-09-11
 
 ### Fixed

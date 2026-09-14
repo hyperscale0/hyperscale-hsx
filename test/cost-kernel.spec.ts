@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { serializeUdl, type UdlDocument } from "@hyperscale0/udl";
 import {
   lowerGeneralProgram,
   originForUdlPath,
@@ -390,4 +391,81 @@ describe("compiler diagnostic byte coordinates", () => {
     expect(moduleDiag?.byteSpan).toBeUndefined();
     expect(moduleDiag?.file).toBe("broken.hsx");
   });
+});
+
+const CALLED_TRANSFERS = `program call_cost "Call cost"
+instrument payment {
+  agent_description: "Move each declared obligation.";
+  fields { first: money<SAR>; second: money<SAR>; payerAccountId: account; payeeAccountId: account; }
+  lifecycle { states ready paid; initial ready; on pay: ready -> paid; }
+  action_library: {
+    transfers: {
+      actionOrder: ["move"];
+      actions: {
+        move: {
+          parameters: { amount: { kind: "money"; currency: "SAR"; }; owner: { kind: "instance"; }; };
+          principal: "api_key"; approval: "inherit"; recovery: "local";
+          order: ["transfer"]; calls: [];
+          leaves: [{ id: "transfer"; operation: "internal_transfer.create";
+            bind: { amount: "$amount"; currency: "$owner.fields.currency";
+              sourceAccountId: "$owner.fields.payerAccountId"; destinationAccountId: "$owner.fields.payeeAccountId"; };
+            effects: [{ kind: "moves"; signature: "moves.transfer.internal"; }]; evidence: "transferId";
+          }];
+        };
+      };
+    };
+  };
+  action pay {
+    agent_description: "Pay both obligations under one parent action.";
+    calls: [
+      { id: "first"; action: "transfers.move"; bind: { amount: "$fields.first"; owner: "$instance"; }; },
+      { id: "second"; action: "transfers.move"; bind: { amount: "$fields.second"; owner: "$instance"; }; }
+    ];
+    steps: [];
+  }
+  action create { agent_description: "Declare the two obligations."; steps: []; }
+}`;
+
+it("prices expanded calls once per leaf in both language entrypoints", () => {
+  const table: UdlCostTable = {
+    ...testCostTable,
+    rows: [
+      {
+        signature: "moves.transfer.internal",
+        perEventMinor: "7",
+        bps: 0,
+        payer: "product",
+        settlement: "per_event",
+        meter: "instrument.event.count",
+      },
+    ],
+  };
+  const result = compile(CALLED_TRANSFERS, { costTable: table });
+  if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
+  const hsx = result.artifacts.costManifest;
+  const udl = buildUdlCostManifest(
+    JSON.parse(serializeUdl(result.artifacts.document)) as UdlDocument,
+    table,
+    false,
+  );
+  const pay = hsx.actions.find((action) => action.action === "pay")!;
+  expect({
+    parity: udl,
+    count: pay.components[0]?.count,
+    price: pay.perEventMinor,
+  }).toEqual({ parity: hsx, count: 2, price: "14" });
+});
+
+it("refuses calls whose expanded leaves lack a host price", () => {
+  const result = compile(CALLED_TRANSFERS, {
+    costTable: {
+      ...testCostTable,
+      rows: testCostTable.rows.filter(
+        (row) => row.signature !== "moves.transfer.internal",
+      ),
+    },
+  });
+  expect(result.diagnostics).toContainEqual(
+    expect.objectContaining({ code: "HSX1301" }),
+  );
 });

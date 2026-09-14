@@ -28,7 +28,11 @@ export {
   type ProgramEntryOverrideValue,
 } from "./entry-overrides.ts";
 export { type OriginMapEntry } from "./emit.ts";
-export { lowerGeneralProgram, originForUdlPath } from "./emit.ts";
+export {
+  lowerGeneralProgram,
+  originForUdlPath,
+  emitUdlClause,
+} from "./emit.ts";
 export { parseProgram } from "./parse.ts";
 export { checkGeneralProgram, type GeneralCheckOptions } from "./typecheck.ts";
 export {
@@ -40,3 +44,4 @@ export {
   type UseDecl,
 } from "./ast.ts";
 export { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
+export type { ResolvedActionPlan, ResolvedProgramActionPlan } from "./ir.ts";

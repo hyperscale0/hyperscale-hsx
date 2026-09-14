@@ -1,5 +1,9 @@
 import type { Span } from "./ast.ts";
-import type { UdlEffectKind } from "@hyperscale0/udl";
+import type {
+  resolveUdlActionPlans,
+  UdlEffectKind,
+  UdlIssueCode,
+} from "@hyperscale0/udl";
 
 export type JsonValue =
   | boolean
@@ -59,7 +63,15 @@ export interface TypedAction {
   readonly slots: Readonly<Record<string, JsonValue>>;
 }
 
+export type ResolvedActionPlan = ReturnType<
+  typeof resolveUdlActionPlans
+>["plans"][number];
+export type ResolvedProgramActionPlan = ResolvedActionPlan & {
+  readonly instrument: string;
+};
+
 export interface TypedInstrument {
+  readonly actionPlans?: readonly ResolvedActionPlan[];
   readonly actions: readonly TypedAction[];
   readonly fields: readonly TypedField[];
   readonly id: string;
@@ -86,6 +98,8 @@ export interface TypedProgram {
 }
 
 export interface GeneralDiagnostic {
+  readonly path?: string;
+  readonly udlCode?: UdlIssueCode;
   readonly code: string;
   readonly fix: string;
   readonly message: string;
