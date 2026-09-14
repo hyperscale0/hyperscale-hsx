@@ -9,6 +9,14 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-15
+
+Published in lockstep with UDL 2.3.0.
+
+### Added
+
+- `docs/piece-plans.md`, a guide to partitioned totals: declaring pieces, orders and payees, staging one piece per action, and reading the compiled plan.
+
 ## [2.1.0] - 2026-09-14
 
 Published in lockstep with UDL 2.1.0.

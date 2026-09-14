@@ -22,6 +22,10 @@ The [browser playground](./playground.md) provides a static editing surface with
 live compilation, diagnostics inspection, and example programs. The hosted
 playground is served at https://hyperscale0.ai/playground.
 
+[Compose actions over a piece plan](./piece-plans.md) is a worked excerpt, not
+a standalone program: it shows the `piece_plan`, `piece_stage`, `calls` and
+`action_library` clauses inside an instrument.
+
 ## Examples and tooling
 
 - [Standard library examples](../examples/README.md)
