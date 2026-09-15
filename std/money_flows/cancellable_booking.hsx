@@ -170,10 +170,10 @@ export instrument cancellable_booking<C>(
       bookingKey { type: text; min_length: 1; }
       signedTermsReference { type: text; min_length: 1; }
       currency { type: text; const: C; }
-      customerAccountId: account<C>;
-      supplierAccountId: account<C>;
-      operatorAccountId: account<C>;
-      taxAccountId: account<C>;
+      customerAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      supplierAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      operatorAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      taxAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
       authorityId { type: ref<authority_type>; optional: true; }
       supplierRole { type: text; const: supplier_role; }
       travellerCount { type: integer; minimum: 1; maximum: 20; }

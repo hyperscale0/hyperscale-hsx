@@ -220,7 +220,7 @@ describe("hsx usage", () => {
       readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
     ) as { version: string };
     expect(HSX_VERSION).toBe(packageJson.version);
-    expect(HSX_VERSION).toBe("2.2.0");
+    expect(HSX_VERSION).toBe("2.2.1");
   });
   it("prints usage and exits 2 with no arguments", async () => {
     const result = await run([]);

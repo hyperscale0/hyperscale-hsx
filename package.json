@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",

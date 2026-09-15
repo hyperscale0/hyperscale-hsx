@@ -213,7 +213,14 @@ function typesMarkdown(): string {
   const rows = HSX_TYPE_KINDS.map(
     (kind) => `| \`${kind}\` | ${typeNotes[kind]} |`,
   ).join("\n");
-  return `${generatedHeader}# Types\n\nHSX checks types before it emits UDL. Money and account values carry a currency parameter, and no implicit currency conversion exists.\n\n| Kind | Meaning |\n| --- | --- |\n${rows}\n`;
+  const accountFields = readFileSync(
+    join(packageRoot, "docs/guide/03-instruments.md"),
+    "utf8",
+  )
+    .split("## Account fields\n")[1]!
+    .split("\n## ")[0]!
+    .trim();
+  return `${generatedHeader}# Types\n\nHSX checks types before it emits UDL. Money and account values carry a currency parameter, and no implicit currency conversion exists.\n\n| Kind | Meaning |\n| --- | --- |\n${rows}\n\n## Account fields\n\n${accountFields}\n`;
 }
 
 function stdMarkdown(module: ModuleReference): string {
@@ -320,7 +327,7 @@ function shortMap(modules: readonly ModuleReference[]): string {
     )
     .join(
       "\n",
-    )}\n\n## Reference\n\n[Grammar](reference/grammar.md): Lexer, clause, and module vocabulary.\n[Types](reference/types.md): HSX type kinds.\n[Diagnostics](reference/diagnostics.md): Stable HSX diagnostic codes and fixes.\n[CLI](reference/cli.md): Generated command usage.\n[UDL output](reference/udl-output.md): Compile artifacts and canonical output.\n${modules.map(({ name }) => `[${name}](reference/std/${name}.md): Standard-library module.`).join("\n")}\n`;
+    )}\n\n## Reference\n\n[Grammar](reference/grammar.md): Lexer, clause, and module vocabulary.\n[Types](reference/types.md): HSX type kinds and account role pins.\n[Diagnostics](reference/diagnostics.md): Stable HSX diagnostic codes and fixes.\n[CLI](reference/cli.md): Generated command usage.\n[UDL output](reference/udl-output.md): Compile artifacts and canonical output.\n${modules.map(({ name }) => `[${name}](reference/std/${name}.md): Standard-library module.`).join("\n")}\n`;
 }
 
 function guideFiles(): string[] {

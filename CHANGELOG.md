@@ -9,9 +9,19 @@ independently of the package version.
 
 ## [Unreleased]
 
-- Pin receipt distribution fee, tax and residual accounts to customer balances.
+## [2.2.1] - 2026-09-16
 
+Pairs with UDL 2.4.0.
+
+### Fixed
+
+- `cancellable_booking` pins its four priced-booking account fields to the `customer_balance` role, so programs that import it pass the host's account-role admission law.
+- Pin receipt distribution fee, tax and residual accounts to customer balances.
 - Lower omitted and full-refund unpaid cancellation bands as deposit refunds. Refuse constant cancellation partitions that exceed the deposit.
+
+### Docs
+
+- The instruments guide teaches the `"x-hyperscale-reference-filter"` role pin on account fields, and the generated type reference repeats it.
 
 ## [2.2.0] - 2026-09-15
 

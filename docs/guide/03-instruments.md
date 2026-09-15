@@ -27,10 +27,23 @@ When declaring fields of type `account<C>`, the HSX compiler automatically lower
 
 ```hsx
 fields {
-  customerAccountId: account<SAR>;
+  customerAccountId {
+    type: account<SAR>;
+    "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; };
+  }
   amount: money<SAR>;
 }
 ```
+
+The account type pins the currency and identifier shape. The reference filter
+pins the allowed ledger roles. Product admission requires every account field
+to declare a non-empty role list. Choose roles that match the accounts the
+program will use; `customer_balance` is the role in this example.
+
+Use the quoted `"x-hyperscale-reference-filter"` key inside the field block,
+with `column: role` and `values: [...]`. There is no shorter role annotation.
+A bare `customerAccountId: account<SAR>;` compiles as HSX but does not satisfy
+the host's account-role admission law.
 
 ## Port declarations and action clauses
 
