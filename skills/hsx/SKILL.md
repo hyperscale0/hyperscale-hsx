@@ -23,7 +23,6 @@ Choose the module whose lifecycle and money path already match the product. Do n
 - `cancellable_booking` quotes a cancellation penalty before commitment.
 - `captured_payment` reserves, captures, settles, voids, or corrects a payment.
 - `scheduled` expands finite installments or a bounded obligation.
-- `recurring_collection` records collection periods.
 - `advance` disburses now against finite repayment or a referenced release.
 - `credit_facility` controls draws against a referenced obligation.
 - `conditional_disbursement` releases a capped amount on stored evidence.
@@ -107,10 +106,6 @@ settlement card_payment = captured_payment {
   reserve_until: reserveUntil
   correction: port correct_capture
   external_reversal: port reverse_capture within P14D
-  capture_mode: partial_then_full
-  correction_mode: full_only
-  negative_position: reject
-  timeout: reject
 }
 port correct_capture { allowed: [payee] }
 port reverse_capture {
@@ -132,8 +127,6 @@ settlement claim_payment = conditional_disbursement {
   cap: policyLimit: money(SAR)
   amount: approvedAmount: money(SAR)
   decision: port approve_claim
-  reopen_policy: refuse
-  recovery_policy: separate_transfer
 }
 port approve_claim {
   allowed: [source]
@@ -167,9 +160,6 @@ settlement facility = credit_facility {
   limit: facilityLimit: money(SAR)
   expires_at: expiresAt
   obligation: repayment.obligation
-  availability_policy: revolving
-  expiry_policy: freeze_draws
-  close_policy: no_open_draws
 }
 ```
 
@@ -339,32 +329,6 @@ settlement supplier_payout = reconciled_payout {
 }
 ```
 
-<!-- hsx-brick: recurring_collection -->
-
-```hsx
-program recurring_collection_example "Recurring collection example"
-import { recurring_collection, scheduled } from "std/money_flows"
-party debtor: person
-party repayment_source: business
-party recipient: business
-settlement obligation = scheduled {
-  mode: obligation
-  payer: repayment_source
-  payee: recipient
-  debtor: debtor
-  amount: principal: money(SAR)
-  count: 2
-  every: P30D
-  first_due: firstDueAt
-  mandate: port mandate_evidence
-}
-settlement collection = recurring_collection {}
-port mandate_evidence {
-  allowed: [repayment_source]
-  shape: { evidenceReference: text }
-}
-```
-
 <!-- hsx-brick: rotating_pool -->
 
 ```hsx
@@ -481,3 +445,5 @@ port snapshot_entitlements {
 ## Output boundary
 
 Use `compile` or the Hyperscale CLI to obtain canonical UDL, the origin map, and the cost manifest. The engine reads UDL and never HSX. When a task needs direct UDL work, use the UDL skill instead.
+
+Programs that `use` published instruments need the selected catalogue when checked outside the engine: `hsx check --strict --catalog catalog.udl company.hsx`. Obtain that canonical UDL from the catalogue publisher. The CLI does not fetch or choose a revision.

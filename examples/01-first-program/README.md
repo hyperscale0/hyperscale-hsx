@@ -27,7 +27,7 @@ payee, and both must be declared parties.
 `payee` name declared parties; `amount: tipAmount: money(SAR)` declares a
 field the instance stores, called `tipAmount`, holding an amount in SAR.
 
-That doubled colon reads oddly the first time. The archetype's parameter is
+That doubled colon reads oddly the first time. The module's parameter is
 `amount`; its value is a typed binding, `tipAmount: money(SAR)`, which names
 the field AND its type. You choose the field name because it shows up in the
 generated API, and `amount` is HSX's word, not your product's.

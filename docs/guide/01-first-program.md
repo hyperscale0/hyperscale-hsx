@@ -21,4 +21,4 @@ settlement tip = instant_transfer {
 
 A port declares a decision that an external caller may supply. The port names the parties allowed to answer and may define a typed input shape. Use a port only when the selected instrument accepts a condition parameter.
 
-After package installation, run `npx @hyperscale0/hsx check product.hsx` while editing and `npx @hyperscale0/hsx build product.hsx --out product.udl.json` when the program passes. In a repository checkout, run `bun install` once, then use `bun run bin/hsx.ts check product.hsx` and `bun run bin/hsx.ts build product.hsx --out product.udl.json`.
+After package installation, run `npx @hyperscale0/hsx check product.hsx` while editing and `npx @hyperscale0/hsx build product.hsx --out product.udl.json` when the program passes. In the full repository checkout, run `bun install` once from the repository root, then use `bun open/hsx/bin/hsx.ts check product.hsx` and `bun open/hsx/bin/hsx.ts build product.hsx --out product.udl.json`. In the standalone HSX package checkout, the entrypoint is `bin/hsx.ts`.

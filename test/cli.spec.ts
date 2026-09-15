@@ -37,6 +37,19 @@ const run = async (
 };
 
 describe("hsx check", () => {
+  it("resolves published instruments from an explicit catalogue", async () => {
+    const built = await run(["build", CLEAN]);
+    const result = await run(
+      ["check", "consumer.hsx", "--strict", "--catalog", "catalog.udl"],
+      {
+        "catalog.udl": built.out,
+        "consumer.hsx":
+          'program consumer "Consumer"\nuse tip\nexpose tip.create as createTip',
+      },
+    );
+    expect(result.code).toBe(0);
+  });
+
   it("says nothing and exits 0 on a clean program", async () => {
     const result = await run(["check", CLEAN]);
     expect(result.code).toBe(0);
@@ -207,7 +220,7 @@ describe("hsx usage", () => {
       readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
     ) as { version: string };
     expect(HSX_VERSION).toBe(packageJson.version);
-    expect(HSX_VERSION).toBe("2.1.1");
+    expect(HSX_VERSION).toBe("2.2.0");
   });
   it("prints usage and exits 2 with no arguments", async () => {
     const result = await run([]);

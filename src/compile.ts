@@ -66,7 +66,6 @@ interface CompileArtifacts {
 }
 
 export interface CompileOptions extends HsxCompilerHost {
-  readonly composesCatalogBlueprint?: boolean;
   /** One table, or one per billing currency; the program's money fields pick. */
   readonly costTable?: UdlCostTables;
 }
@@ -136,6 +135,19 @@ export function compile(
     });
   };
 
+  const optionKeys = new Set([
+    "costTable",
+    "moduleName",
+    "publishedCatalog",
+    "resolveModule",
+    "standardLibrary",
+  ]);
+  for (const key of Object.keys(options)) {
+    if (optionKeys.has(key)) continue;
+    at("bind", "error", `unknown compile option ${key}`, { start: 0, end: 0 });
+  }
+  if (diagnostics.length > 0) return { diagnostics, verdict: "invalid" };
+
   const parsed = parseProgram(source);
   for (const diagnostic of parsed.diagnostics) {
     at(
@@ -185,11 +197,7 @@ export function compile(
     );
   }
   if (!checked.program) return { diagnostics, verdict: "invalid" };
-  const cost = buildCostManifest(
-    checked.program,
-    options.costTable,
-    options.composesCatalogBlueprint ?? false,
-  );
+  const cost = buildCostManifest(checked.program, options.costTable);
   if (!cost.ok) {
     for (const diagnostic of cost.diagnostics) {
       at(

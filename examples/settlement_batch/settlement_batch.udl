@@ -302,6 +302,10 @@
         "payoutBeneficiaryId"
       ],
       "summary": "Payout batch from settlement account to payout destination",
+      "templateBinding": {
+        "id": "settlement_batch",
+        "parameters": {}
+      },
       "title": "Batch"
     },
     {

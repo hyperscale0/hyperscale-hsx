@@ -1,4 +1,6 @@
 import {
+  fixedIsoDurationMs,
+  referencedUdlInstrumentIds,
   deriveUdlActionEffects,
   resolveUdlActionPlans,
   udlDocumentSchema,
@@ -453,6 +455,28 @@ export function checkGeneralProgram(
     );
   }
 
+  const prefixByInstrument = new Map<string, string>();
+  if (options.publishedCatalog) {
+    for (const inst of options.publishedCatalog.instruments) {
+      if (inst.idPrefix) {
+        prefixByInstrument.set(inst.id, inst.idPrefix);
+      }
+    }
+  }
+  for (const [name, decl] of templates) {
+    const prefix =
+      stringSlot(decl.body, "idPrefix", "id_prefix") ?? prefixFor(name);
+    prefixByInstrument.set(name, prefix);
+  }
+  for (const candidate of allocated) {
+    const prefix =
+      stringSlot(candidate.body, "idPrefix", "id_prefix") ??
+      prefixFor(candidate.name.name);
+    prefixByInstrument.set(candidate.name.name, prefix);
+  }
+  const resolvePrefix = (target: string): string | undefined =>
+    prefixByInstrument.get(target);
+
   const instruments: TypedInstrument[] = [];
   const ids = new Set<string>();
   for (const candidate of allocated) {
@@ -483,6 +507,7 @@ export function checkGeneralProgram(
       candidate.ports,
       candidate.aliases,
       diagnostics,
+      resolvePrefix,
     );
     if (checked) instruments.push(checked);
   }
@@ -499,7 +524,11 @@ export function checkGeneralProgram(
     );
   }
 
-  crossInstrumentReferenceDiagnostics(instruments, diagnostics);
+  crossInstrumentReferenceDiagnostics(
+    instruments,
+    diagnostics,
+    new Set(templates.keys()),
+  );
 
   if (
     header &&
@@ -653,6 +682,15 @@ function checkPublishedProgram(
         exposure.span,
         `${target} is not an action on an explicitly used published instrument or authored instrument`,
         "add the matching use declaration and choose one of that instrument's actions",
+      );
+      continue;
+    }
+    if (action?.engineOwned || authoredAction?.slots.engineOwned === true) {
+      report(
+        "HSX1021",
+        exposure.span,
+        `${target} is engine-owned`,
+        "expose a caller action instead",
       );
       continue;
     }
@@ -843,24 +881,7 @@ function publishedInstrumentDependencies(
   instrument: UdlInstrument,
   idByPrefix: ReadonlyMap<string, string>,
 ): readonly string[] {
-  const found = new Set<string>();
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value)) {
-      if (
-        (key === "instrumentId" || key === "childInstrumentId") &&
-        typeof child === "string"
-      ) {
-        found.add(child);
-      }
-      visit(child);
-    }
-  };
-  visit(instrument);
+  const found = new Set(referencedUdlInstrumentIds(instrument));
   for (const field of Object.values(instrument.fields)) {
     const prefix =
       typeof field.pattern === "string"
@@ -1110,7 +1131,6 @@ const applicationMetadataKeys = new Set([
   "action",
   "agent_description",
   "description",
-  "journeys",
   "nav",
   "navigation",
   "summary",
@@ -1423,7 +1443,12 @@ function inferSettlementTypeArgument(
   typeParameter: string,
 ): Expr | undefined {
   for (const parameter of template.parameters) {
-    const parameterType = parameter.type;
+    const declaredType = parameter.type;
+    const parameterType =
+      declaredType.kind === "type_apply" &&
+      declaredType.callee.name === "optional"
+        ? (declaredType.args[0] ?? declaredType)
+        : declaredType;
     if (
       parameterType.kind !== "type_apply" ||
       parameterType.callee.name !== "money" ||
@@ -1727,9 +1752,53 @@ function instantiate(
     values,
     portDependencies,
   );
+  const binding: Entry = {
+    key: { kind: "ident", name: "template_binding", span: application.span },
+    qualifiers: [],
+    span: application.span,
+    value: {
+      kind: "block",
+      span: application.span,
+      entries: [
+        {
+          key: { kind: "ident", name: "id", span: application.span },
+          qualifiers: [],
+          span: application.span,
+          value: {
+            kind: "string",
+            value: template.name.name,
+            span: application.span,
+          },
+        },
+        {
+          key: { kind: "ident", name: "parameters", span: application.span },
+          qualifiers: [],
+          span: application.span,
+          value: {
+            kind: "block",
+            span: application.span,
+            entries: resolvedArgs.flatMap(({ parameter }) => {
+              const value = values.get(parameter.name.name);
+              return value &&
+                ["string", "number", "boolean"].includes(value.kind)
+                ? [
+                    {
+                      key: parameter.name,
+                      qualifiers: [],
+                      span: parameter.span,
+                      value,
+                    },
+                  ]
+                : [];
+            }),
+          },
+        },
+      ],
+    },
+  };
   return {
     ...body,
-    entries: body.entries.map((row) => {
+    entries: [...body.entries, binding].map((row) => {
       if (row.key.name !== "fields" || row.value.kind !== "block") return row;
       return {
         ...row,
@@ -2305,9 +2374,16 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
               }
             : {}),
           key: substituteName(entry.key, nestedValues),
-          qualifiers: entry.qualifiers.map((qualifier, index) => {
+          qualifiers: entry.qualifiers.flatMap((qualifier, index) => {
             const value = nestedValues.get(qualifier.name);
             const fixed = fixedQualifier(entry.key.name, qualifier.name, index);
+            if (
+              entry.key.name === "on" &&
+              !fixed &&
+              index > 0 &&
+              value?.kind === "list"
+            )
+              return value.items.map((item) => nameFromValue(qualifier, item));
             return !fixed && value
               ? nameFromValue(qualifier, value)
               : substituteName(qualifier, nestedValues);
@@ -2804,6 +2880,17 @@ function evaluateCompileTimeCall(
         : undefined;
     case "basis_points":
       return first?.kind === "percent" ? numeric(first.bps) : undefined;
+    case "shift_date": {
+      const instant = first ? Date.parse(nameText(first)) : NaN;
+      const offset = second ? fixedIsoDurationMs(nameText(second)) : null;
+      if (!Number.isFinite(instant) || offset === null)
+        return text(NONE_SENTINEL);
+      const direction = third && nameText(third) === "before" ? -1 : 1;
+      const shifted = new Date(instant + direction * offset);
+      return Number.isFinite(shifted.getTime())
+        ? text(shifted.toISOString())
+        : text(NONE_SENTINEL);
+    }
     case "names": {
       const count = number(second);
       if (!first || count === undefined || count < 0 || !third)
@@ -2824,6 +2911,15 @@ function evaluateCompileTimeCall(
             ),
             kind: "list",
             span: expr.span,
+          }
+        : undefined;
+    case "without":
+      return first?.kind === "list" && second
+        ? {
+            ...first,
+            items: first.items.filter(
+              (item) => nameText(item) !== nameText(second),
+            ),
           }
         : undefined;
     case "concat_lists":
@@ -2992,9 +3088,16 @@ function expandComprehensions(
         const substituted: Entry = {
           ...row,
           key: substituteName(row.key, locals),
-          qualifiers: row.qualifiers.map((qualifier, index) => {
+          qualifiers: row.qualifiers.flatMap((qualifier, index) => {
             const value = locals.get(qualifier.name);
             const fixed = fixedQualifier(row.key.name, qualifier.name, index);
+            if (
+              row.key.name === "on" &&
+              !fixed &&
+              index > 0 &&
+              value?.kind === "list"
+            )
+              return value.items.map((item) => nameFromValue(qualifier, item));
             return !fixed && value
               ? nameFromValue(qualifier, value)
               : substituteName(qualifier, locals);
@@ -3077,6 +3180,7 @@ function checkInstrument(
   ports: ReadonlyMap<string, readonly PortDecl[]>,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): TypedInstrument | undefined {
   if (!SNAKE_CASE.test(name.name)) {
     diagnostics.push({
@@ -3090,7 +3194,7 @@ function checkInstrument(
   const fieldsEntry = entry(body, "fields");
   const fields =
     fieldsEntry?.value.kind === "block"
-      ? checkFields(fieldsEntry.value, aliases, diagnostics)
+      ? checkFields(fieldsEntry.value, aliases, diagnostics, resolvePrefix)
       : [];
   if (!fieldsEntry) {
     diagnostics.push({
@@ -3597,6 +3701,7 @@ function checkFields(
   block: BlockExpr,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): TypedField[] {
   const result: TypedField[] = [];
   const names = new Set<string>();
@@ -3622,7 +3727,7 @@ function checkFields(
       continue;
     }
     names.add(name);
-    result.push(lowerField(row, aliases, diagnostics));
+    result.push(lowerField(row, aliases, diagnostics, resolvePrefix));
   }
   return result;
 }
@@ -3631,6 +3736,7 @@ function lowerField(
   row: Entry,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): TypedField {
   const name = camel(row.key.name);
   let typeExpr = row.value;
@@ -3692,6 +3798,21 @@ function lowerField(
       severity: "error",
       span: declaredSpan,
     });
+  } else if (type.kind === "ref" && type.target) {
+    const prefix = resolvePrefix?.(type.target);
+    if (!extra.pattern) {
+      if (prefix) {
+        extra.pattern = `^${prefix}_(sandbox|live)_[a-z0-9]{8,64}$`;
+      } else if (resolvePrefix !== undefined) {
+        diagnostics.push({
+          code: "HSX1007",
+          fix: "reference an instrument declared in this program, imported from std, or published in the catalogue",
+          message: `field ${name} references unknown instrument ${type.target}`,
+          severity: "error",
+          span: declaredSpan,
+        });
+      }
+    }
   }
 
   const structuralType = Object.hasOwn(extra, "items")
@@ -4174,9 +4295,38 @@ function bindFieldReferences(
 ): void {
   const externalFieldSlot = (path: readonly string[]): boolean => {
     const key = path.at(-1);
+    const input =
+      slots.input !== undefined && isJsonObject(slots.input)
+        ? slots.input
+        : undefined;
+    const allocation =
+      slots.allocate !== undefined && isJsonObject(slots.allocate)
+        ? slots.allocate
+        : undefined;
+    const allocationOperand =
+      path.includes("allocate") &&
+      ["amountField", "sourceAccountField", "paymentIdentityField"].includes(
+        key ?? "",
+      );
     return (
+      (allocationOperand &&
+        Array.isArray(input?.required) &&
+        allocation !== undefined &&
+        input.required.includes(allocation[key!]!)) ||
+      (path.includes("funding") &&
+        [
+          "ticketRefField",
+          "ticketAmountField",
+          "ticketInvestorField",
+          "ticketAccountField",
+        ].includes(key ?? "")) ||
+      (path.includes("requiresExposure") && key === "minimumField") ||
       (path.includes("requiresAggregate") && key === "refField") ||
-      (path.includes("requiresAggregate") && key === "amountField") ||
+      (path.includes("requiresAggregate") &&
+        ["amountField", "dateField", "positionField"].includes(key ?? "")) ||
+      (path.includes("requiresAggregate") &&
+        path.includes("dueBefore") &&
+        key === "field") ||
       (path.includes("signedSum") && key === "refField") ||
       (path.includes("signedSum") && key === "amountField") ||
       (path.includes("remainder") && key === "refField") ||
@@ -4220,6 +4370,7 @@ function bindFieldReferences(
 function crossInstrumentReferenceDiagnostics(
   instruments: readonly TypedInstrument[],
   diagnostics: GeneralDiagnostic[],
+  knownTargets?: ReadonlySet<string>,
 ): void {
   const byId = new Map(
     instruments.map((instrument) => [instrument.id, instrument]),
@@ -4254,7 +4405,10 @@ function crossInstrumentReferenceDiagnostics(
   for (const owner of instruments) {
     for (const field of owner.fields) {
       if (field.type.kind !== "ref" || !field.type.target) continue;
-      if (!byId.has(field.type.target)) {
+      if (
+        !byId.has(field.type.target) &&
+        !knownTargets?.has(field.type.target)
+      ) {
         report(
           owner,
           field.origin,
@@ -4367,6 +4521,23 @@ function crossInstrumentReferenceDiagnostics(
         return;
       }
       const refField = relation.refField;
+      const anchorName =
+        relation.anchorField ??
+        (relation.over === "siblings" ? refField : undefined);
+      const anchor =
+        typeof anchorName === "string" ? fieldIn(owner, anchorName) : undefined;
+      const expectedTarget =
+        anchor?.type.kind === "ref" ? anchor.type.target : owner.id;
+      if (
+        typeof anchorName === "string" &&
+        (!anchor || anchor.type.kind !== "ref")
+      )
+        report(
+          owner,
+          action.origin,
+          `aggregate anchor ${anchorName} is not a reference`,
+          "declare the anchor as a typed parent reference",
+        );
       if (typeof refField === "string") {
         const field = fieldIn(target, refField);
         if (!field) {
@@ -4374,17 +4545,18 @@ function crossInstrumentReferenceDiagnostics(
             owner,
             action.origin,
             `${targetId}.${refField} does not exist`,
-            `declare ${refField} on ${targetId} as ref<${owner.id}> or correct the clause`,
+            `declare ${refField} on ${targetId} as ref<${expectedTarget}> or correct the clause`,
           );
         } else if (
           field.type.kind !== "ref" ||
-          (field.type.target !== undefined && field.type.target !== owner.id)
+          (field.type.target !== undefined &&
+            field.type.target !== expectedTarget)
         ) {
           report(
             owner,
             action.origin,
-            `${targetId}.${refField} has ${typeWords(field.type)}; this relation needs ref<${owner.id}>`,
-            `change ${targetId}.${refField} to ref<${owner.id}>`,
+            `${targetId}.${refField} has ${typeWords(field.type)}; this relation needs ref<${expectedTarget}>`,
+            `change ${targetId}.${refField} to ref<${expectedTarget}>`,
           );
         }
       }
@@ -4408,12 +4580,13 @@ function crossInstrumentReferenceDiagnostics(
       const targetField = check?.targetField;
       if (
         typeof targetField === "string" &&
-        fieldIn(owner, targetField)?.type.kind !== "money"
+        fieldIn(owner, targetField)?.type.kind !==
+          (check?.kind === "count_at_least" ? "integer" : "money")
       ) {
         report(
           owner,
           action.origin,
-          `${owner.id}.${targetField} is not declared money`,
+          `${owner.id}.${targetField} is not declared ${check?.kind === "count_at_least" ? "integer" : "money"}`,
           `declare ${owner.id}.${targetField} as money<C> or correct the aggregate target`,
         );
       }

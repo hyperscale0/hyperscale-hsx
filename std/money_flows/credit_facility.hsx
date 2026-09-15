@@ -20,9 +20,6 @@ module std.money_flows.credit_facility
 // - `limit`: Total revolving borrowing limit in minor units of currency `C`.
 // - `expires_at`: Expiration date after which new draws cannot be opened.
 // - `obligation`: Reference to a scheduled obligation instrument handling draw repayments.
-// - `availability_policy`: Facility capacity availability policy (`revolving`).
-// - `expiry_policy`: Policy on facility expiration (`freeze_draws`).
-// - `close_policy`: Policy on facility closure (`no_open_draws`).
 //
 // ### Decision ports
 // None on the facility itself. Mandates and decision ports are declared on the linked `obligation` instrument.
@@ -52,9 +49,6 @@ module std.money_flows.credit_facility
 //   limit: facilityLimit: money(SAR)
 //   expires_at: expiresAt
 //   obligation: repayment.obligation
-//   availability_policy: revolving
-//   expiry_policy: freeze_draws
-//   close_policy: no_open_draws
 // }
 // ```
 export instrument credit_facility<C>(
@@ -64,9 +58,6 @@ export instrument credit_facility<C>(
   limit: money<C>,
   expires_at: date,
   obligation: ref,
-  availability_policy: text,
-  expiry_policy: text,
-  close_policy: text,
 ) {
   let(draw_id): concat(instrument, "_draw");
   let(parent_field): camel(concat(instrument, "_id"));

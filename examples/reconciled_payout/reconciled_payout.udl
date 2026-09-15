@@ -181,6 +181,13 @@
         "settleBy"
       ],
       "summary": "Payout from treasury to supplier that is not done until the bank agrees",
+      "templateBinding": {
+        "id": "reconciled_payout",
+        "parameters": {
+          "matchedCeiling": 500,
+          "matchedWithin": 100
+        }
+      },
       "title": "Supplier payout"
     },
     {

@@ -138,6 +138,10 @@
         "policyLimit"
       ],
       "summary": "Capped disbursement to claimant",
+      "templateBinding": {
+        "id": "conditional_disbursement",
+        "parameters": {}
+      },
       "title": "Claim payment"
     },
     {

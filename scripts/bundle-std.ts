@@ -1,10 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const packageRoot = join(import.meta.dir, "..");
-const monorepoRoot = join(packageRoot, "../..");
 const stdRoot = join(packageRoot, "std");
 const targetPath = join(packageRoot, "src", "std-bundle.ts");
 
@@ -55,56 +52,5 @@ export function generateStdBundleCode(): {
 }
 
 if (import.meta.main) {
-  const isCheck = process.argv.includes("--check");
-  const { code, files } = generateStdBundleCode();
-
-  if (isCheck) {
-    let bundledMap: ReadonlyMap<string, string>;
-    try {
-      const mod = (await import(pathToFileURL(targetPath).href)) as {
-        readonly BUNDLED_STD_FILES: ReadonlyMap<string, string>;
-      };
-      bundledMap = mod.BUNDLED_STD_FILES;
-    } catch (error) {
-      console.error(
-        `failed to import ${relative(packageRoot, targetPath)}:`,
-        error,
-      );
-      process.exit(1);
-    }
-
-    const differences: string[] = [];
-    for (const [rel, diskContent] of files) {
-      if (!bundledMap.has(rel)) {
-        differences.push(`added: ${rel}`);
-      } else if (bundledMap.get(rel) !== diskContent) {
-        differences.push(`edited: ${rel}`);
-      }
-    }
-    for (const rel of bundledMap.keys()) {
-      if (!files.has(rel)) {
-        differences.push(`deleted: ${rel}`);
-      }
-    }
-
-    if (differences.length > 0) {
-      console.error(
-        `open/hsx/src/std-bundle.ts is out of sync with open/hsx/std:`,
-      );
-      for (const diff of differences.sort()) {
-        console.error(`  ${diff}`);
-      }
-      process.exit(1);
-    }
-    process.exit(0);
-  } else {
-    writeFileSync(targetPath, code, "utf8");
-    spawnSync("bunx", ["vp", "fmt", targetPath, "--write"], {
-      cwd: monorepoRoot,
-      stdio: "inherit",
-    });
-    console.log(
-      `wrote ${files.size} files into ${relative(packageRoot, targetPath)}`,
-    );
-  }
+  writeFileSync(targetPath, generateStdBundleCode().code, "utf8");
 }

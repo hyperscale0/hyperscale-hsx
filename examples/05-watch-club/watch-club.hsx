@@ -7,7 +7,6 @@ program watch_club "Watch club"
 import {
   security_deposit,
   instant_transfer,
-  recurring_collection,
   scheduled,
   settlement_batch,
   swap

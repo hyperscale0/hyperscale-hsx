@@ -542,6 +542,22 @@
         "currency"
       ],
       "summary": "Escrow-held payment from buyer to seller",
+      "templateBinding": {
+        "id": "held_payment",
+        "parameters": {
+          "cancelChargeBps": false,
+          "cancelOfferLife": false,
+          "derivedAmount": false,
+          "idPrefixOverride": false,
+          "privateActions": false,
+          "reference": false,
+          "releaseAction": false,
+          "releaseTo": false,
+          "upstream": false,
+          "wholeAmount": false,
+          "wholeFee": false
+        }
+      },
       "title": "Sale"
     }
   ],

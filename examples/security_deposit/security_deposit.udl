@@ -296,6 +296,19 @@
         "currency"
       ],
       "summary": "Refundable deposit from renter held for owner",
+      "templateBinding": {
+        "id": "security_deposit",
+        "parameters": {
+          "claimCapture": false,
+          "claimInput": false,
+          "claimTo": false,
+          "deadline": false,
+          "fundFailurePoint": false,
+          "idPrefixOverride": false,
+          "memo": false,
+          "returnTo": false
+        }
+      },
       "title": "Security deposit"
     }
   ],

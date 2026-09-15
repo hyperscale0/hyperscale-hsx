@@ -871,6 +871,16 @@
         "currency"
       ],
       "summary": "Two-party atomic trade between buyer and seller",
+      "templateBinding": {
+        "id": "swap",
+        "parameters": {
+          "actionBindings": false,
+          "fixedPrefix": false,
+          "lifecycleStateOrder": false,
+          "parkedStates": false,
+          "sideNames": false
+        }
+      },
       "title": "Exchange"
     }
   ],

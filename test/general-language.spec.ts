@@ -41,6 +41,43 @@ instrument invoice {
 }`;
 
 describe("general-form HSX", () => {
+  it("refuses the retired catalog composition option", () => {
+    const options = {
+      costTable: testCostTable,
+      composesCatalogBlueprint: true,
+    };
+    const result = compileHsx(BASE, options);
+    expect(result).toMatchObject({
+      verdict: "invalid",
+      diagnostics: [
+        expect.objectContaining({
+          message: "unknown compile option composesCatalogBlueprint",
+        }),
+      ],
+    });
+  });
+
+  it("refuses the retired blueprint cost weight", () => {
+    const result = compileHsx(BASE, {
+      costTable: {
+        ...testCostTable,
+        fixed: {
+          ...testCostTable.fixed,
+          weights: { ...testCostTable.fixed.weights, blueprint: 5 },
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      verdict: "invalid",
+      diagnostics: [
+        expect.objectContaining({
+          code: "HSX1302",
+          message: `cost table ${testCostTable.version} has an unknown blueprint complexity weight`,
+        }),
+      ],
+    });
+  });
+
   it("refuses compilation without a cost table", () => {
     const result = compileHsx(BASE);
     expect(result.verdict).toBe("invalid");
@@ -886,7 +923,7 @@ instrument domain_name = mechanism() ${metadata}`;
         template_id: "escrow";
         title: "Domain name";
         summary: "Named application";
-        nav: ["Blueprints", "Named applications"];
+        nav: ["Products", "Named applications"];
         action create { summary: "Create domain name"; public: none; }
       }`),
     );
@@ -899,7 +936,7 @@ instrument domain_name = mechanism() ${metadata}`;
     expect(instrument).toMatchObject({
       actions: { create: { summary: "Create domain name" } },
       id: "domain_name",
-      nav: ["Blueprints", "Named applications"],
+      nav: ["Products", "Named applications"],
       summary: "Named application",
       templateId: "escrow",
       title: "Domain name",
@@ -907,7 +944,26 @@ instrument domain_name = mechanism() ${metadata}`;
     expect(instrument?.actions.create).not.toHaveProperty("publicAction");
   });
 
-  it("lets an application author examples and journeys", () => {
+  it("lets an application author action examples", () => {
+    const result = compile(
+      appSource(`{
+        action create {
+          examples: [{ name: "create_domain"; input: {}; }];
+        }
+      }`),
+    );
+
+    expect(result.verdict).toBe("valid");
+    const document = result.artifacts?.document as UdlDocument | undefined;
+    const instrument = document?.instruments.find(
+      (candidate) => candidate.id === "domain_name",
+    );
+    expect(instrument?.actions.create?.examples?.[0]?.name).toBe(
+      "create_domain",
+    );
+  });
+
+  it("refuses authored journeys metadata", () => {
     const result = compile(
       appSource(`{
         action create {
@@ -921,16 +977,15 @@ instrument domain_name = mechanism() ${metadata}`;
         }];
       }`),
     );
-
-    expect(result.verdict).toBe("valid");
-    const document = result.artifacts?.document as UdlDocument | undefined;
-    const instrument = document?.instruments.find(
-      (candidate) => candidate.id === "domain_name",
-    );
-    expect(instrument?.actions.create?.examples?.[0]?.name).toBe(
-      "create_domain",
-    );
-    expect(instrument?.journeys?.[0]?.id).toBe("domain_lifecycle");
+    expect(result).toMatchObject({
+      verdict: "invalid",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringContaining("journeys"),
+        }),
+      ]),
+    });
   });
 
   it("rejects mechanics in an application metadata block", () => {
@@ -1333,13 +1388,13 @@ expose parent.close as closeMarketplace`;
     const result = compile(
       `program marketplace "Marketplace"
 use parent
-const blueprint = { rank: 1; qualityTier: "showcase"; }
+const company_notes = { rank: 1; label: "example"; }
 expose parent.close as closeMarketplace`,
       { publishedCatalog: catalog() },
     );
 
     expect(result.verdict).toBe("valid");
-    expect(result.artifacts?.document).not.toHaveProperty("blueprint");
+    expect(result.artifacts?.document).not.toHaveProperty("company_notes");
   });
 
   it("merges authored subjects after catalog subjects", () => {
@@ -2466,10 +2521,6 @@ settlement payment = captured_payment {
   reserve_until: reserveUntil
   correction: port correct_capture
   external_reversal: port reverse_capture within P14D
-  capture_mode: partial_then_full
-  correction_mode: full_only
-  negative_position: reject
-  timeout: reject
 }
 
 port correct_capture { allowed: [payee] }

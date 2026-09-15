@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
   mkdirSync,
@@ -8,10 +7,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const packageRoot = join(import.meta.dir, "..");
-const monorepoRoot = join(packageRoot, "../..");
 const examplesRoot = join(packageRoot, "examples");
 const playgroundDir = join(packageRoot, "playground");
 const examplesFile = join(playgroundDir, "examples.ts");
@@ -77,68 +74,9 @@ export function generateExamplesCode(): {
 export async function buildPlayground(check = false): Promise<void> {
   const { code: examplesCode, count } = generateExamplesCode();
 
-  if (check) {
-    let committedExamples: readonly {
-      readonly name: string;
-      readonly source: string;
-    }[];
-    try {
-      const mod = (await import(pathToFileURL(examplesFile).href)) as {
-        readonly PLAYGROUND_EXAMPLES: readonly {
-          readonly name: string;
-          readonly source: string;
-        }[];
-      };
-      committedExamples = mod.PLAYGROUND_EXAMPLES;
-    } catch (error) {
-      console.error(
-        `failed to import ${relative(packageRoot, examplesFile)}:`,
-        error,
-      );
-      process.exit(1);
-    }
-
-    const committedMap = new Map(
-      committedExamples.map((ex) => [ex.name, ex.source]),
-    );
-    const diskFiles = collectHsxFiles(examplesRoot);
-    const diskMap = new Map<string, string>();
-    for (const file of diskFiles) {
-      diskMap.set(relative(examplesRoot, file), readFileSync(file, "utf8"));
-    }
-
-    const differences: string[] = [];
-    for (const [rel, diskContent] of diskMap) {
-      if (!committedMap.has(rel)) {
-        differences.push(`added: ${rel}`);
-      } else if (committedMap.get(rel) !== diskContent) {
-        differences.push(`edited: ${rel}`);
-      }
-    }
-    for (const rel of committedMap.keys()) {
-      if (!diskMap.has(rel)) {
-        differences.push(`deleted: ${rel}`);
-      }
-    }
-
-    if (differences.length > 0) {
-      console.error(
-        "open/hsx/playground/examples.ts is out of sync with open/hsx/examples:",
-      );
-      for (const diff of differences.sort()) {
-        console.error(`  ${diff}`);
-      }
-      process.exit(1);
-    }
-  } else {
-    mkdirSync(playgroundDir, { recursive: true });
-    writeFileSync(examplesFile, examplesCode, "utf8");
-    spawnSync("bunx", ["vp", "fmt", examplesFile, "--write"], {
-      cwd: monorepoRoot,
-      stdio: "inherit",
-    });
-    console.log(`inlined ${count} examples into playground/examples.ts`);
-  }
+  mkdirSync(playgroundDir, { recursive: true });
+  writeFileSync(examplesFile, examplesCode, "utf8");
+  console.log(`inlined ${count} examples into playground/examples.ts`);
 
   mkdirSync(distDir, { recursive: true });
 

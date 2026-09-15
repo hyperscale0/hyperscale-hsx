@@ -359,6 +359,12 @@
         "currency"
       ],
       "summary": "Instant payment from customer to merchant",
+      "templateBinding": {
+        "id": "instant_transfer",
+        "parameters": {
+          "derivedAmount": false
+        }
+      },
       "title": "Transfer"
     }
   ],

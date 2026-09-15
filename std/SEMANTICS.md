@@ -1,139 +1,44 @@
-# Settlement semantics frozen before legacy teardown
+# Standard library money flows semantics
 
-This note records the behavior that the former archetype branches emitted on
-2026-09-01. The in-place compiler family specs under `test/` are the semantic
-authority. This note is the human porting index.
+This document records the runtime semantics and settlement mechanics of standard library modules under `std.money_flows`. The compiler and its unit specifications under `test/` remain the authoritative implementation reference.
 
-## Direct and held payments
+## Direct checkout and card
 
-- `instant_transfer` stores the amount, currency, payer, and payee. Create pays
-  through one or more ordered pieces and ends in `paid`. A payer fee is an
-  `on_top` move. A payee fee is carved from the base amount. Exact, basis-point,
-  and tiered rules produce fee fields and `feeRules`. The finest common
-  refinement of all fee cuts produces piece fields and one partition. Floor
-  rounding sends the remainder to the named non-fee recipient. A derived
-  amount adds a floor percentage field, `derivedAmounts`, a platform party, and
-  its own transfer piece.
-- `held_payment` reserves every refined piece before release. It posts release
-  pieces, voids cancellation pieces, and keeps payer service fees outside the
-  held principal. Release and cancellation fee sides share the finest common
-  partition, so each stored piece has one release recipient and one cancel
-  recipient. States track each funding, release, cancellation, and abandonment
-  step. Abandonment refunds every still-held piece. A deadline release and a
-  caller decision release carry the named date or port clause. Retention is the
-  same form with one held piece, a release deadline, and cancellation back to
-  the contractor. Whole-amount mode funds the principal and on-top fee in one
-  action, then releases or cancels the principal whole. A condition and date
-  can coexist, with separate early and scheduled release actions.
-- `captured_payment` stores authorization total, reserve and reversal dates,
-  and both party accounts. It moves through `created`, `authorized`, optional
-  `partially_captured`, `settled`, `voided`, `expired`, `corrected`, or
-  `reversed`. Authorize reserves custody. Capture and capture-more consume the
-  authorized balance according to the declared mode. Settle posts the captured
-  amount. Void and expiry release the reserve. Correction and external reversal
-  use their declared ports and windows. Derived fees use the same floor,
-  partition, bearer, and position rules as direct payment.
-- `cancellable_booking` holds the booking amount in escrow away from guest and
-  host until the booking ends or is cancelled. Cancellation quotes a penalty
-  against the time remaining before the start date, frozen with offer life.
-  Lifecycle moves through `created`, `held`, `cancellation_quoted`, `canceled`,
-  `settled`, and `completed`. Penalty retention moves penalty funds to host and
-  remainder to guest; completion releases full amount to host.
-- `premium_forward` holds premium pieces, then forwards the net pieces after a
-  bind decision. It can abandon unbound custody. Policy reference, renewal due,
-  endorsement evidence, and lapse actions appear only when declared. Its fee
-  partition and floor remainder rules match `held_payment`.
+- `instant_transfer` stores the amount, currency, payer, and payee. Action `create` opens the payment record without moving funds. Action `pay_piece_1` and subsequent piece actions execute the money movements, transitioning to state `paid`. A payer fee executes as an `on_top` move. A payee fee carves out of the base amount. Exact, basis-point, and tiered rules generate fee fields and `feeRules`. The finest common refinement of all fee cuts produces piece fields and one partition. Floor rounding sends minor-unit remainder to the designated non-fee recipient. A derived amount adds a floor percentage field, `derivedAmounts`, a platform party account, and its own transfer piece.
+- `captured_payment` stores authorization total, reserve and reversal dates, and party accounts. The instrument moves through `created`, `authorized`, optional `partially_captured`, `settled`, `voided`, `expired`, `corrected`, or `reversed`. Action `authorize` reserves custody on the payer balance. Actions `capture` and `capture_more` consume the authorized balance using partial posts. Action `settle` posts the captured amount. Actions `void` and `expire` release the reserve. Actions for payee correction and external reversal use their declared condition ports and deadline windows. Derived fees use the same floor, partition, bearer, and position rules as direct payment. Four unused signature knobs (`capture_mode`, `correction_mode`, `negative_position`, `timeout`) are pruned.
 
-## Decisions and credit
+## Custody and escrow
 
-- `conditional_disbursement` emits a submitted parent with cap, currency,
-  source, destination, and the decision port. Denial terminates the parent. An
-  approved-amount child stores a runtime-bounded amount and a parent reference.
-  The child captures the port input, moves through `created`, `approved`, and
-  `paid`, and refuses reopening. Recovery is a separate transfer.
-- `advance` has two forms. A carved advance references a held settlement and
-  its recourse settlement, disburses once, and settles from the referenced
-  release without minting new value. A scheduled advance stores advance,
-  fee, repayable total, first due date, and one repayment field per fixed
-  installment. It partitions repayments to the repayable total and advances
-  before collecting each due installment.
-- `credit_facility` stores lender, borrower, draw destination, limit, currency,
-  and expiry. The facility can freeze and close. Each draw is a generated child
-  with amount, facility reference, and obligation reference. Draw admission
-  checks the facility state and aggregate limit. Resolution waits for the
-  referenced obligation state.
+- `held_payment` reserves every refined piece in a dedicated escrow account before release. It posts release pieces, voids cancellation pieces, and keeps payer service fees outside the held principal. Release and cancellation fee sides share the finest common partition, so each stored piece has one release recipient and one cancel recipient. States track funding, release, cancellation, and abandonment steps. Abandonment refunds every still-held piece. A deadline release and a caller decision release carry the named date or port clause. Retention forms reserve one held piece with a release deadline and cancellation back to the contractor. Whole-amount mode funds principal and on-top fees in one action, then releases or cancels the principal whole. Quoted cancellation uses `cancel_charge_bps` and `cancel_offer_life` to freeze penalty quotes before confirm and retain actions.
+- `cancellable_booking` holds booking funds in escrow away from guest and host until the booking ends or cancels. Cancellation quotes a penalty against the time remaining before `starts_at`, frozen for `offer_life`. Lifecycle moves through `created`, `held`, `cancellation_quoted`, `canceled`, `settled`, and `completed`. Penalty retention moves penalty funds to host and remainder to guest; completion releases full amount to host.
+- `security_deposit` reserves the full deposit amount in escrow. A claim port posts either the whole hold or an externally decided amount bounded by the hold. The explicit remainder returns to the payer. A return port voids the whole hold. The deadline form adds machine expiry and unfunded cancellation.
+- `premium_forward` holds premium pieces in escrow, then forwards net pieces after a carrier bind decision. It can abandon unbound custody. Policy reference, renewal due, endorsement evidence, and lapse actions activate when declared. Fee partition and floor remainder rules match `held_payment`.
 
-## Schedules and usage
+## Subscriptions, usage, and schedules
 
-- A finite `scheduled` transfer stores total, first due date, and one money
-  field per installment. Floor division creates equal pieces and gives the
-  final field the remainder. States and actions unroll in order. Each action
-  carries its due rule and cumulative duration offset.
-- Scheduled obligation mode emits a parent plus one generated payment child per
-  installment. The parent stores principal, delinquency dates, party accounts,
-  partitions, and aggregate invariants. It supports draft approval, optional
-  advance, fixed collection and delinquency actions, write-off, and completion.
-  Each child binds parent fields, repays once, and can refund once.
-- `recurring_collection` with a finite count uses the scheduled construction.
-  Open recurrence stores one amount and anchor, opens one period at a time,
-  collects that period, and permits cancellation. It never unrolls an unbounded
-  runtime loop.
-- `metered` stores one money field for each declared meter and a period end.
-  Every charge moves directly from payer to payee. The instrument never accrues
-  custody. Closing the period only changes state.
+- `scheduled` executes calendar-anchored payment series between one payer and one payee across three operational modes:
+  1. Finite installment plan: Stores total, first due date, and one money field per installment. The caller supplies each piece; a partition checks their sum, not equality. States and actions unroll in order with cumulative duration offsets.
+  2. Open recurring subscription: Charges a recurring amount on interval `every` until an `until` port fires, opening one period liability at a time.
+  3. Debt obligation: Emits a parent obligation plus one child payment instrument per installment. The parent stores principal, delinquency dates, party accounts, and aggregate invariants. Child instruments bind parent fields, repay against installment caps, and support full refunds. Finite obligation count generalization applies without grace periods.
+- `metered` stores one money field for each declared meter in its rate card and a period end date. Each usage charge executes an immediate transfer directly from payer to payee without escrow custody. Closing the period transitions state to `closed` at `close_by` and makes further charges unreachable.
 
-## Collections and distributions
+## Lending and credit
 
-- `pooled_split` stores the pool total, due date, and one share amount and
-  account per recipient. Positive shares total exactly 10,000 basis points.
-  Floor division assigns each share, and the named remainder recipient absorbs
-  minor-unit residue. Funding and distribution actions unroll in roster order.
-- `weighted_distribution` emits an open parent and an entitlement child. The
-  parent stores source, total, record date, and maximum recipient count. A port
-  freezes the entitlement snapshot. Child rows store recipient, weight, source,
-  currency, and parent reference. Largest-remainder distribution pays children
-  once. Aggregate clauses cap and total the child set. Withholding is refused
-  and correction creates a new distribution. Its `flat` form emits a single
-  claim instead. The caller supplies typed pool, weight, and group references,
-  their state gates, copy and match maps, and the pool amount path.
-- `threshold_pool` emits a pool parent and commitment child. The parent stores
-  target, close date, maximum contributors, beneficiary, and currency. It moves
-  through open, active, failed, or settled based on aggregate commitment gates.
-  Each commitment can cancel before collection, collect into the round, or
-  refund after failure. Its referenced-contribution form accepts a published
-  contribution instrument, beneficiary account, and memo and emits no child.
-- `security_deposit` reserves the full amount. A claim port posts either the
-  whole hold or a decided amount bounded by the hold. The explicit remainder
-  returns to the payer. A return port voids the whole hold. The deadline form
-  adds machine expiry and unfunded cancellation. Claim and return targets can
-  name either party.
+- `advance` provides upfront capital disbursed to a recipient and repaid through two distinct modes:
+  1. Carved advance: References an active escrow hold and recourse instrument through `against`. It disburses once and settles from the referenced release without minting new value. In this mode, the `fee` parameter is ignored.
+  2. Scheduled advance: Stores advance amount, fee amount, repayable total, first due date, and one repayment field per installment. A supplied `fee` derives feeAmount as a floor percentage of principal. The caller supplies principal, repayable total and repayment pieces, which partitions reconcile. `repayment_source` can differ from the capital recipient. `profit_to` splits each collection between principal returned to the funder and profit paid to its recipient. `dated: true` requires one stored signed due date per repayment. Equality, chronological ordering, partial servicing and arrears are not implied by those partitions.
+- `credit_facility` stores lender, borrower, draw destination, credit limit, currency, and expiry date. The facility transitions across `active`, `frozen`, and `closed`. Each draw creates a child instrument with draw amount, facility reference, and obligation reference. Draw admission checks facility active state and aggregate child exposure against the limit. Closure requires all child draws to reach status `resolved`. Unused signature knobs (`availability_policy`, `expiry_policy`, `close_policy`) are pruned.
+- `conditional_disbursement` emits a submitted parent instrument with cap, currency, source account, destination account, and decision port. Denial terminates the parent before child approvals. Child approval instruments store externally bounded amounts. Child actions capture port input, move through `created`, `approved`, and `paid`, and verify aggregate child exposure against the parent cap. Unused signature knobs (`reopen_policy`, `recovery_policy`) are pruned.
 
-## Composition and unwind
+## Multi-party distributions and pooling
 
-- `swap` stores both side amounts, accounts, fees, currency, and optional
-  clawback date. Funding is atomic across both sides. Release, settlement,
-  cancellation, dispute, abandonment, and clawback preserve the two-sided
-  conservation group. Side fees keep their declared bearer and position.
-  `distinctParties` prevents self-dealing. Unwind refunds each side and applies
-  the declared penalty tiers without changing the principal partition. Fixed
-  side names, state order, action bindings, parked-state reasons, and ID prefix
-  are general compile-time parameters.
-- `settlement_batch` emits a batch plus capture, credit-adjustment, and
-  debit-adjustment children. The batch stores close time, settlement and payout
-  accounts, beneficiary reference, and currency. Close freezes intake.
-  Calculate signs capture, fee, and reversal entries. Approve rejects a negative
-  position when configured. Instruct, acknowledge, and reconcile use the
-  declared payout port. Child references and statuses define every aggregate
-  and signed-sum input.
-- `rotating_pool` emits one parent plus one contribution child per fixed member.
-  The parent unrolls active and ready states for every cycle and checks that each
-  member row exists exactly once. Every child unrolls due, funded, defaulted,
-  guaranteed, paid, and completed states for every cycle. Due offsets scale the
-  fixed recurrence. A funded or guaranteed contribution pays the roster's fixed
-  beneficiary for that cycle. The final close requires the escrow account to be
-  drained. Its referenced-membership form delegates those member cycles to a
-  published membership instrument and emits only the parent.
-- `reconciled_payout` instructs an external payout with a tolerance dial,
-  waits for a matching bank debit statement line, and treats unmatched amounts
-  at the settle date as break rows. Lifecycle moves through `created`,
-  `instructed`, and `settled`.
+- `pooled_split` stores pool total, due date, and one share amount and account per recipient. Positive shares total exactly 10,000 basis points. Floor division assigns each share, and the designated remainder recipient absorbs minor-unit residues. Funding and distribution actions execute in roster order.
+- `weighted_distribution` emits a parent distribution instrument and child entitlement instruments. The parent stores source account, total amount, record date, and maximum recipient count. Child rows store recipient, weight, source, currency, and parent reference. A largest-remainder distribution algorithm pays children once. Aggregate clauses cap and total child records against the pool.
+- `threshold_pool` emits a pool parent instrument and child commitment instruments. The parent stores target amount, close date, maximum contributors, beneficiary, and currency. It transitions through `open`, `active`, `failed`, or `settled` based on aggregate commitment gates. Each commitment can cancel before collection, collect into the pool, or refund after campaign failure.
+- `rotating_pool` emits a parent pool instrument plus one contribution child instrument per member. The parent unrolls active and ready states for every cycle and checks that each member row exists exactly once. Member child instruments unroll due, funded, defaulted, guaranteed, paid, and completed states for every cycle. A funded or guaranteed contribution pays the fixed beneficiary for that cycle. Final closure requires the escrow balance to drain to zero.
+
+## Bilateral exchange, clearing, and reconciliation
+
+- `swap` stores amounts, accounts, fees, currency, and optional clawback dates for both sides. Funding is atomic across both sides. Release, settlement, cancellation, dispute, abandonment, and clawback preserve the two-sided conservation group. Side fees retain their declared bearer and position. Unwind refunds each side and applies declared penalty tiers without altering principal partitions.
+- `settlement_batch` emits a batch instrument alongside capture, credit-adjustment, and debit-adjustment child records. The batch stores close time, settlement and payout accounts, beneficiary reference, and currency. Closure freezes intake. Calculation applies signed arithmetic across capture, fee, and reversal entries. Actions instruct, acknowledge, and reconcile through the declared payout port.
+- `reconciled_payout` instructs an external payout with a tolerance window, waits for a matching bank debit statement line, and tracks unmatched amounts at settlement date as break rows. Lifecycle transitions through `created`, `instructed`, and `settled`.

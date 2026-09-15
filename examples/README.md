@@ -8,7 +8,7 @@ document byte for byte.
 The numbered examples provide end-to-end walkthroughs:
 
 - [01 · Your first program](01-first-program/README.md)
-- [02 · Imports and modules](02-imports-and-archetypes/README.md)
+- [02 · Imports and modules](02-imports-and-modules/README.md)
 - [03 · Diagnostics](03-diagnostics/README.md)
 - [04 · Complete product](04-complete-product/README.md)
 - [05 · Watch club](05-watch-club/README.md)
@@ -28,7 +28,6 @@ Each money flow has a runnable example directory:
 - [pooled_split](pooled_split/README.md)
 - [premium_forward](premium_forward/README.md)
 - [reconciled_payout](reconciled_payout/README.md)
-- [recurring_collection](recurring_collection/README.md)
 - [rotating_pool](rotating_pool/README.md)
 - [scheduled](scheduled/README.md)
 - [security_deposit](security_deposit/README.md)

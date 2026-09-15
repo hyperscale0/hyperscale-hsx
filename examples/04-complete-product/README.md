@@ -59,7 +59,7 @@ share does. Nobody's fraction of a halala goes missing, and nobody's is
 invented.
 
 A pool needs at least two recipients, and the funder cannot be one of them. A
-pool that distributes to one person is a transfer, and there is an archetype
+pool that distributes to one person is a transfer, and there is an module
 for that.
 
 ## What it compiles to

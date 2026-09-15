@@ -9,6 +9,27 @@ independently of the package version.
 
 ## [Unreleased]
 
+- Pin receipt distribution fee, tax and residual accounts to customer balances.
+
+- Lower omitted and full-refund unpaid cancellation bands as deposit refunds. Refuse constant cancellation partitions that exceed the deposit.
+
+## [2.2.0] - 2026-09-15
+
+Pairs with UDL 2.4.0.
+
+### Added
+
+- General lowering for allocation, `requiresAllocation`, `templateBinding`, children buckets, unique account fields and allocation-backed exposure measures. Signed schedules, stored rates, referenced transitions, equal partitions, contributions and attested decisions retain their UDL contracts.
+- Custody vocabulary: `shift_date`, `requiresExposure.groupField` and `minimumField`, `funding` and `receiptDistribution`.
+- `cancellable_booking` accepts finite `cancel_bands`, deposit/balance custody, supplier shares, confirmation release and timeout refunds. `held_payment.private_actions` lets a program select its public aliases.
+- `threshold_pool.funding_join` binds frozen wallet tickets to priced funding. `weighted_distribution` receipt mode derives ticket ratios, carves fee and VAT, pays a named residual and allocates noncash losses.
+- A complete authored cash-movement example and checkout CLI instructions. Generated std references include parameter tables and clause coverage across branches.
+
+### Changed
+
+- `advance` derives profit from principal, separates repayment and profit parties, and accepts signed dates. `scheduled` expands finite slice lists and preserves other delinquent slices.
+- Remove the empty `recurring_collection` module, unused std parameters, the journeys clause and the Blueprint cost dimension.
+
 ## [2.1.1] - 2026-09-15
 
 Published in lockstep with UDL 2.3.0.
@@ -98,7 +119,7 @@ Published in lockstep with UDL 2.0.1.
 - Accepted an array of cost tables (`examples/cost-table.json` now ships one card per priced currency); the compiler prices the card matching the program's ledger currency, reporting `HSX1304` for an unpriced currency and `HSX1305` for a program that moves money in two currencies.
 - Reported `HSX1509` when an instrument, or an action a caller can reach, lacks an `agent_description`.
 - Declared `sandbox_failure_point` on the std money-flow fund and release actions so sandbox failures land on a named step.
-- Added `share_offering` and `share_allocation` std instruments with an integer-sum supply invariant, `dispute` and `resume` on `held_payment`, and `quote_refund` and `confirm_refund` on policy Blueprints.
+- Added `share_offering` and `share_allocation` std instruments with an integer-sum supply invariant, `dispute` and `resume` on `held_payment`, and `quote_refund` and `confirm_refund` on policy programs.
 - Bound decision port parties through declared account fields; a decision-only party binds to an account and decides without holding money, and every action a port reaches carries its allowed parties.
 
 ### Changed
@@ -167,15 +188,15 @@ This release is byte-identical to 1.0.0-rc.1.
 
 ### Added
 
-- Six settlement archetypes now compile and lower. `threshold_pool` caps locked
+- Six settlement modules now compile and lower. `threshold_pool` caps locked
   commitments and contributor count, then collects or refunds each commitment
   whole. `weighted_distribution` freezes evidence-backed weights and pays by
   deterministic largest remainder. `credit_facility` owns draw capacity while
-  a referenced `scheduled` obligation owns repayment. `recurring_collection`
+  a referenced `scheduled` obligation owns repayment. the retired collection tracker
   adds mandate evidence and explicit attempts to that obligation.
   `conditional_disbursement` stores one evidence-approved amount under a cap.
   `rotating_pool` fixes its roster, contribution, due anchors, and payout order
-  before activation. Import the required archetype from `"settlement"` and
+  before activation. Import the required module from `"settlement"` and
   supply every policy entry that its reference table marks as required.
 - Any settlement may declare one `derived_amount` block. The runtime computes
   `floor(source * bps / 10000)` from a stored money field and callers omit the
@@ -187,7 +208,7 @@ This release is byte-identical to 1.0.0-rc.1.
   or use separate full-only correction and externally decided reversal ports.
   Declare the required capture, correction, negative-position, and timeout
   policies explicitly. Compose another settlement when capture fees are
-  needed, because this archetype refuses `fees`.
+  needed, because this module refuses `fees`.
 - `settlement_batch` freezes capture lineage and signed adjustments at a stored
   close date, persists gross, credit, debit, and net subtotals, and instructs
   one payout from the frozen net. Supply lineage field names, the payout
@@ -219,7 +240,7 @@ This release is byte-identical to 1.0.0-rc.1.
 - The program money-event budget is 20 instead of 14, and every settlement has
   its own event cap. Advance carves now validate their amount field, currency,
   recourse, and fee rules. Settlement references resolve through
-  archetype-declared exits, and lowering binds referenced instrument identity,
+  module-declared exits, and lowering binds referenced instrument identity,
   statuses, amounts, and currency before movement. Recompile programs that
   previously sat near the budget or used an advance carve. The stricter checker
   may refuse a carve or reference that alpha.4 accepted.
@@ -320,7 +341,7 @@ This is the first version published as a package anyone can install.
   and the Business Frame. Every `.hsx` file in the repository is validated
   against it in CI.
 - The release reference: the lexical grammar, the EBNF the parser accepts, what
-  each stage does, the diagnostic model, and all nine `settlement` archetypes
+  each stage does, the diagnostic model, and all nine `settlement` modules
   with their parameters and constraints.
 - `examples/`, four teaching programs compiled by the test suite.
 - `editors/vscode/`, a TextMate grammar for syntax highlighting.

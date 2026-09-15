@@ -146,7 +146,7 @@
           "summary": "Open a usage period with its committed rate card"
         }
       },
-      "agentDescription": "Reach for metered when the customer is billed per unit at a rate card fixed when the period opens, and the period closes on periodEnd. Every charge is its own transfer. Pick recurring collection for a flat repeating amount and instant transfer for a one-off payment.",
+      "agentDescription": "Reach for metered when the customer is billed per unit at a rate card fixed when the period opens, and the period closes on periodEnd. Every charge is its own transfer. Pick scheduled for a flat repeating amount and instant transfer for a one-off payment.",
       "description": "Metered usage: the customer is charged per unit at the committed rate card until the period closes on its stored end date",
       "fields": {
         "callRate": {
@@ -238,6 +238,10 @@
         "currency"
       ],
       "summary": "Metered charges from customer on a committed rate card",
+      "templateBinding": {
+        "id": "metered",
+        "parameters": {}
+      },
       "title": "Usage"
     }
   ],

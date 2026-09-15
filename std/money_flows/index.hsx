@@ -1,3 +1,4 @@
 module std.money_flows
 
-// Money flows are imported by their full std.money_flows.<name> path.
+// Import named exports from "std/money_flows".
+// SEMANTICS.md groups modules by lifecycle and explains their money effects.

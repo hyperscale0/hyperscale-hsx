@@ -9,10 +9,6 @@ settlement card_payment = captured_payment {
   reserve_until: reserveUntil
   correction: port correct_capture
   external_reversal: port reverse_capture within P14D
-  capture_mode: partial_then_full
-  correction_mode: full_only
-  negative_position: reject
-  timeout: reject
 }
 port correct_capture { allowed: [payee] }
 port reverse_capture {

@@ -589,6 +589,10 @@
         "currency"
       ],
       "summary": "Premium held for the carrier until the policy binds",
+      "templateBinding": {
+        "id": "premium_forward",
+        "parameters": {}
+      },
       "title": "Premium"
     }
   ],

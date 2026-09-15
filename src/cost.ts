@@ -90,7 +90,6 @@ export type CostManifestResult =
 export function buildCostManifest(
   program: TypedProgram,
   tables: UdlCostTables | undefined,
-  composesCatalogBlueprint: boolean,
 ): CostManifestResult {
   const priced = tables === undefined ? [] : [tables].flat();
   if (priced.length === 0) {
@@ -164,7 +163,7 @@ export function buildCostManifest(
     }
   }
   const fixed = fixedCost(
-    typedStructuralCounts(program, composesCatalogBlueprint),
+    typedStructuralCounts(program),
     table,
     program.origin,
     diagnostics,
@@ -222,11 +221,10 @@ function ledgerCostTable(
 export function computeUdlFixedCost(
   document: UdlDocument,
   table: UdlCostTable,
-  composesCatalogBlueprint: boolean,
 ): UdlCostManifest["fixed"] {
   const diagnostics: GeneralDiagnostic[] = [];
   const fixed = fixedCost(
-    udlStructuralCounts(document, composesCatalogBlueprint),
+    udlStructuralCounts(document),
     table,
     { start: 0, end: 0 },
     diagnostics,
@@ -238,7 +236,6 @@ export function computeUdlFixedCost(
 export function buildUdlCostManifest(
   document: UdlDocument,
   table: UdlCostTable,
-  composesCatalogBlueprint: boolean,
 ): UdlCostManifest {
   if (!CURRENCY.test(table.currency)) {
     throw new Error(
@@ -286,11 +283,7 @@ export function buildUdlCostManifest(
       );
     }
   }
-  return manifest(
-    table,
-    computeUdlFixedCost(document, table, composesCatalogBlueprint),
-    actions,
-  );
+  return manifest(table, computeUdlFixedCost(document, table), actions);
 }
 
 export function evaluateUdlCostManifest(
@@ -473,6 +466,16 @@ function fixedCost(
 ): UdlCostManifest["fixed"] {
   const components: UdlCostManifest["fixed"]["components"][number][] = [];
   let complexityScore = 0;
+  for (const weight of Object.keys(table.fixed.weights)) {
+    if (Object.hasOwn(counts, weight)) continue;
+    diagnostics.push({
+      code: "HSX1302",
+      fix: `remove the unknown ${weight} weight from cost table ${table.version}`,
+      message: `cost table ${table.version} has an unknown ${weight} complexity weight`,
+      severity: "error",
+      span,
+    });
+  }
   for (const [weight, count] of Object.entries(counts)) {
     if (count === 0) continue;
     const value = table.fixed.weights[weight];
@@ -518,7 +521,6 @@ function fixedCost(
 
 function typedStructuralCounts(
   program: TypedProgram,
-  blueprint: boolean,
 ): Readonly<Record<string, number>> {
   const subjectKinds = new Set<string>();
   const decisions = new Set<string>();
@@ -562,13 +564,11 @@ function typedStructuralCounts(
     aggregate,
     gate,
     timer,
-    blueprint,
   );
 }
 
 function udlStructuralCounts(
   document: UdlDocument,
-  blueprint: boolean,
 ): Readonly<Record<string, number>> {
   const subjectKinds = new Set<string>();
   const decisions = new Set<string>();
@@ -611,7 +611,6 @@ function udlStructuralCounts(
     aggregate,
     gate,
     timer,
-    blueprint,
   );
 }
 
@@ -625,7 +624,6 @@ function countRecord(
   aggregateInvariant: number,
   gate: number,
   timer: number,
-  blueprint: boolean,
 ): Readonly<Record<string, number>> {
   return {
     instrument,
@@ -637,7 +635,6 @@ function countRecord(
     aggregate_invariant: aggregateInvariant,
     gate,
     timer,
-    blueprint: blueprint ? 1 : 0,
   };
 }
 

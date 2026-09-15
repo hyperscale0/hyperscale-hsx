@@ -669,6 +669,12 @@
         "currency"
       ],
       "summary": "Capture reservation from payer to payee",
+      "templateBinding": {
+        "id": "captured_payment",
+        "parameters": {
+          "derivedAmount": false
+        }
+      },
       "title": "Card payment"
     }
   ],

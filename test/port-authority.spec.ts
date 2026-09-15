@@ -71,10 +71,7 @@ instrument sibling {
 
   it("preserves a mandate's declared account authority and rejects overrides", () => {
     const source = readFileSync(
-      new URL(
-        "../examples/recurring_collection/recurring_collection.hsx",
-        import.meta.url,
-      ),
+      new URL("./fixtures/mandated-obligation.hsx", import.meta.url),
       "utf8",
     ).replace("allowed: [repayment_source]", "allowed: [recipient]");
     const result = compile(source);

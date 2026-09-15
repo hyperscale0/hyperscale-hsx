@@ -14,7 +14,7 @@ module std.money_flows.threshold_pool
 //   `weighted_distribution` pays funds outward from one source pool to many weighted recipients.
 //
 // ### Parameters
-// - `contributor`: The archetype party representing individual contributors.
+// - `contributor`: The party representing individual contributors.
 // - `beneficiary`: The beneficiary party receiving the settled pool if the target is met.
 // - `target`: Total target funding threshold in minor units of currency `C`.
 // - `commitment`: Binding name for individual contributor commitment amounts.
@@ -51,6 +51,13 @@ module std.money_flows.threshold_pool
 //   fail_policy: whole_commitment_refund
 // }
 // ```
+// ### Funding join
+// funding_join configures the flat contribution-instrument mode for a priced
+// obligation. Opening freezes minimum ticket, investor cap, profit and schedule
+// terms. Closing binds the obligation, freezes committed ticket identities and
+// moves the principal once into its funding account. A ticket's engine-owned
+// collection action has no independent payment or clock trigger.
+//
 export instrument threshold_pool<C>(
   contributor: optional<party>,
   beneficiary: optional<party>,
@@ -66,6 +73,7 @@ export instrument threshold_pool<C>(
   memo: optional<text>,
   contribution_instrument: optional<block>,
   wording: optional<block>,
+  funding_join: optional<block>,
 ) {
   when(wording) {
     let(wording_unknown_keys): keys_except(wording, "pool_summary", "pool_description", "create_summary", "commitment_create_summary", "commitment_cancel_summary", "commitment_refund_summary");
@@ -217,6 +225,7 @@ export instrument threshold_pool<C>(
     let(beneficiary_account_field): camel(beneficiary_account);
     let(target_field): camel(target);
     let(close_field): camel(close_by);
+    let(obligation_type): get(funding_join, "obligation");
 
     fields {
       [beneficiary_account_field] { type: account<C>; description: beneficiary_account_description; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
@@ -224,6 +233,18 @@ export instrument threshold_pool<C>(
       currency { type: text; description: currency_description; maxLength: 3; minLength: 3; pattern: "^[A-Z]{3}$"; }
       when(memo) { [memo] { type: text; optional: true; maxLength: 180; minLength: 1; } }
       [target_field] { type: money<C>; description: target_description; }
+      when(funding_join) {
+        fundingAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+        obligationId { type: ref<obligation_type>; optional: true; }
+        minimumTicket: money<C>;
+        investorCapBps { type: integer; minimum: 1; maximum: 9999; }
+        maximumTicket { type: money<C>; optional: true; }
+        fixedProfit: money<C>;
+        installmentCount { type: integer; minimum: 1; maximum: 360; }
+        earningRule { type: text; enum: [per_slice_on_due, on_disbursement]; }
+      }
+    }
+    when(funding_join) { computes derived: { field: maximumTicket; source_field: target_field; rule: { kind: percentage_of; bps: { field: investorCapBps; }; }; rounding: floor; };
     }
     lifecycle {
       states open active failed settled;
@@ -233,14 +254,15 @@ export instrument threshold_pool<C>(
       on fail: open -> failed;
     }
     parties { beneficiary: beneficiary_account_field; }
-    required: [beneficiary_account_field, target_field, currency, close_field];
+    when_not(funding_join) { required: [beneficiary_account_field, target_field, currency, close_field]; }
+    when(funding_join) { required: [beneficiary_account_field, target_field, currency, close_field, fundingAccountId, minimumTicket, investorCapBps, fixedProfit, installmentCount, earningRule]; }
     aggregate_invariants { childField: contribution_amount_field; childInstrumentId: contribution_id; childRefField: contribution_ref_field; childStatuses: [committed_status, collected_status]; parentField: target_field; }
     caller_parked_states { active: active_parked; }
     id_prefix: instrument_id_prefix;
     action create {
       public: none;
       agent_description: "Open the pool before any contribution exists. The caller supplies the target, the currency, the beneficiary account, and the close anchor, and the pool provisions its escrow account. No money moves.";
-      examples: create_examples;
+      when_not(funding_join) { examples: create_examples; }
       moves: [];
       steps: [{ operation: "account.escrow.provision"; bind: { currency: { from: instance; path: "fields.currency"; }; "owner.id": { from: instance; path: productId; }; "owner.type": { from: const; value: product; }; productId: { from: instance; path: productId; }; role: { from: const; value: product_escrow; }; }; capture: { [custody_ref]: accountId; }; }];
     }
@@ -263,8 +285,21 @@ export instrument threshold_pool<C>(
     action close {
       public: none;
       agent_description: "Settle the pool once every contribution has been collected into the beneficiary account. No money moves. Refused while any contribution is still uncollected, so wait for the per-contribution collections to run rather than retrying.";
-      examples: close_examples;
-      requires aggregate { instrumentId: contribution_id; over: children; refField: contribution_ref_field; statuses: [collected_status]; check: { kind: all_in; }; }
+      when_not(funding_join) { examples: close_examples; }
+      when_not(funding_join) { requires aggregate { instrumentId: contribution_id; over: children; refField: contribution_ref_field; statuses: [collected_status]; check: { kind: all_in; }; } }
+      when(funding_join) {
+        input: { type: object; additionalProperties: false; properties: { obligationId: { type: string; pattern: get(funding_join, "obligation_pattern"); }; }; required: [obligationId]; };
+        updates: [obligationId];
+        requires refs: { field: obligationId; statuses: [created]; match: { "fields.fundingAccountId": fields.fundingAccountId; "fields.currency": fields.currency; }; };
+        funding: {
+          obligation_field: obligationId; ticket_instrument_id: contribution_id; ticket_ref_field: contribution_ref_field;
+          ticket_amount_field: contribution_amount_field; ticket_investor_field: get(funding_join, "investor_field"); ticket_account_field: get(funding_join, "wallet_account_field");
+          ticket_status: committed_status; collect_action: collect; principal_field: target_field;
+          source_account_path: concat("refs.", custody_ref); destination_account_field: fundingAccountId;
+          terms: { [target_field]: principal; fixedProfit: fixedProfit; installmentCount: installmentCount; earningRule: earningRule; [beneficiary_account_field]: borrowerAccountId; currency: currency; };
+          capture: fundingSnapshot;
+        };
+      }
       moves: [];
       steps: [];
     }

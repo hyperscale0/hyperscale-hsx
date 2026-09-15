@@ -541,6 +541,14 @@
         "one"
       ],
       "summary": "3-member rotating pool",
+      "templateBinding": {
+        "id": "rotating_pool",
+        "parameters": {
+          "count": 3,
+          "membership": false,
+          "memo": false
+        }
+      },
       "title": "Pool"
     },
     {

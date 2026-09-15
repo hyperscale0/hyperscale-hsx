@@ -11,10 +11,6 @@ module std.money_flows.metered
 // - vs `scheduled`: `metered` charges variable amounts per event calculated from consumed units and committed
 //   rate card prices. `scheduled` executes transfers on fixed calendar recurrence intervals (`every`, `first_due`)
 //   with predetermined amounts or installments.
-// - vs `recurring_collection`: `metered` calculates and executes real ledger transfers for each usage charge.
-//   `recurring_collection` is a lightweight status tracker for collection runs without balance transfers or rate cards.
-// - vs `instant_transfer`: `instant_transfer` executes a single immediate payment. `metered` manages a stateful
-//   open billing cycle accepting multiple usage charges under a fixed rate card.
 //
 // ### Parameters
 // - `payer`: The customer being billed for usage.
@@ -49,7 +45,7 @@ export instrument metered(
 ) {
   let(instrument_words): words(instrument);
   title: sentence(instrument);
-  agent_description: "Reach for metered when the {payer} is billed per unit at a rate card fixed when the period opens, and the period closes on {close_by}. Every charge is its own transfer. Pick recurring collection for a flat repeating amount and instant transfer for a one-off payment.";
+  agent_description: "Reach for metered when the {payer} is billed per unit at a rate card fixed when the period opens, and the period closes on {close_by}. Every charge is its own transfer. Pick scheduled for a flat repeating amount and instant transfer for a one-off payment.";
   summary: "Metered charges from {payer} on a committed rate card";
   description: "Metered usage: the {payer} is charged per unit at the committed rate card until the period closes on its stored end date";
 

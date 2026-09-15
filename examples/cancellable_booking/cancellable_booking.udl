@@ -382,6 +382,25 @@
         "startsAt"
       ],
       "summary": "Booking the guest can cancel at a price they see before they agree to it",
+      "templateBinding": {
+        "id": "cancellable_booking",
+        "parameters": {
+          "acceptance": false,
+          "authorityType": false,
+          "balanceBefore": false,
+          "cancelBands": false,
+          "confirmationWindow": false,
+          "departure": false,
+          "depositBps": false,
+          "earlyPenaltyBps": 1000,
+          "latePenaltyBps": 5000,
+          "priceValue": false,
+          "supplierCost": false,
+          "supplierRole": false,
+          "taxBps": false,
+          "unpaidBand": false
+        }
+      },
       "title": "Studio session"
     }
   ],

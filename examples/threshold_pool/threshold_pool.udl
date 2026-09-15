@@ -219,6 +219,17 @@
         "maxContributors"
       ],
       "summary": "Threshold contribution pool for company",
+      "templateBinding": {
+        "id": "threshold_pool",
+        "parameters": {
+          "beneficiaryAccount": false,
+          "contributionInstrument": false,
+          "fundingJoin": false,
+          "maxContributors": 100,
+          "memo": false,
+          "wording": false
+        }
+      },
       "title": "Round"
     },
     {

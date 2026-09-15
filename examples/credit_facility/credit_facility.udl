@@ -424,7 +424,6 @@
       "required": [
         "lenderAccountId",
         "repaymentSourceAccountId",
-        "borrowerAccountId",
         "currency",
         "principal",
         "firstDueAt",
@@ -432,6 +431,19 @@
         "installment2Amount"
       ],
       "summary": "2-anchor obligation for borrower",
+      "templateBinding": {
+        "id": "scheduled",
+        "parameters": {
+          "advanceTo": false,
+          "count": 2,
+          "derivedAmount": false,
+          "mandate": false,
+          "monthEnd": false,
+          "periodLiability": false,
+          "terminationDrain": false,
+          "until": false
+        }
+      },
       "title": "Repayment"
     },
     {
@@ -1162,6 +1174,10 @@
         "expiresAt"
       ],
       "summary": "Draw capacity for borrower",
+      "templateBinding": {
+        "id": "credit_facility",
+        "parameters": {}
+      },
       "title": "Facility"
     },
     {

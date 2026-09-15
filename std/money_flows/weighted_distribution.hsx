@@ -16,7 +16,7 @@ module std.money_flows.weighted_distribution
 //
 // ### Parameters
 // - `source`: The funding party providing the distribution pool.
-// - `recipient`: The archetype party representing entitled recipients.
+// - `recipient`: The party representing entitled recipients.
 // - `amount`: Total distribution pool in minor units of currency `C`.
 // - `record_at`: Date when entitlement eligibility is established.
 // - `weight`: Binding name for individual recipient weight amounts.
@@ -54,11 +54,20 @@ module std.money_flows.weighted_distribution
 //   shape: { evidenceReference: text }
 // }
 // ```
+// ### Receipt-backed distributions
+// receipts selects repeated distributions from immutable allocation receipts.
+// It names round, receipt, path, mode (cash or loss), fee_bps and vat_bps.
+// The funding snapshot owns ticket weights and original wallet destinations.
+// Cash floors each ratio after fee and fee VAT; a named account receives residual.
+// Loss assigns principal by largest remainder without cash, fee or VAT.
+// Each receipt is consumed once; a new receipt may fund a new distribution record.
+// This mode does not use caller-entered weights or a once-only settled principal pool.
+//
 export instrument weighted_distribution<C>(
-  source: party,
-  recipient: party,
-  amount: money<C>,
-  record_at: date,
+  source: optional<party>,
+  recipient: optional<party>,
+  amount: optional<money<C>>,
+  record_at: optional<date>,
   weight: optional<money<C>>,
   max_recipients: optional<integer>,
   snapshot: optional<condition>,
@@ -66,8 +75,10 @@ export instrument weighted_distribution<C>(
   withholding_policy: optional<text>,
   correction_policy: optional<text>,
   flat: optional<block>,
+  receipts: optional<block>,
   id_prefix_override: optional<text>,
 ) {
+  when_not(receipts) {
   when_not(flat) {
   fields {
     currency { type: text; description: "ISO 4217 currency code"; minLength: 3; maxLength: 3; pattern: "^[A-Z]{3}$"; }
@@ -189,6 +200,37 @@ export instrument weighted_distribution<C>(
       requires refs { field: pool_ref_field; statuses: pool_payout_statuses; }
       computes distribute { amountRef: payoutShare; onZero: skip_steps; pool: { from: parent; path: pool_amount_path; }; refField: pool_ref_field; statuses: [claimed, paid]; weightField: amount; }
       moves: [{ key: transfer; operation: internal_transfer.create; bind: { amount: { from: instance; path: refs.payoutShare; }; currency: { from: instance; path: fields.currency; }; destinationAccountId: { from: instance; path: concat("fields.", recipient_account_field); }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: concat("fields.", source_account_field); }; }; capture: { payoutTransferId: transferId; }; }];
+      steps: [];
+    }
+  }
+  }
+  when(receipts) {
+    let(round_type): get(receipts, "round");
+    let(receipt_type): get(receipts, "receipt");
+    fields {
+      roundId: ref<round_type>;
+      receiptId: ref<receipt_type>;
+      currency { type: text; pattern: "^[A-Z]{3}$"; minLength: 3; maxLength: 3; }
+      feeAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      taxAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+      residualAccountId { type: account<C>; "x-hyperscale-reference-filter": { column: role; values: [customer_balance]; }; }
+    }
+    parties { fee: feeAccountId; tax: taxAccountId; beneficiary: residualAccountId; }
+    lifecycle { states distributed; initial distributed; }
+    title: sentence(instrument);
+    summary: "Receipt-backed frozen-weight distribution";
+    agent_description: "Consume one allocation receipt against the round's frozen tickets. Cash distributions carve fee and VAT, floor each ticket share and pay the residual to its named owner. Loss mode records principal loss without cash.";
+    action create {
+      public: none;
+      agent_description: "Distribute one receipt once. All amounts and sources come from the consumed receipt and frozen funding snapshot.";
+      requires refs: { field: roundId; statuses: [settled]; match: { "fields.currency": fields.currency; }; };
+      receipt distribution: {
+        round_field: roundId; snapshot_ref: fundingSnapshot;
+        receipt_field: receiptId; receipt_path: get(receipts, "path"); mode: get(receipts, "mode");
+        fee_bps: get(receipts, "fee_bps"); vat_bps: get(receipts, "vat_bps");
+        fee_account_field: feeAccountId; tax_account_field: taxAccountId; residual_account_field: residualAccountId;
+        capture: distributionReceipt;
+      };
       steps: [];
     }
   }

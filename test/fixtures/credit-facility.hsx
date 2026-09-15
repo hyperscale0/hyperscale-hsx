@@ -24,7 +24,4 @@ settlement facility = credit_facility {
   limit: facilityLimit: money(SAR)
   expires_at: expiresAt
   obligation: obligation.obligation
-  availability_policy: revolving
-  expiry_policy: freeze_draws
-  close_policy: no_open_draws
 }

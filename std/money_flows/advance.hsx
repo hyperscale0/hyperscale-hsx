@@ -24,6 +24,9 @@ module std.money_flows.advance
 // - `count`: Optional number of scheduled installment repayments.
 // - `every`: Optional recurrence duration between installments (e.g. `"P30D"`).
 // - `first_due`: Optional date for the first installment repayment.
+// - `repayment_source`: Optional party repaying when distinct from the capital recipient.
+// - `profit_to`: Optional recipient of profit, separated from principal repayments.
+// - `dated`: Require an explicit signed date for each repayment instead of duration offsets.
 // - `against`: Optional reference to a hold instrument whose release will be carved to repay the advance.
 //
 // ### Decision ports
@@ -54,6 +57,9 @@ export instrument advance<C>(
   every: optional<text>,
   first_due: optional<date>,
   against: optional<ref>,
+  repayment_source: optional<party>,
+  profit_to: optional<party>,
+  dated: optional<boolean>,
 ) {
   let(amount_path): concat("fields.", amount);
   let(currency_path): "fields.currency";
@@ -66,6 +72,8 @@ export instrument advance<C>(
   parties {
     payer: funder;
     beneficiary: to;
+    when(repayment_source) { repayment: repayment_source; }
+    when(profit_to) { profit: profit_to; }
   }
 
   when(against) {
@@ -131,6 +139,8 @@ export instrument advance<C>(
   }
 
   when_not(against) {
+    let(repayment_role): if_eq(repayment_source, false, "beneficiary", "repayment");
+    when(fee) { computes derived: { field: feeAmount; source_field: amount; rule: { kind: percentage_of; bps: basis_points(fee); }; rounding: floor; }; }
     let(repayment_fields): names("repayment", count, "Amount");
     let(first_target): if_eq(count, 1, "repaid", "repaying_1");
     let(states_key): "states";
@@ -144,6 +154,7 @@ export instrument advance<C>(
       }
       fee_amount {
         type: money<C>;
+        when(fee) { optional: true; }
         description: concat(fee, " of ", amount, ", the funder's discount repaid on top of the advance");
       }
       repayable_amount {
@@ -154,16 +165,13 @@ export instrument advance<C>(
         type: date;
         description: concat("Due date of the first repayment; repayment k falls ", every, " after its predecessor");
       }
-      repayment_1_amount {
-        type: money<C>;
-        description: concat("Repayment 1 of ", count, " (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor");
-      }
-      for repayment in sub(count, 1) {
-        let(index): add(repayment, 1);
-        repayment[index]Amount {
-          type: money<C>;
-          description: concat("Repayment ", index, " of ", count, ": about 33.33% of repayableAmount, collected on its own stored-date anchor");
+      for i in count {
+        repayment[i]Amount { type: money<C>; description: "Stored total for repayment {i}"; }
+        when(profit_to) {
+          repayment[i]Principal { type: money<C>; description: "Principal returned to the funder by repayment {i}"; }
+          repayment[i]Profit { type: money<C>; description: "Profit paid to the named recipient by repayment {i}"; }
         }
+        when(dated) { repayment[i]DueAt { type: date; description: "Signed calendar due date for repayment {i}"; } }
       }
     }
     lifecycle {
@@ -187,8 +195,15 @@ export instrument advance<C>(
       piece_fields: [amount, feeAmount];
       total_field: repayableAmount;
     }];
+    when(profit_to) {
+      partitions: { total_field: amount; piece_fields: names("repayment", count, "Principal"); };
+      partitions: { total_field: feeAmount; piece_fields: names("repayment", count, "Profit"); };
+      for i in count {
+        partitions: { total_field: concat("repayment", i, "Amount"); piece_fields: [concat("repayment", i, "Principal"), concat("repayment", i, "Profit")]; };
+      }
+    }
     action create {
-      agent_description: "Open the advance row before any money moves. The caller supplies the {amount}, the fee amount, the repayable total, and the first repayment date. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.";
+      agent_description: "Open the advance row before any money moves. The caller supplies the {amount}, the repayable total, and repayment dates. A declared fee derives the fee amount from principal. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.";
       summary: concat("Create a ", words(instrument));
       steps: [];
       moves: [];
@@ -199,22 +214,20 @@ export instrument advance<C>(
       moves: [{ amount: amount; from: payer; to: beneficiary; key: transfer; operation: create; }];
       steps: [];
     }
-    action collect_repayment_1 {
-      summary: concat("Collect repayment 1 of ", count);
-      due: { field: first_due_field; };
-      moves: [{ amount: repayment1Amount; from: beneficiary; to: payer; key: transfer; operation: create; }];
-      steps: [];
-    }
-    for repayment in sub(count, 1) {
-      let(index): add(repayment, 1);
-      let(repayment_field): concat("repayment", index, "Amount");
-      action collect_repayment_[index] {
-        summary: concat("Collect repayment ", index, " of ", count);
-        due: {
-          field: first_due_field;
-          offset: scale_duration(every, sub(index, 1));
-        };
-        moves: [{ amount: repayment_field; from: beneficiary; to: payer; key: transfer; operation: create; }];
+    for i in count {
+      let(repayment_field): concat("repayment", i, "Amount");
+      action collect_repayment_[i] {
+        agent_description: "Collect repayment {i} once on its stored due anchor, returning principal to the funder and any separately routed profit to its recipient.";
+        summary: "Collect repayment {i} of {count}";
+        when(dated) { due: { field: concat("repayment", i, "DueAt"); }; }
+        when_not(dated) { due: { field: first_due_field; offset: scale_duration(every, sub(i, 1)); }; }
+        when_not(profit_to) { moves: [{ amount: repayment_field; from: repayment_role; to: payer; key: transfer; }]; }
+        when(profit_to) {
+          moves: [
+            { amount: concat("repayment", i, "Principal"); from: repayment_role; to: payer; key: principal; },
+            { amount: concat("repayment", i, "Profit"); from: repayment_role; to: profit; key: profit; }
+          ];
+        }
         steps: [];
       }
     }

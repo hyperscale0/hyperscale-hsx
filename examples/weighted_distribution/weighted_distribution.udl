@@ -130,6 +130,15 @@
         "maxRecipients"
       ],
       "summary": "Frozen largest-remainder distribution",
+      "templateBinding": {
+        "id": "weighted_distribution",
+        "parameters": {
+          "flat": false,
+          "idPrefixOverride": false,
+          "maxRecipients": 12,
+          "receipts": false
+        }
+      },
       "title": "Proceeds"
     },
     {

@@ -1,0 +1,35 @@
+program attested "Attested action"
+instrument approval {
+  id_prefix: apr;
+  agent_description: "Record approval for one exact request.";
+  fields {
+    requestId: text;
+    requestInstrument: text;
+    deciderAccount: account<SAR>;
+    decidedBy { type: account<SAR>; optional: true; }
+    actionName: text;
+    digest { type: text; pattern: "^[a-f0-9]{64}$"; }
+    role: text;
+    expiry: date;
+  }
+  parties { decider: deciderAccount; }
+  lifecycle { states requested approved consumed; initial requested; on approve: requested -> approved; on consume: approved -> consumed; }
+  action create { agent_description: "Store the immutable request terms."; public: none; steps: []; }
+  action approve { agent_description: "Record the bound deciding account."; public: none; port: { allowedParties: [decider]; capture: decidedBy; }; steps: []; }
+  action consume { agent_description: "Consume this approval within the admitted operation."; public: none; engine_owned: true; capture_engine: { consumedByOperationId: operationId; }; steps: []; }
+}
+instrument request {
+  id_prefix: req;
+  agent_description: "Admit only the independently approved request.";
+  fields { approvalId: ref<approval>; amount: money<SAR>; }
+  lifecycle { states open done; initial open; on accept: open -> done; }
+  action create { agent_description: "Store the immutable request terms."; public: none; steps: []; }
+  action accept {
+    agent_description: "Accept the exact approved amount once.";
+    public: none;
+    input: { type: object; additionalProperties: false; properties: { amount: { type: string; pattern: "^[1-9][0-9]{0,17}$"; "x-hyperscale-currency": SAR; }; }; required: [amount]; };
+    requires input: { amount: "fields.amount"; };
+    requires refs: { field: approvalId; statuses: [approved]; match: { instrumentInstanceId: "fields.requestId"; }; attests: { instrument: "fields.requestInstrument"; party: decider; action: "fields.actionName"; digest: "fields.digest"; role: "fields.role"; expires_at: "fields.expiry"; consume: consume; }; };
+    steps: [];
+  }
+}

@@ -23,8 +23,6 @@ settlement disbursement = conditional_disbursement {
   cap: disbursementCap: money(SAR)
   amount: approvedAmount: money(SAR)
   decision: port disbursement_decision
-  reopen_policy: refuse
-  recovery_policy: separate_transfer
 }
 
 port bind_policy {

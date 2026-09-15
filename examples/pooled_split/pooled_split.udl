@@ -417,6 +417,10 @@
         "currency"
       ],
       "summary": "Period pool from payer split 2 ways",
+      "templateBinding": {
+        "id": "pooled_split",
+        "parameters": {}
+      },
       "title": "Pool"
     }
   ],

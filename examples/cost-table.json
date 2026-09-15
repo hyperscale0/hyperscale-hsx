@@ -21,7 +21,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "5ad6cddeb7e9a8c69f94575c834cf494b07eac53a4c7d70d5aa16182e0fc9130",
+    "effectiveTableDigest": "4273afec16c56ae97282eda8a0a349b006b0e7f41a49d4dbebda3172e449cb58",
     "fixed": {
       "activationBaseMinor": "500000",
       "activationPerPointMinor": "100000",
@@ -29,7 +29,6 @@
       "monthlyPerPointMinor": "20000",
       "weights": {
         "aggregate_invariant": 2,
-        "blueprint": 5,
         "flow": 1,
         "gate": 1,
         "instrument": 3,
@@ -56,6 +55,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.air_carrier"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.allocation"
       },
       {
         "bps": 0,
@@ -191,6 +198,14 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
+        "signature": "decides.referenced_transition"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
         "signature": "decides.sanctions_screening"
       },
       {
@@ -200,6 +215,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.settlement_ingestion"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.subject_unique"
       },
       {
         "bps": 0,
@@ -281,6 +304,15 @@
         "perEventMinor": "20000",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
+      },
+      {
+        "bps": 6,
+        "meter": "transfer.internal.count",
+        "payer": "end_customer",
+        "perEventMinor": "75",
+        "settlement": "per_event",
+        "signature": "moves.allocation",
+        "volumeMeter": "transfer.internal.volume_sar"
       },
       {
         "bps": 8,
@@ -407,7 +439,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "c0b6d44b312db8d0e78227a66893e0fae75bdbbc24d97d4c846dce2b5d31fa2b",
+    "effectiveTableDigest": "88c0a5ae2f12de977d156a04a32cdecbad107076bc74a1b8398239c590f3eb0a",
     "fixed": {
       "activationBaseMinor": "133300",
       "activationPerPointMinor": "26700",
@@ -415,7 +447,6 @@
       "monthlyPerPointMinor": "5300",
       "weights": {
         "aggregate_invariant": 2,
-        "blueprint": 5,
         "flow": 1,
         "gate": 1,
         "instrument": 3,
@@ -442,6 +473,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.air_carrier"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.allocation"
       },
       {
         "bps": 0,
@@ -577,6 +616,14 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
+        "signature": "decides.referenced_transition"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
         "signature": "decides.sanctions_screening"
       },
       {
@@ -586,6 +633,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.settlement_ingestion"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.subject_unique"
       },
       {
         "bps": 0,
@@ -667,6 +722,15 @@
         "perEventMinor": "5333",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
+      },
+      {
+        "bps": 6,
+        "meter": "transfer.internal.count",
+        "payer": "end_customer",
+        "perEventMinor": "20",
+        "settlement": "per_event",
+        "signature": "moves.allocation",
+        "volumeMeter": "transfer.internal.volume_usd"
       },
       {
         "bps": 8,
@@ -793,7 +857,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "168bf0628428929b4a8600965440d83c159e290017ceeafae92f68ea746c266d",
+    "effectiveTableDigest": "004d1a8156aac9cd7cb789f36f6abef508ea304327703ba12844b65b66f03ab2",
     "fixed": {
       "activationBaseMinor": "125000",
       "activationPerPointMinor": "25000",
@@ -801,7 +865,6 @@
       "monthlyPerPointMinor": "5000",
       "weights": {
         "aggregate_invariant": 2,
-        "blueprint": 5,
         "flow": 1,
         "gate": 1,
         "instrument": 3,
@@ -828,6 +891,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.air_carrier"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.allocation"
       },
       {
         "bps": 0,
@@ -963,6 +1034,14 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
+        "signature": "decides.referenced_transition"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
         "signature": "decides.sanctions_screening"
       },
       {
@@ -972,6 +1051,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.settlement_ingestion"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.subject_unique"
       },
       {
         "bps": 0,
@@ -1053,6 +1140,15 @@
         "perEventMinor": "5000",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
+      },
+      {
+        "bps": 6,
+        "meter": "transfer.internal.count",
+        "payer": "end_customer",
+        "perEventMinor": "19",
+        "settlement": "per_event",
+        "signature": "moves.allocation",
+        "volumeMeter": "transfer.internal.volume_eur"
       },
       {
         "bps": 8,
@@ -1179,7 +1275,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "872976014d670541f48e3ad66cbb2da0e6fcd160d34ee785b5a028c3a8a31219",
+    "effectiveTableDigest": "72155c0ce9eb3157f87b7f613bb3f05b3ab50a91248c9260e1b2ceae6b199286",
     "fixed": {
       "activationBaseMinor": "104200",
       "activationPerPointMinor": "20800",
@@ -1187,7 +1283,6 @@
       "monthlyPerPointMinor": "4200",
       "weights": {
         "aggregate_invariant": 2,
-        "blueprint": 5,
         "flow": 1,
         "gate": 1,
         "instrument": 3,
@@ -1214,6 +1309,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.air_carrier"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.allocation"
       },
       {
         "bps": 0,
@@ -1349,6 +1452,14 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
+        "signature": "decides.referenced_transition"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
         "signature": "decides.sanctions_screening"
       },
       {
@@ -1358,6 +1469,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.settlement_ingestion"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.subject_unique"
       },
       {
         "bps": 0,
@@ -1439,6 +1558,15 @@
         "perEventMinor": "4167",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
+      },
+      {
+        "bps": 6,
+        "meter": "transfer.internal.count",
+        "payer": "end_customer",
+        "perEventMinor": "16",
+        "settlement": "per_event",
+        "signature": "moves.allocation",
+        "volumeMeter": "transfer.internal.volume_gbp"
       },
       {
         "bps": 8,

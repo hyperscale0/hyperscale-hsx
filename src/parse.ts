@@ -1,3 +1,11 @@
+import { udlClauseVocabulary } from "@hyperscale0/udl";
+
+const compoundClauseHeads = new Set(
+  udlClauseVocabulary
+    .filter((clause) => clause.spelling.includes(" "))
+    .map((clause) => clause.spelling.split(" ")[0]),
+);
+
 /**
  * The HSX parser. Recursive descent over the lexer's token stream, total:
  * it always returns a best-effort `Program` plus diagnostics, recovering at
@@ -495,15 +503,15 @@ class Parser {
     if (
       !this.expectPunct(
         "=",
-        `settlement ${name.name} instantiates an archetype: settlement ${name.name} = held_payment { ... }`,
+        `settlement ${name.name} instantiates a module: settlement ${name.name} = held_payment { ... }`,
       )
     ) {
       return undefined;
     }
-    const archetype = this.expectIdent(
-      `expected an archetype name for settlement ${name.name}`,
+    const moduleName = this.expectIdent(
+      `expected a module name for settlement ${name.name}`,
     );
-    if (!archetype) return undefined;
+    if (!moduleName) return undefined;
     if (!this.atPunct("{")) {
       this.error(
         this.peek().span,
@@ -521,9 +529,9 @@ class Parser {
           span: row.value.span,
           type: row.value,
         })),
-        callee: { kind: "path", parts: [archetype], span: archetype.span },
+        callee: { kind: "path", parts: [moduleName], span: moduleName.span },
         kind: "apply",
-        span: { start: archetype.span.start, end: body.span.end },
+        span: { start: moduleName.span.start, end: body.span.end },
         typeArgs: [],
       },
       exported: false,
@@ -807,10 +815,7 @@ class Parser {
       }
     }
 
-    if (
-      (key.name === "requires" || key.name === "computes") &&
-      this.isName(this.peek())
-    ) {
+    if (compoundClauseHeads.has(key.name) && this.isName(this.peek())) {
       while (this.isName(this.peek())) qualifiers.push(this.parseIdent());
     }
 

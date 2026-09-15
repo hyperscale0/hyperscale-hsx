@@ -1,29 +1,7 @@
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
-import { buildDocs } from "./build.ts";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 
 const packageRoot = join(import.meta.dir, "../..");
-export function orphanedStdPages(
-  outputs: readonly string[],
-  root = packageRoot,
-): readonly string[] {
-  const expected = new Set(
-    outputs
-      .filter((path) => path.startsWith("docs/reference/std/"))
-      .map((path) => basename(path)),
-  );
-  return readdirSync(join(root, "docs", "reference", "std"))
-    .filter((file) => file.endsWith(".md") && !expected.has(file))
-    .sort();
-}
-
 function findMarkdownFiles(dir: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -94,35 +72,8 @@ export function brokenDocLinks(root = packageRoot): readonly string[] {
 }
 
 if (import.meta.main) {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "hsx-docs-"));
-  try {
-    const outputs = buildDocs(temporaryRoot);
-    const stale = outputs.filter(
-      (path) =>
-        readFileSync(join(packageRoot, path), "utf8") !==
-        readFileSync(join(temporaryRoot, path), "utf8"),
-    );
-    if (stale.length > 0) {
-      throw new Error(
-        `generated HSX documentation is stale:\n${stale.join("\n")}`,
-      );
-    }
-    const orphans = orphanedStdPages(outputs);
-    if (orphans.length > 0) {
-      throw new Error(
-        `generated HSX standard-library pages have no module:\n${orphans.join("\n")}`,
-      );
-    }
-    const broken = brokenDocLinks(packageRoot);
-    if (broken.length > 0) {
-      throw new Error(
-        `documentation links target non-existent files:\n${broken.join("\n")}`,
-      );
-    }
-    console.log(
-      `checked ${outputs.length} generated HSX files and verified documentation links`,
-    );
-  } finally {
-    rmSync(temporaryRoot, { force: true, recursive: true });
-  }
+  const broken = brokenDocLinks(packageRoot);
+  if (broken.length)
+    throw new Error(`documentation links target non-existent files:
+${broken.join("\n")}`);
 }

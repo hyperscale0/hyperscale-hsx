@@ -9,8 +9,10 @@
       ],
       "actions": {
         "collect_repayment_1": {
+          "agentDescription": "Collect repayment 1 once on its stored due anchor, returning principal to the funder and any separately routed profit to its recipient.",
           "due": {
-            "field": "firstDueAt"
+            "field": "firstDueAt",
+            "offset": "P0D"
           },
           "effects": {
             "moves": [
@@ -73,6 +75,7 @@
           "summary": "Collect repayment 1 of 2"
         },
         "collect_repayment_2": {
+          "agentDescription": "Collect repayment 2 once on its stored due anchor, returning principal to the funder and any separately routed profit to its recipient.",
           "due": {
             "field": "firstDueAt",
             "offset": "P30D"
@@ -138,7 +141,7 @@
           "summary": "Collect repayment 2 of 2"
         },
         "create": {
-          "agentDescription": "Open the advance row before any money moves. The caller supplies the principal, the fee amount, the repayable total, and the first repayment date. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.",
+          "agentDescription": "Open the advance row before any money moves. The caller supplies the principal, the repayable total, and repayment dates. A declared fee derives the fee amount from principal. The repayment fields must partition the repayable total exactly. Nothing is disbursed here.",
           "moves": [],
           "publicAction": "createAdvancePayment",
           "steps": [],
@@ -203,6 +206,17 @@
         }
       },
       "agentDescription": "Reach for advance when the funder pays the recipient up front and is repaid afterwards, either out of a carved hold release or over scheduled repayments. Pick deposit for a refundable reservation and instant transfer when nobody repays the payer.",
+      "derivedAmounts": [
+        {
+          "field": "feeAmount",
+          "rounding": "floor",
+          "rule": {
+            "bps": 250,
+            "kind": "percentage_of"
+          },
+          "sourceField": "principal"
+        }
+      ],
       "description": "Advance: the funder disburses principal to the recipient, repaid over 2 scheduled repayments plus the funder's discount",
       "fields": {
         "currency": {
@@ -214,7 +228,7 @@
         },
         "feeAmount": {
           "description": "2.5% of principal, the funder's discount repaid on top of the advance",
-          "pattern": "^[1-9][0-9]{0,17}$",
+          "pattern": "^(0|[1-9][0-9]{0,17})$",
           "type": "string",
           "x-hyperscale-currency": "SAR"
         },
@@ -258,13 +272,13 @@
           "x-hyperscale-currency": "SAR"
         },
         "repayment1Amount": {
-          "description": "Repayment 1 of 2 (carries the integer-division remainder): about 33.34% of repayableAmount, collected on its own stored-date anchor",
+          "description": "Stored total for repayment 1",
           "pattern": "^[1-9][0-9]{0,17}$",
           "type": "string",
           "x-hyperscale-currency": "SAR"
         },
         "repayment2Amount": {
-          "description": "Repayment 2 of 2: about 33.33% of repayableAmount, collected on its own stored-date anchor",
+          "description": "Stored total for repayment 2",
           "pattern": "^[1-9][0-9]{0,17}$",
           "type": "string",
           "x-hyperscale-currency": "SAR"
@@ -325,7 +339,6 @@
         "funderAccountId",
         "recipientAccountId",
         "principal",
-        "feeAmount",
         "repayableAmount",
         "firstDueAt",
         "repayment1Amount",
@@ -333,6 +346,16 @@
         "currency"
       ],
       "summary": "Advance to recipient repaid over 2 anchors",
+      "templateBinding": {
+        "id": "advance",
+        "parameters": {
+          "against": false,
+          "count": 2,
+          "dated": false,
+          "profitTo": false,
+          "repaymentSource": false
+        }
+      },
       "title": "Advance payment"
     }
   ],

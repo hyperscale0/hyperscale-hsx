@@ -22,8 +22,8 @@
     "Programming Languages"
   ],
   "scripts": {
-    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "package": "vsce package --no-dependencies",
+    "build": "bun run --cwd ../.. docs:build && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "package": "bun run build && vsce package --no-dependencies",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

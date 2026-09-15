@@ -54,11 +54,11 @@ describe("cost pricing kernel parity", () => {
 
   it("produces identical action pricing between HSX and UDL entrypoints on equivalent lowered input", () => {
     const { program, document } = prepare();
-    const hsxResult = buildCostManifest(program, testCostTable, false);
+    const hsxResult = buildCostManifest(program, testCostTable);
     expect(hsxResult.ok).toBe(true);
     if (!hsxResult.ok) throw new Error("HSX pricing failed");
 
-    const udlResult = buildUdlCostManifest(document, testCostTable, false);
+    const udlResult = buildUdlCostManifest(document, testCostTable);
 
     expect(hsxResult.manifest.actions).toEqual(udlResult.actions);
     expect(hsxResult.manifest.actions.length).toBeGreaterThan(0);
@@ -90,11 +90,11 @@ describe("cost pricing kernel parity", () => {
     };
 
     const { program, document } = prepare();
-    const hsxResult = buildCostManifest(program, multiRowTable, false);
+    const hsxResult = buildCostManifest(program, multiRowTable);
     expect(hsxResult.ok).toBe(true);
     if (!hsxResult.ok) throw new Error("HSX pricing failed");
 
-    const udlResult = buildUdlCostManifest(document, multiRowTable, false);
+    const udlResult = buildUdlCostManifest(document, multiRowTable);
 
     expect(hsxResult.manifest.actions).toEqual(udlResult.actions);
     const payAction = hsxResult.manifest.actions.find(
@@ -116,7 +116,7 @@ describe("cost pricing kernel parity", () => {
     };
 
     const { program, document } = prepare();
-    const hsxResult = buildCostManifest(program, missingTable, false);
+    const hsxResult = buildCostManifest(program, missingTable);
     expect(hsxResult.ok).toBe(false);
     if (hsxResult.ok) throw new Error("expected HSX pricing failure");
 
@@ -128,7 +128,7 @@ describe("cost pricing kernel parity", () => {
       }),
     );
 
-    expect(() => buildUdlCostManifest(document, missingTable, false)).toThrow(
+    expect(() => buildUdlCostManifest(document, missingTable)).toThrow(
       "invoice.pay has unpriced effect signature notifies.email",
     );
   });
@@ -151,7 +151,7 @@ describe("cost pricing kernel parity", () => {
     };
 
     const { program, document } = prepare();
-    const hsxResult = buildCostManifest(program, invalidBpsTable, false);
+    const hsxResult = buildCostManifest(program, invalidBpsTable);
     expect(hsxResult.ok).toBe(false);
     if (hsxResult.ok) throw new Error("expected HSX pricing failure");
 
@@ -163,9 +163,9 @@ describe("cost pricing kernel parity", () => {
       }),
     );
 
-    expect(() =>
-      buildUdlCostManifest(document, invalidBpsTable, false),
-    ).toThrow("cost table invalid-bps has an invalid notifies.email price");
+    expect(() => buildUdlCostManifest(document, invalidBpsTable)).toThrow(
+      "cost table invalid-bps has an invalid notifies.email price",
+    );
   });
 
   it("prices each program in the table that matches its ledger currency", () => {
@@ -180,12 +180,12 @@ describe("cost pricing kernel parity", () => {
         SOURCE.replace("money<SAR>", `money<${curr}>`),
       );
 
-      const hsxResult = buildCostManifest(program, tables, false);
+      const hsxResult = buildCostManifest(program, tables);
       expect(hsxResult.ok).toBe(true);
       if (!hsxResult.ok) throw new Error(`HSX pricing failed for ${curr}`);
       expect(hsxResult.manifest.currency).toBe(curr);
 
-      const udlResult = buildUdlCostManifest(document, currencyTable, false);
+      const udlResult = buildUdlCostManifest(document, currencyTable);
       expect(udlResult.currency).toBe(curr);
       expect(hsxResult.manifest.actions).toEqual(udlResult.actions);
     }
@@ -193,7 +193,7 @@ describe("cost pricing kernel parity", () => {
 
   it("refuses a program whose ledger currency no table prices", () => {
     const { program } = prepare(SOURCE.replace("money<SAR>", "money<JPY>"));
-    const result = buildCostManifest(program, testCostTable, false);
+    const result = buildCostManifest(program, testCostTable);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected HSX pricing failure");
     expect(result.diagnostics).toContainEqual(
@@ -213,7 +213,7 @@ describe("cost pricing kernel parity", () => {
         "fields { amount: money<SAR>; fee: money<USD>; }",
       ),
     );
-    const result = buildCostManifest(program, testCostTable, false);
+    const result = buildCostManifest(program, testCostTable);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected HSX pricing failure");
     expect(result.diagnostics).toContainEqual(
@@ -270,7 +270,7 @@ describe("cost pricing kernel parity", () => {
     };
 
     const { program, document } = prepare();
-    const hsxResult = buildCostManifest(program, invalidCurrencyTable, false);
+    const hsxResult = buildCostManifest(program, invalidCurrencyTable);
     expect(hsxResult.ok).toBe(false);
     if (hsxResult.ok) throw new Error("expected HSX pricing failure");
 
@@ -282,9 +282,7 @@ describe("cost pricing kernel parity", () => {
       }),
     );
 
-    expect(() =>
-      buildUdlCostManifest(document, invalidCurrencyTable, false),
-    ).toThrow(
+    expect(() => buildUdlCostManifest(document, invalidCurrencyTable)).toThrow(
       "cost table invalid-currency has invalid billing currency INVALID",
     );
   });
@@ -446,7 +444,6 @@ it("prices expanded calls once per leaf in both language entrypoints", () => {
   const udl = buildUdlCostManifest(
     JSON.parse(serializeUdl(result.artifacts.document)) as UdlDocument,
     table,
-    false,
   );
   const pay = hsx.actions.find((action) => action.action === "pay")!;
   expect({

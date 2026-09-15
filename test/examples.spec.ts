@@ -213,8 +213,6 @@ settlement claim_payout = conditional_disbursement {
   cap: maxPayout: money(SAR)
   amount: approvedSum: money(SAR)
   decision: port review_claim
-  reopen_policy: refuse
-  recovery_policy: separate_transfer
 }
 
 port review_claim {

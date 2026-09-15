@@ -1,4 +1,4 @@
-// Imports, archetypes, and the decision port.
+// Imports, modules, and the decision port.
 //
 // A photo-booth rental company. The renter pays up front, but the money sits
 // in escrow until the booth is delivered. The company's own backend answers

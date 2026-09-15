@@ -21,10 +21,6 @@ module std.money_flows.captured_payment
 // - `reserve_until`: Expiration date for the authorization hold.
 // - `correction`: Condition port allowing post-settlement amount corrections.
 // - `external_reversal`: Condition port allowing external processor chargebacks/reversals.
-// - `capture_mode`: Text specifying capture behavior (`"slice"` or `"full"`).
-// - `correction_mode`: Text specifying correction behavior.
-// - `negative_position`: Text policy when correction creates an overdraft.
-// - `timeout`: Timeout duration string for pending authorizations.
 // - `derived_amount`: Optional block declaring percentage fee calculation.
 //
 // ### Decision ports
@@ -44,10 +40,6 @@ module std.money_flows.captured_payment
 //   reserve_until: reserveUntil
 //   correction: port correct_capture
 //   external_reversal: port reverse_capture within P14D
-//   capture_mode: partial_then_full
-//   correction_mode: full_only
-//   negative_position: reject
-//   timeout: reject
 // }
 // port correct_capture { allowed: [payee] }
 // port reverse_capture {
@@ -55,7 +47,7 @@ module std.money_flows.captured_payment
 //   shape: { externalReference: text }
 // }
 // ```
-export instrument captured_payment<C>(payer: party, payee: party, amount: money<C>, reserve_until: date, correction: condition, external_reversal: condition, capture_mode: text, correction_mode: text, negative_position: text, timeout: text, derived_amount: optional<block>) {
+export instrument captured_payment<C>(payer: party, payee: party, amount: money<C>, reserve_until: date, correction: condition, external_reversal: condition, derived_amount: optional<block>) {
   let(correction_name): correction;
   let(reversal_name): external_reversal;
   let(reversal_window): external_reversal_within;

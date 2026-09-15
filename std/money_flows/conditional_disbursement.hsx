@@ -20,8 +20,6 @@ module std.money_flows.conditional_disbursement
 // - `cap`: Maximum total amount that can be disbursed across all child approvals in minor units of currency `C`.
 // - `amount`: Binding name for child approval amount values.
 // - `decision`: Port conditioning approval, requiring evidence reference.
-// - `reopen_policy`: Policy for reopening closed disbursements (`refuse`).
-// - `recovery_policy`: Policy for recovering overpayments (`separate_transfer`).
 //
 // ### Decision ports
 // - `decision`: External port providing decision evidence required to approve child disbursement amounts.
@@ -38,8 +36,6 @@ module std.money_flows.conditional_disbursement
 //   cap: policyLimit: money(SAR)
 //   amount: approvedAmount: money(SAR)
 //   decision: port approve_claim
-//   reopen_policy: refuse
-//   recovery_policy: separate_transfer
 // }
 // port approve_claim {
 //   allowed: [source]
@@ -52,8 +48,6 @@ export instrument conditional_disbursement<C>(
   cap: money<C>,
   amount: money<C>,
   decision: condition,
-  reopen_policy: text,
-  recovery_policy: text,
 ) {
   let(child_id): concat(instrument, "_approved_amount");
   let(child_amount): "amount";

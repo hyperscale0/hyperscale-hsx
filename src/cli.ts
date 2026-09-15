@@ -10,6 +10,7 @@
  * asserting on a subprocess's scrollback.
  */
 
+import { parseUdl, type UdlDocument } from "@hyperscale0/udl";
 import { fileURLToPath } from "node:url";
 import { compile, type CompileResult } from "./compile.ts";
 import type { UdlCostManifest, UdlCostTables } from "./cost.ts";
@@ -39,9 +40,9 @@ const USAGE = 2;
 export const USAGE_TEXT = `hsx ${HSX_VERSION}, the HSX compiler
 
 Usage:
-  hsx check <file.hsx> [--strict]
-  hsx build <file.hsx> [--out <file.json>] [--strict]
-  hsx cost <file.hsx> [--json] [--out <file.json>] [--strict]
+  hsx check <file.hsx> [--catalog <catalog.udl>] [--strict]
+  hsx build <file.hsx> [--catalog <catalog.udl>] [--out <file.json>] [--strict]
+  hsx cost <file.hsx> [--catalog <catalog.udl>] [--json] [--out <file.json>] [--strict]
   hsx explain <HSX####>
   hsx format <file.hsx>
   hsx lsp
@@ -57,6 +58,7 @@ Commands:
   lsp     Run the language server over stdin and stdout.
 
 Options:
+  --catalog <file>  Read the published instrument catalogue as canonical UDL JSON.
   --json        Print the cost manifest as JSON instead of a table.
   --out <file>  Write build or cost JSON to this path instead of stdout.
   --strict      Treat warning-severity diagnostics as failures.
@@ -134,7 +136,21 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     io.err(`hsx: cannot read the packaged cost table: ${messageOf(cause)}`);
     return USAGE;
   }
-  const result = compile(source, { costTable });
+  let publishedCatalog: UdlDocument | undefined;
+  if (parsed.catalog !== undefined) {
+    try {
+      publishedCatalog = parseUdl(await io.readFile(parsed.catalog));
+    } catch (cause) {
+      io.err(
+        `hsx: cannot read catalogue ${parsed.catalog}: ${messageOf(cause)}`,
+      );
+      return USAGE;
+    }
+  }
+  const result = compile(source, {
+    costTable,
+    ...(publishedCatalog === undefined ? {} : { publishedCatalog }),
+  });
   for (const line of diagnosticLines(parsed.file, result)) io.err(line);
 
   const refused =
@@ -174,6 +190,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
 }
 
 interface Options {
+  readonly catalog?: string;
   readonly file: string;
   readonly json: boolean;
   readonly out?: string;
@@ -185,6 +202,7 @@ function parseOptions(
   command: "build" | "check" | "cost" | "format",
 ): Options | { readonly error: string } {
   let file: string | undefined;
+  let catalog: string | undefined;
   let json = false;
   let out: string | undefined;
   let strict = false;
@@ -201,6 +219,18 @@ function parseOptions(
     if (argument === "--json") {
       if (command !== "cost") return { error: "--json belongs to hsx cost" };
       json = true;
+      continue;
+    }
+    if (argument === "--catalog") {
+      if (command === "format")
+        return { error: "--catalog belongs to check, build or cost" };
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("--"))
+        return { error: "--catalog needs a file path" };
+      if (catalog !== undefined)
+        return { error: "--catalog may be supplied only once" };
+      catalog = value;
+      index += 1;
       continue;
     }
     if (argument === "--out") {
@@ -225,7 +255,13 @@ function parseOptions(
   }
 
   if (file === undefined) return { error: `hsx ${command} needs a file` };
-  return { file, json, ...(out === undefined ? {} : { out }), strict };
+  return {
+    file,
+    json,
+    ...(catalog === undefined ? {} : { catalog }),
+    ...(out === undefined ? {} : { out }),
+    strict,
+  };
 }
 
 function explainDiagnostic(args: readonly string[], io: Io): number {

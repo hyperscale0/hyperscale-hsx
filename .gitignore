@@ -1,0 +1,8 @@
+/src/std-bundle.ts
+/playground/examples.ts
+/docs/reference/
+/docs/llms*.txt
+/editors/vscode/syntaxes/hsx.tmLanguage.json
+/editors/vscode/snippets/hsx.json
+node_modules/
+dist/
