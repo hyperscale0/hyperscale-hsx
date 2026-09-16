@@ -9,6 +9,22 @@ independently of the package version.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-17
+
+Pairs with UDL 2.5.0.
+
+### Added
+
+- `allow_zero: true` on a `money<C>` field admits a zero amount; the default still refuses zero. `allow_zero` on any other type is HSX1105. Decision port shapes set it on their money fields.
+
+### Changed
+
+- `date` fields admit any RFC 3339 offset, such as `+03:00`; the host stores the UTC instant. Values already in `Z` pass through unchanged.
+
+### Docs
+
+- The instruments guide gains "Money fields" and "Date fields" sections covering both rules.
+
 ## [2.2.1] - 2026-09-16
 
 Pairs with UDL 2.4.0.
