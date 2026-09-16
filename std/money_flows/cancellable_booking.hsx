@@ -182,11 +182,11 @@ export instrument cancellable_booking<C>(
       confirmationDeadline { type: date; const: shift_date(departure, confirmation_window); }
       price { type: money<C>; const: price_value; }
       supplierCost { type: money<C>; const: supplier_cost; }
-      depositAmount { type: money<C>; optional: true; }
+      depositAmount { type: money<C>; optional: true; allow_zero: true; }
       balanceAmount: money<C>;
       margin: money<C>;
       operatorNet: money<C>;
-      marginVat { type: money<C>; optional: true; }
+      marginVat { type: money<C>; optional: true; allow_zero: true; }
       for i in len(cancel_bands) {
         let(band): at(cancel_bands, i);
       let(refund_mode): get(band, "refund");
@@ -197,7 +197,7 @@ export instrument cancellable_booking<C>(
         when(later) { band[i]Start { type: date; const: get(band, "starts_at"); } }
 
         when(retains) {
-          band[i]Supplier { type: money<C>; optional: true; }
+          band[i]Supplier { type: money<C>; optional: true; allow_zero: true; }
           let(portions): if_eq(refund_mode, "balance", ["deposit"], ["deposit", "full"]);
           for paid in portions {
           let(is_full): if_eq(paid, "full", true, false);
@@ -207,7 +207,7 @@ export instrument cancellable_booking<C>(
             let(vat_field): concat("band", i, title(portion), "Vat");
             [margin_field]: money<C>;
             [net_field]: money<C>;
-            [vat_field] { type: money<C>; optional: true; }
+            [vat_field] { type: money<C>; optional: true; allow_zero: true; }
           }
         }
       }

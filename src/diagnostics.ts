@@ -295,6 +295,13 @@ port pass_inspection { allowed: [seller] shape { invalidField: mystery_type } }`
     example: instrument("summary: money(SAR, 2500);"),
   },
   {
+    code: "HSX1105",
+    stage: "typecheck",
+    title: "allow_zero needs a money field",
+    fix: "Put allow_zero: true on a money field, or remove it; amounts are strictly positive unless a money field opts in.",
+    example: instrument("", "memo { type: text; allow_zero: true; }"),
+  },
+  {
     code: "HSX1110",
     stage: "typecheck",
     title: "Unsupported parameter combination",

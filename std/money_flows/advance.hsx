@@ -154,7 +154,7 @@ export instrument advance<C>(
       }
       fee_amount {
         type: money<C>;
-        when(fee) { optional: true; }
+        when(fee) { optional: true; allow_zero: true; }
         description: concat(fee, " of ", amount, ", the funder's discount repaid on top of the advance");
       }
       repayable_amount {

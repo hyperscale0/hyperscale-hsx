@@ -2014,7 +2014,14 @@ port pass_inspection { allowed: [seller] shape { ${types} damageAmount: text; } 
     for (const [name, property] of Object.entries(properties)) {
       if (name === "damageAmount") continue;
       const { description: _description, ...schema } = property;
-      expect(schema).toEqual(fields[name]!);
+      // A port money field may be decided as zero unless the amount is fixed;
+      // every other key matches the instrument field.
+      const field = fields[name]!;
+      expect(schema).toEqual(
+        field.pattern === "^[1-9][0-9]{0,17}$" && field.const === undefined
+          ? { ...field, pattern: "^(0|[1-9][0-9]{0,17})$" }
+          : field,
+      );
     }
     expect(input.required).toEqual(Object.keys(input.properties!));
     expect(properties.damageAmount).toMatchObject({ type: "string" });
@@ -3022,4 +3029,50 @@ it("retains fatal UDL codes when checking call boundaries in HSX", () => {
       severity: "error",
     }),
   );
+});
+
+describe("money fields and zero", () => {
+  const withFields = (fields: string) =>
+    compile(
+      BASE.replace("fields { amount: money<SAR>; }", `fields { ${fields} }`),
+    );
+  const patternOf = (fields: string, field: string) => {
+    const result = withFields(fields);
+    expect(result.verdict).toBe("valid");
+    const document = result.artifacts!.document as {
+      instruments: { fields: Record<string, { pattern?: string }> }[];
+    };
+    return document.instruments[0]!.fields[field]!.pattern;
+  };
+
+  it("keeps a required money field strictly positive", () => {
+    expect(patternOf("amount: money<SAR>;", "amount")).toBe(
+      "^[1-9][0-9]{0,17}$",
+    );
+  });
+
+  it("keeps an optional money field strictly positive", () => {
+    expect(
+      patternOf("amount { type: money<SAR>; optional: true; }", "amount"),
+    ).toBe("^[1-9][0-9]{0,17}$");
+  });
+
+  it("lowers allow_zero money to the non-negative pattern", () => {
+    expect(
+      patternOf("amount { type: money<SAR>; allow_zero: true; }", "amount"),
+    ).toBe("^(0|[1-9][0-9]{0,17})$");
+  });
+
+  it("refuses allow_zero on a non-money field with HSX1105", () => {
+    const result = withFields(
+      "amount: money<SAR>; memo { type: text; allow_zero: true; }",
+    );
+    expect(result.verdict).toBe("invalid");
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "HSX1105",
+        message: "field memo sets allow_zero but is text, not money",
+      }),
+    );
+  });
 });

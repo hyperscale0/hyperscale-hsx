@@ -52,7 +52,9 @@ const SNAKE_CASE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const CAMEL_CASE = /^[a-z][A-Za-z0-9]*$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const MONEY_PATTERN = "^[1-9][0-9]{0,17}$";
-const OPTIONAL_MONEY_PATTERN = "^(0|[1-9][0-9]{0,17})$";
+// Owner ruling 2026-09-16: amounts stay strictly positive unless the author
+// marks the money field with `allow_zero: true`; `optional` no longer implies zero.
+const ZERO_MONEY_PATTERN = "^(0|[1-9][0-9]{0,17})$";
 const ACCOUNT_PATTERN = "^acct_(sandbox|live)_[a-z0-9]{8,64}$";
 
 const NONE_SENTINEL = "__hsx_none__";
@@ -950,7 +952,7 @@ function publishedFieldType(
   if (schema.type !== "string") return { kind: "unknown" };
   if (
     schema.pattern === MONEY_PATTERN ||
-    schema.pattern === OPTIONAL_MONEY_PATTERN
+    schema.pattern === ZERO_MONEY_PATTERN
   ) {
     const currency = schema["x-hyperscale-currency"];
     return typeof currency === "string"
@@ -2093,7 +2095,7 @@ function lowerPortShapeField(
           ? { kind: "number", raw: String(value), span: row.span }
           : { kind: "string", value: String(value), span: row.span },
     }));
-  // Port inputs require every key, but a caller-decided amount may be zero.
+  // Port inputs require every key; a caller-decided amount may still be zero.
   const field = lowerField(
     {
       ...row,
@@ -2107,12 +2109,16 @@ function lowerPortShapeField(
             span: row.span,
             value: row.value,
           },
-          {
-            key: { kind: "ident", name: "optional", span: row.span },
-            qualifiers: [],
-            span: row.span,
-            value: { kind: "boolean", value: true, span: row.span },
-          },
+          ...(type.kind === "money"
+            ? [
+                {
+                  key: { kind: "ident", name: "allow_zero", span: row.span },
+                  qualifiers: [],
+                  span: row.span,
+                  value: { kind: "boolean", value: true, span: row.span },
+                } as const,
+              ]
+            : []),
           ...scalarEntries(extras),
         ],
       },
@@ -3743,6 +3749,7 @@ function lowerField(
   let description: string | undefined;
   let required = true;
   let extra: Record<string, JsonValue> = {};
+  let allowZero = false;
   if (row.value.kind === "block") {
     const typeRow = entry(row.value, "type");
     if (typeRow) typeExpr = typeRow.value;
@@ -3750,12 +3757,14 @@ function lowerField(
     if (desc?.value.kind === "string") description = desc.value.value;
     const optional = entry(row.value, "optional");
     if (optional?.value.kind === "boolean") required = !optional.value.value;
+    const zero = entry(row.value, "allow_zero");
+    if (zero?.value.kind === "boolean") allowZero = zero.value.value;
     extra = blockToObject(
       {
         ...row.value,
         entries: row.value.entries.filter(
           (item) =>
-            !["type", "description", "desc", "optional"].includes(
+            !["type", "description", "desc", "optional", "allow_zero"].includes(
               item.key.name,
             ),
         ),
@@ -3768,6 +3777,15 @@ function lowerField(
   // Diagnostics point at the field's own type expression, not at an alias
   // declaration that may live in an imported module.
   const declaredSpan = typeExpr.span;
+  if (allowZero && type.kind !== "money") {
+    diagnostics.push({
+      code: "HSX1105",
+      fix: `declare ${name} as money(CUR) or remove allow_zero`,
+      message: `field ${name} sets allow_zero but is ${typeWords(type)}, not money`,
+      severity: "error",
+      span: declaredSpan,
+    });
+  }
   const seen = new Set<string>();
   while (
     typeExpr.kind === "ident" &&
@@ -3822,7 +3840,7 @@ function lowerField(
       ? "object"
       : undefined;
   const schema = {
-    ...schemaFor(type, required),
+    ...schemaFor(type, allowZero),
     ...extra,
     ...(structuralType ? { type: structuralType } : {}),
     ...(description ? { description } : {}),
@@ -5165,14 +5183,14 @@ function typeOf(
 
 function schemaFor(
   type: HsxType,
-  required: boolean,
+  allowZero: boolean,
 ): Record<string, JsonValue> {
   switch (type.kind) {
     case "money":
       return {
         ...(type.fixedAmount
           ? { const: type.fixedAmount, pattern: MONEY_PATTERN }
-          : { pattern: required ? MONEY_PATTERN : OPTIONAL_MONEY_PATTERN }),
+          : { pattern: allowZero ? ZERO_MONEY_PATTERN : MONEY_PATTERN }),
         type: "string",
         ...(type.currency && CURRENCY.test(type.currency)
           ? { "x-hyperscale-currency": type.currency }

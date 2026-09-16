@@ -213,14 +213,17 @@ function typesMarkdown(): string {
   const rows = HSX_TYPE_KINDS.map(
     (kind) => `| \`${kind}\` | ${typeNotes[kind]} |`,
   ).join("\n");
-  const accountFields = readFileSync(
+  const guide = readFileSync(
     join(packageRoot, "docs/guide/03-instruments.md"),
     "utf8",
-  )
-    .split("## Account fields\n")[1]!
-    .split("\n## ")[0]!
-    .trim();
-  return `${generatedHeader}# Types\n\nHSX checks types before it emits UDL. Money and account values carry a currency parameter, and no implicit currency conversion exists.\n\n| Kind | Meaning |\n| --- | --- |\n${rows}\n\n## Account fields\n\n${accountFields}\n`;
+  );
+  const sections = ["Account fields", "Money fields", "Date fields"]
+    .map((heading) => {
+      const body = guide.split(`## ${heading}\n`)[1]!.split("\n## ")[0]!.trim();
+      return `## ${heading}\n\n${body}`;
+    })
+    .join("\n\n");
+  return `${generatedHeader}# Types\n\nHSX checks types before it emits UDL. Money and account values carry a currency parameter, and no implicit currency conversion exists.\n\n| Kind | Meaning |\n| --- | --- |\n${rows}\n\n${sections}\n`;
 }
 
 function stdMarkdown(module: ModuleReference): string {
