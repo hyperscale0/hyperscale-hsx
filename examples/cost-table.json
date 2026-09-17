@@ -21,7 +21,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "4273afec16c56ae97282eda8a0a349b006b0e7f41a49d4dbebda3172e449cb58",
+    "effectiveTableDigest": "9b5320cba0645fdc2e736873e47aeff7740211869698ab3d12fcd3c51e153b17",
     "fixed": {
       "activationBaseMinor": "500000",
       "activationPerPointMinor": "100000",
@@ -71,6 +71,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.banking_or_card_issuing"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.cascade_transition"
       },
       {
         "bps": 0,
@@ -439,7 +447,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "88c0a5ae2f12de977d156a04a32cdecbad107076bc74a1b8398239c590f3eb0a",
+    "effectiveTableDigest": "e75a41ea689c621d41fa563963b2a8822ea54aff9ce756eb2f60aa0dc420dca2",
     "fixed": {
       "activationBaseMinor": "133300",
       "activationPerPointMinor": "26700",
@@ -489,6 +497,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.banking_or_card_issuing"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.cascade_transition"
       },
       {
         "bps": 0,
@@ -857,7 +873,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "004d1a8156aac9cd7cb789f36f6abef508ea304327703ba12844b65b66f03ab2",
+    "effectiveTableDigest": "905ffe63c1d5e9af686e0be18cd156af159f79c4cc16ad74db8880b6126cb1cf",
     "fixed": {
       "activationBaseMinor": "125000",
       "activationPerPointMinor": "25000",
@@ -907,6 +923,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.banking_or_card_issuing"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.cascade_transition"
       },
       {
         "bps": 0,
@@ -1275,7 +1299,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "72155c0ce9eb3157f87b7f613bb3f05b3ab50a91248c9260e1b2ceae6b199286",
+    "effectiveTableDigest": "8b549d4054638116b4a42156cdcf8bf01f3fa50b6891ef0f4718d7922ae0ccf0",
     "fixed": {
       "activationBaseMinor": "104200",
       "activationPerPointMinor": "20800",
@@ -1325,6 +1349,14 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "decides.banking_or_card_issuing"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "decides.cascade_transition"
       },
       {
         "bps": 0,

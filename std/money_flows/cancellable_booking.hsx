@@ -53,6 +53,7 @@ module std.money_flows.cancellable_booking
 // the deposit. balance_before and confirmation_window are positive fixed durations
 // relative to departure. tax_bps applies to margin after the supplier share.
 // authority_type and supplier_role bind release to a consumed confirmation decision.
+// collects optionally cascades named actions to linked instruments on deposit.
 // acceptance optionally supplies an aggregate gate. All actions are private until
 // expose selects them. Ordered band starts and deadlines prevent a late sweep from
 // extending an earlier band's cancellation rights. Full timeout refund returns price.
@@ -74,7 +75,7 @@ export instrument cancellable_booking<C>(
   balance_before: optional<text>, confirmation_window: optional<text>, unpaid_band: optional<integer>,
   acceptance: optional<block>, deposit_bps: optional<integer>, tax_bps: optional<integer>,
   authority_type: optional<text>, supplier_role: optional<text>,
-
+  collects: optional<json>,
 ) {
   when_not(cancel_bands) {
   let(guest_account_field): camel(concat(guest, "_account_id"));
@@ -312,6 +313,7 @@ export instrument cancellable_booking<C>(
     action deposit {
       public: none;
       agent_description: "Collect the derived deposit after the acceptance requirements pass.";
+      when(collects) { cascade: collects; }
       when(acceptance) { requires aggregate: acceptance; }
       deadline: { field: balanceDueAt; }; port: { allowedParties: [payer]; };
       moves: { key: deposit; operation: "internal_transfer.create"; bind: { amount: { from: instance; path: concat("fields.", "depositAmount"); }; currency: { from: instance; path: fields.currency; }; productId: { from: instance; path: productId; }; sourceAccountId: { from: instance; path: "fields.customerAccountId"; }; destinationAccountId: { from: instance; path: "refs.heldAccountId"; }; }; };

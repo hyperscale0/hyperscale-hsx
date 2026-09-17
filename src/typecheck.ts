@@ -2551,7 +2551,7 @@ function argumentMatches(
       );
     case "unknown":
       if (expected.kind !== "ident") return false;
-      if (expected.name === "unknown") return true;
+      if (expected.name === "unknown" || expected.name === "json") return true;
       return (
         expected.name === "block" &&
         (actual.kind === "block" || actual.kind === "decided_amount")
@@ -4352,7 +4352,9 @@ function bindFieldReferences(
       (path.includes("requiresExposure") && key === "capField") ||
       (path.includes("reconcile") &&
         path.includes("exception") &&
-        ["amountField", "reasonField", "refField"].includes(key ?? ""))
+        ["amountField", "reasonField", "refField"].includes(key ?? "")) ||
+      (path.includes("cascade") &&
+        ["inputField", "refField"].includes(key ?? ""))
     );
   };
   const visit = (value: JsonValue, path: readonly string[] = []): void => {

@@ -5,7 +5,7 @@
     "": {
       "name": "@hyperscale0/hsx",
       "dependencies": {
-        "@hyperscale0/udl": "2.5.0",
+        "@hyperscale0/udl": "2.6.0",
       },
       "devDependencies": {
         "bun-types": "1.4.2",
@@ -16,7 +16,7 @@
   "packages": {
     "@cfworker/json-schema": ["@cfworker/json-schema@4.1.1", "", {}, "sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og=="],
 
-    "@hyperscale0/udl": ["@hyperscale0/udl@2.5.0", "", { "dependencies": { "@cfworker/json-schema": "4.1.1", "zod": "4.5.4" }, "bin": { "udl": "./dist/cli.js" } }],
+    "@hyperscale0/udl": ["@hyperscale0/udl@2.6.0", "", { "dependencies": { "@cfworker/json-schema": "4.1.1", "zod": "4.5.4" }, "bin": { "udl": "./dist/cli.js" } }],
 
     "@types/node": ["@types/node@22.20.3", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-DZmzkmwHzXrLPAXPyKNDzlIwMMUZCVacoD25ywdy5YTKGbOx/2ld+Q38Im2zJ0vBuZP5Prd3VZutKZyXwkOS8A=="],
 

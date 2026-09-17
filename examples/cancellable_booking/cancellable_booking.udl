@@ -389,6 +389,7 @@
           "authorityType": false,
           "balanceBefore": false,
           "cancelBands": false,
+          "collects": false,
           "confirmationWindow": false,
           "departure": false,
           "depositBps": false,

@@ -7,7 +7,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The IR format version (`"hsx": 1`, stamped into every compiled document) moves
 independently of the package version.
 
-## [Unreleased]
+## [2.4.0] - 2026-09-17
+
+Pairs with UDL 2.6.0.
+
+### Added
+
+- `collects` parameter on `cancellable_booking` to cascade named actions to linked instruments on deposit.
 
 ## [2.3.0] - 2026-09-17
 
