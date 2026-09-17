@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { headerManifest } from "./headers.ts";
+import { HSX_VERSION } from "./version.ts";
 import { compile } from "./compile.ts";
 import { format } from "./format.ts";
 import { serializeUdl } from "@hyperscale0/udl";
@@ -37,7 +38,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return 0;
   }
   if (command === "--version") {
-    io.out("3.0.0 (UDL 3)");
+    io.out(`${HSX_VERSION} (UDL 3)`);
     return 0;
   }
   if (
