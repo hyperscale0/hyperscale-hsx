@@ -71,7 +71,7 @@
     "check": "bun run generate && bun run typecheck && bun run build && tsc -p playground/tsconfig.json && bun scripts/build-playground.ts && bun test test"
   },
   "dependencies": {
-    "@hyperscale0/udl": "3.0.1"
+    "@hyperscale0/udl": "3.0.2"
   },
   "devDependencies": {
     "bun-types": "1.4.2",
