@@ -284,6 +284,30 @@ export function checkGeneralProgram(
     } else templates.set(decl.name.name, decl);
   }
 
+  const prefixByInstrument = new Map<string, string>();
+  if (options.publishedCatalog) {
+    for (const inst of options.publishedCatalog.instruments) {
+      if (inst.idPrefix) {
+        prefixByInstrument.set(inst.id, inst.idPrefix);
+      }
+    }
+  }
+  for (const [name, decl] of templates) {
+    const prefix =
+      stringSlot(decl.body, "idPrefix", "id_prefix") ?? prefixFor(name);
+    prefixByInstrument.set(name, prefix);
+  }
+  for (const decl of program.decls) {
+    if (decl.kind === "instrument_apply" && decl.metadata) {
+      const prefix = stringSlot(decl.metadata, "idPrefix", "id_prefix");
+      if (prefix) {
+        prefixByInstrument.set(decl.name.name, prefix);
+      }
+    }
+  }
+  const resolvePrefix = (target: string): string | undefined =>
+    prefixByInstrument.get(target);
+
   const concrete: ConcreteInstrument[] = [];
   const reachedPorts = new Set<PortDecl>();
   const droppedPorts = new Set<PortDecl>();
@@ -291,10 +315,10 @@ export function checkGeneralProgram(
     declarationScope: readonly ApplicationScopeDecl[],
   ) => {
     const scopedAliases = new Map(aliases);
-    const scopedConstants = resolveConstants([
-      ...program.decls,
-      ...declarationScope,
-    ]);
+    const scopedConstants = resolveConstants(
+      [...program.decls, ...declarationScope],
+      resolvePrefix,
+    );
     const scopedParties = new Set(parties);
     const scopedPorts = new Map(ports);
     const scopedTemplates = new Map(templates);
@@ -305,6 +329,10 @@ export function checkGeneralProgram(
       if (local.kind === "port") scopedPorts.set(local.name.name, local);
       if (local.kind === "instrument") {
         scopedTemplates.set(local.name.name, local);
+        const prefix =
+          stringSlot(local.body, "idPrefix", "id_prefix") ??
+          prefixFor(local.name.name);
+        prefixByInstrument.set(local.name.name, prefix);
       }
     }
     checkPortDeclarations(scopedPorts, scopedParties);
@@ -350,24 +378,37 @@ export function checkGeneralProgram(
         values,
         diagnostics,
         dependencies,
+        [],
+        resolvePrefix,
       );
       const body = expandComprehensions(
         selected,
         diagnostics,
         values,
         dependencies,
+        resolvePrefix,
       );
+      const constructed = constructedInstruments(
+        decl.name,
+        body,
+        diagnostics,
+        resolvePrefix,
+      );
+      for (const candidate of constructed) {
+        const prefix =
+          stringSlot(candidate.body, "idPrefix", "id_prefix") ??
+          prefixFor(candidate.name.name);
+        prefixByInstrument.set(candidate.name.name, prefix);
+      }
       concrete.push(
-        ...bindActionPorts(
-          constructedInstruments(decl.name, body, diagnostics),
-          scoped.ports,
-          reachedPorts,
-        ).map((candidate) => ({
-          ...candidate,
-          aliases: scoped.aliases,
-          callee: candidate.name.name,
-          parties: scoped.parties,
-        })),
+        ...bindActionPorts(constructed, scoped.ports, reachedPorts).map(
+          (candidate) => ({
+            ...candidate,
+            aliases: scoped.aliases,
+            callee: candidate.name.name,
+            parties: scoped.parties,
+          }),
+        ),
       );
     }
     if (decl.kind !== "instrument_apply") continue;
@@ -402,32 +443,43 @@ export function checkGeneralProgram(
       scoped.aliases,
       scoped.constants,
       boundPorts,
+      resolvePrefix,
     );
     if (body) {
       const applicationPorts = new Set<PortDecl>();
       const merged = decl.metadata
         ? mergeApplicationMetadata(body, decl.metadata, diagnostics)
         : body;
+      const constructed = constructedInstruments(
+        decl.name,
+        merged,
+        diagnostics,
+        resolvePrefix,
+      );
+      for (const candidate of constructed) {
+        const prefix =
+          stringSlot(candidate.body, "idPrefix", "id_prefix") ??
+          prefixFor(candidate.name.name);
+        prefixByInstrument.set(candidate.name.name, prefix);
+      }
       concrete.push(
-        ...bindActionPorts(
-          constructedInstruments(decl.name, merged, diagnostics),
-          boundPorts,
-          applicationPorts,
-        ).map((candidate) => {
-          let candidateCallee = callee;
-          if (
-            candidate.name.name !== decl.name.name &&
-            candidate.name.name.startsWith(`${decl.name.name}_`)
-          ) {
-            candidateCallee = `${callee}${candidate.name.name.slice(decl.name.name.length)}`;
-          }
-          return {
-            ...candidate,
-            aliases: scoped.aliases,
-            callee: candidateCallee,
-            parties: scoped.parties,
-          };
-        }),
+        ...bindActionPorts(constructed, boundPorts, applicationPorts).map(
+          (candidate) => {
+            let candidateCallee = callee;
+            if (
+              candidate.name.name !== decl.name.name &&
+              candidate.name.name.startsWith(`${decl.name.name}_`)
+            ) {
+              candidateCallee = `${callee}${candidate.name.name.slice(decl.name.name.length)}`;
+            }
+            return {
+              ...candidate,
+              aliases: scoped.aliases,
+              callee: candidateCallee,
+              parties: scoped.parties,
+            };
+          },
+        ),
       );
       for (const port of boundPorts.values()) {
         if (applicationPorts.has(port)) reachedPorts.add(port);
@@ -457,27 +509,12 @@ export function checkGeneralProgram(
     );
   }
 
-  const prefixByInstrument = new Map<string, string>();
-  if (options.publishedCatalog) {
-    for (const inst of options.publishedCatalog.instruments) {
-      if (inst.idPrefix) {
-        prefixByInstrument.set(inst.id, inst.idPrefix);
-      }
-    }
-  }
-  for (const [name, decl] of templates) {
-    const prefix =
-      stringSlot(decl.body, "idPrefix", "id_prefix") ?? prefixFor(name);
-    prefixByInstrument.set(name, prefix);
-  }
   for (const candidate of allocated) {
     const prefix =
       stringSlot(candidate.body, "idPrefix", "id_prefix") ??
       prefixFor(candidate.name.name);
     prefixByInstrument.set(candidate.name.name, prefix);
   }
-  const resolvePrefix = (target: string): string | undefined =>
-    prefixByInstrument.get(target);
 
   const instruments: TypedInstrument[] = [];
   const ids = new Set<string>();
@@ -501,7 +538,13 @@ export function checkGeneralProgram(
       );
       continue;
     }
-    const expandedBody = expandComprehensions(candidate.body, diagnostics);
+    const expandedBody = expandComprehensions(
+      candidate.body,
+      diagnostics,
+      new Map(),
+      new Map(),
+      resolvePrefix,
+    );
     const checked = checkInstrument(
       candidate.name,
       expandedBody,
@@ -1323,12 +1366,19 @@ function constructedInstruments(
   rootName: IdentExpr,
   body: BlockExpr,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): {
   readonly body: BlockExpr;
   readonly generatedPrefix: boolean;
   readonly name: IdentExpr;
 }[] {
-  const expanded = expandComprehensions(body, diagnostics);
+  const expanded = expandComprehensions(
+    body,
+    diagnostics,
+    new Map(),
+    new Map(),
+    resolvePrefix,
+  );
   const construction = entry(expanded, "instruments");
   const root = {
     body: {
@@ -1498,7 +1548,10 @@ function checkConstants(
   }
 }
 
-function resolveConstants(decls: readonly Decl[]): ReadonlyMap<string, Expr> {
+function resolveConstants(
+  decls: readonly Decl[],
+  resolvePrefix?: (target: string) => string | undefined,
+): ReadonlyMap<string, Expr> {
   const constants = new Map(
     decls
       .filter((decl): decl is ConstDecl => decl.kind === "const")
@@ -1506,7 +1559,7 @@ function resolveConstants(decls: readonly Decl[]): ReadonlyMap<string, Expr> {
   );
   for (let pass = 0; pass < constants.size; pass += 1) {
     for (const [name, value] of constants) {
-      constants.set(name, substituteExpr(value, constants));
+      constants.set(name, substituteExpr(value, constants, resolvePrefix));
     }
   }
   return constants;
@@ -1539,6 +1592,7 @@ function instantiate(
   aliases: ReadonlyMap<string, Expr>,
   constants: ReadonlyMap<string, Expr>,
   boundPorts: Map<string, PortDecl>,
+  resolvePrefix?: (target: string) => string | undefined,
 ): BlockExpr | undefined {
   const loweredPortShapes = new Map<string, BlockExpr>();
   const portDependencies = new Map<string, readonly string[]>();
@@ -1647,6 +1701,7 @@ function instantiate(
     const expectedExpr = substituteExpr(
       optionalInner(parameter.type) ?? parameter.type,
       values,
+      resolvePrefix,
     );
     const expected = typeOf(expectedExpr, aliases);
     const actual = typeOf(value, aliases);
@@ -1704,6 +1759,7 @@ function instantiate(
         type: substituteExpr(
           optionalInner(parameter.type) ?? parameter.type,
           values,
+          resolvePrefix,
         ),
       });
       values.set(parameter.name.name, value);
@@ -1724,6 +1780,7 @@ function instantiate(
         aliases,
         loweredPortShapes,
         portDependencies,
+        resolvePrefix,
       );
     }
   }
@@ -1733,6 +1790,8 @@ function instantiate(
     values,
     diagnostics,
     portDependencies,
+    [],
+    resolvePrefix,
   );
   const dependencyDiagnosticStart = diagnostics.length;
   for (const [name, parameter] of missingOptional) {
@@ -1753,6 +1812,7 @@ function instantiate(
     diagnostics,
     values,
     portDependencies,
+    resolvePrefix,
   );
   const binding: Entry = {
     key: { kind: "ident", name: "template_binding", span: application.span },
@@ -2041,6 +2101,7 @@ function lowerPortShapeField(
   row: Entry,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): Entry | undefined {
   const type = typeOf(row.value, aliases);
   if (
@@ -2079,7 +2140,7 @@ function lowerPortShapeField(
     extras.max_length = 180;
     extras.min_length = 1;
     if (type.target)
-      extras.pattern = `^${prefixFor(type.target)}_(sandbox|live)_[a-z0-9]{8,64}$`;
+      extras.pattern = `^${resolvePrefix?.(type.target) ?? prefixFor(type.target)}_(sandbox|live)_[a-z0-9]{8,64}$`;
   } else if (type.kind === "account") {
     extras.pattern = ACCOUNT_PATTERN;
   }
@@ -2152,6 +2213,7 @@ function lowerPortShape(
   rawShape: Expr,
   aliases: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): BlockExpr {
   if (rawShape.kind !== "block") {
     diagnostics.push({
@@ -2177,7 +2239,13 @@ function lowerPortShape(
       continue;
     }
     names.add(row.key.name);
-    const lowered = lowerPortShapeField(port, row, aliases, diagnostics);
+    const lowered = lowerPortShapeField(
+      port,
+      row,
+      aliases,
+      diagnostics,
+      resolvePrefix,
+    );
     if (lowered) entries.push(lowered);
   }
   return {
@@ -2284,6 +2352,7 @@ function bindPortCompileValues(
   aliases: ReadonlyMap<string, Expr> = new Map(),
   loweredPortShapes: Map<string, BlockExpr> = new Map(),
   dependencies: Map<string, readonly string[]> = new Map(),
+  resolvePrefix?: (target: string) => string | undefined,
 ): void {
   const port = ports.get(value.name.name);
   if (!port) {
@@ -2308,7 +2377,13 @@ function bindPortCompileValues(
       span: port.body.span,
     };
     const shapeDiagnostics: GeneralDiagnostic[] = [];
-    shape = lowerPortShape(port, rawShape, aliases, shapeDiagnostics);
+    shape = lowerPortShape(
+      port,
+      rawShape,
+      aliases,
+      shapeDiagnostics,
+      resolvePrefix,
+    );
     for (const diagnostic of shapeDiagnostics) {
       if (
         !diagnostics.some(
@@ -2336,7 +2411,11 @@ function bindPortCompileValues(
   if (value.deadline) values.set(`${binding}_deadline`, value.deadline);
 }
 
-function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
+function substituteExpr(
+  expr: Expr,
+  values: ReadonlyMap<string, Expr>,
+  resolvePrefix?: (target: string) => string | undefined,
+): Expr {
   if (expr.kind === "ident") {
     return values.get(expr.name) ?? substituteName(expr, values);
   }
@@ -2375,7 +2454,11 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
             ? {
                 iteration: {
                   ...entry.iteration,
-                  bound: substituteExpr(entry.iteration.bound, values),
+                  bound: substituteExpr(
+                    entry.iteration.bound,
+                    values,
+                    resolvePrefix,
+                  ),
                 },
               }
             : {}),
@@ -2394,7 +2477,7 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
               ? nameFromValue(qualifier, value)
               : substituteName(qualifier, nestedValues);
           }),
-          value: substituteExpr(entry.value, nestedValues),
+          value: substituteExpr(entry.value, nestedValues, resolvePrefix),
         };
       }),
     };
@@ -2402,13 +2485,15 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
   if (expr.kind === "list") {
     return {
       ...expr,
-      items: expr.items.map((item) => substituteExpr(item, values)),
+      items: expr.items.map((item) =>
+        substituteExpr(item, values, resolvePrefix),
+      ),
     };
   }
   if (expr.kind === "type_apply") {
     return {
       ...expr,
-      args: expr.args.map((arg) => substituteExpr(arg, values)),
+      args: expr.args.map((arg) => substituteExpr(arg, values, resolvePrefix)),
     };
   }
   if (expr.kind === "call") {
@@ -2417,7 +2502,9 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
     );
     const substituted = {
       ...expr,
-      args: expr.args.map((arg) => substituteCompileArgument(arg, values)),
+      args: expr.args.map((arg) =>
+        substituteCompileArgument(arg, values, resolvePrefix),
+      ),
     };
     const structural = new Set([
       "at",
@@ -2426,24 +2513,31 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
       "keys_except",
       "kind",
       "len",
+      "prefix",
       "values",
     ]).has(expr.callee.name);
     return hasUnbound && !structural
       ? substituted
-      : (evaluateCompileTimeCall(substituted, !hasUnbound) ?? substituted);
+      : (evaluateCompileTimeCall(substituted, !hasUnbound, resolvePrefix) ??
+          substituted);
   }
   if (expr.kind === "apply") {
     return {
       ...expr,
-      args: expr.args.map((arg) => substituteExpr(arg, values)),
-      typeArgs: expr.typeArgs.map((arg) => substituteExpr(arg, values)),
+      args: expr.args.map((arg) => substituteExpr(arg, values, resolvePrefix)),
+      typeArgs: expr.typeArgs.map((arg) =>
+        substituteExpr(arg, values, resolvePrefix),
+      ),
     };
   }
   if (expr.kind === "binding") {
-    return { ...expr, type: substituteExpr(expr.type, values) };
+    return { ...expr, type: substituteExpr(expr.type, values, resolvePrefix) };
   }
   if (expr.kind === "decided_amount") {
-    return { ...expr, body: substituteExpr(expr.body, values) as BlockExpr };
+    return {
+      ...expr,
+      body: substituteExpr(expr.body, values, resolvePrefix) as BlockExpr,
+    };
   }
   return expr;
 }
@@ -2451,8 +2545,9 @@ function substituteExpr(expr: Expr, values: ReadonlyMap<string, Expr>): Expr {
 function substituteCompileArgument(
   expr: Expr,
   values: ReadonlyMap<string, Expr>,
+  resolvePrefix?: (target: string) => string | undefined,
 ): Expr {
-  if (expr.kind !== "ident") return substituteExpr(expr, values);
+  if (expr.kind !== "ident") return substituteExpr(expr, values, resolvePrefix);
   const value = values.get(expr.name);
   if (!value) return expr;
   if (value.kind === "ident" || value.kind === "port_ref") {
@@ -2618,6 +2713,7 @@ function selectCompileTimeRows(
   diagnostics: GeneralDiagnostic[],
   dependencies: ReadonlyMap<string, readonly string[]> = new Map(),
   controls: readonly string[] = [],
+  resolvePrefix?: (target: string) => string | undefined,
 ): BlockExpr {
   const entries: Entry[] = [];
   const locals = new Map(values);
@@ -2630,13 +2726,16 @@ function selectCompileTimeRows(
           binding.name,
           expressionPorts(row.value, localDependencies),
         );
-        locals.set(binding.name, substituteExpr(row.value, locals));
+        locals.set(
+          binding.name,
+          substituteExpr(row.value, locals, resolvePrefix),
+        );
       }
       entries.push(row);
       continue;
     }
     if (row.key.name === "unsupported") {
-      const value = substituteExpr(row.value, locals);
+      const value = substituteExpr(row.value, locals, resolvePrefix);
       if (value.kind !== "block") {
         diagnostics.push({
           code: "HSX1405",
@@ -2679,6 +2778,7 @@ function selectCompileTimeRows(
               diagnostics,
               localDependencies,
               controls,
+              resolvePrefix,
             )
           : row.value;
       const conditionPorts =
@@ -2755,6 +2855,7 @@ function selectCompileTimeRows(
               ...(subject ? expressionPorts(subject, localDependencies) : []),
             ]),
           ],
+          resolvePrefix,
         ).entries,
       );
     }
@@ -2775,6 +2876,7 @@ function compileTimeTruthy(value: Expr | undefined): boolean {
 function evaluateCompileTimeCall(
   expr: Extract<Expr, { readonly kind: "call" }>,
   resolveMissing = true,
+  resolvePrefix?: (target: string) => string | undefined,
 ): Expr | undefined {
   const [first, second, third, fourth] = expr.args;
   const number = (value: Expr | undefined): number | undefined => {
@@ -2962,7 +3064,9 @@ function evaluateCompileTimeCall(
     case "words":
       return first ? text(nameText(first).replaceAll("_", " ")) : undefined;
     case "prefix":
-      return first ? text(prefixFor(nameText(first))) : undefined;
+      return first
+        ? text(resolvePrefix?.(nameText(first)) ?? prefixFor(nameText(first)))
+        : undefined;
     case "owner":
       return first?.kind === "settlement_ref"
         ? text(first.owner.name)
@@ -3039,6 +3143,7 @@ function expandComprehensions(
   diagnostics: GeneralDiagnostic[],
   values: ReadonlyMap<string, Expr> = new Map(),
   dependencies: ReadonlyMap<string, readonly string[]> = new Map(),
+  resolvePrefix?: (target: string) => string | undefined,
 ): BlockExpr {
   const budget = { used: 0 };
   const expand = (
@@ -3069,7 +3174,10 @@ function expandComprehensions(
           binding.name,
           expressionPorts(row.value, localDependencies),
         );
-        locals.set(binding.name, substituteExpr(row.value, locals));
+        locals.set(
+          binding.name,
+          substituteExpr(row.value, locals, resolvePrefix),
+        );
         continue;
       }
       if (
@@ -3108,7 +3216,7 @@ function expandComprehensions(
               ? nameFromValue(qualifier, value)
               : substituteName(qualifier, locals);
           }),
-          value: substituteExpr(row.value, locals),
+          value: substituteExpr(row.value, locals, resolvePrefix),
         };
         entries.push({
           ...substituted,
@@ -3120,8 +3228,8 @@ function expandComprehensions(
         continue;
       }
       if (row.value.kind !== "block") continue;
-      const bound = substituteExpr(row.iteration.bound, locals);
-      const values = finiteIterationValues(bound);
+      const bound = substituteExpr(row.iteration.bound, locals, resolvePrefix);
+      const values = finiteIterationValues(bound, resolvePrefix);
       if (!values) {
         diagnostics.push({
           code: "HSX1403",
@@ -3154,6 +3262,7 @@ function expandComprehensions(
           diagnostics,
           localDependencies,
           row.conditionPorts,
+          resolvePrefix,
         );
         entries.push(...expand(body, substitutions, localDependencies).entries);
       }
@@ -3163,10 +3272,15 @@ function expandComprehensions(
   return expand(block, values);
 }
 
-function finiteIterationValues(bound: Expr): readonly Expr[] | undefined {
+function finiteIterationValues(
+  bound: Expr,
+  resolvePrefix?: (target: string) => string | undefined,
+): readonly Expr[] | undefined {
   if (bound.kind === "call") {
-    const evaluated = evaluateCompileTimeCall(bound);
-    return evaluated ? finiteIterationValues(evaluated) : undefined;
+    const evaluated = evaluateCompileTimeCall(bound, true, resolvePrefix);
+    return evaluated
+      ? finiteIterationValues(evaluated, resolvePrefix)
+      : undefined;
   }
   if (bound.kind === "list") return bound.items;
   if (bound.kind !== "number" || bound.raw.includes(".")) return undefined;
@@ -3406,6 +3520,7 @@ function checkInstrument(
           endpointFields,
           holdDestinations,
           diagnostics,
+          resolvePrefix,
         ),
       ];
     })
@@ -3771,6 +3886,8 @@ function lowerField(
       },
       new Map(),
       diagnostics,
+      false,
+      resolvePrefix,
     );
   }
   const type = typeOf(typeExpr, aliases);
@@ -3938,6 +4055,7 @@ function checkAction(
   endpointFields: ReadonlyMap<string, string>,
   holdDestinations: ReadonlyMap<string, string>,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): TypedAction {
   const slots: Record<string, JsonValue> = {};
   let omitsPublicAction = false;
@@ -3999,6 +4117,7 @@ function checkAction(
         row.value,
         definition.target,
         diagnostics,
+        resolvePrefix,
       );
       const moveOffset = Array.isArray(slots.moves) ? slots.moves.length : 0;
       const value =
@@ -4993,11 +5112,12 @@ function blockToObject(
   substitutions: ReadonlyMap<string, Expr>,
   diagnostics: GeneralDiagnostic[],
   literalKeys = false,
+  resolvePrefix?: (target: string) => string | undefined,
 ): Record<string, JsonValue> {
   if (!block) return {};
   const result: Record<string, JsonValue> = {};
   for (const row of block.entries) {
-    const value = substituteExpr(row.value, substitutions);
+    const value = substituteExpr(row.value, substitutions, resolvePrefix);
     if (twoArgumentMoneyCall(value)) {
       diagnostics.push({
         code: "HSX1104",
@@ -5009,7 +5129,7 @@ function blockToObject(
       continue;
     }
     result[literalKeys || row.key.quoted ? row.key.name : camel(row.key.name)] =
-      exprToJson(value, diagnostics, literalKeys);
+      exprToJson(value, diagnostics, literalKeys, resolvePrefix);
   }
   return result;
 }
@@ -5018,6 +5138,7 @@ function exprToJsonForUdlSlot(
   expr: Expr,
   slot: string,
   diagnostics: GeneralDiagnostic[],
+  resolvePrefix?: (target: string) => string | undefined,
 ): JsonValue {
   if (twoArgumentMoneyCall(expr)) {
     diagnostics.push({
@@ -5032,7 +5153,7 @@ function exprToJsonForUdlSlot(
     return Object.fromEntries(
       expr.entries.map((row) => [
         row.key.name,
-        exprToJson(row.value, diagnostics),
+        exprToJson(row.value, diagnostics, false, resolvePrefix),
       ]),
     );
   }
@@ -5043,13 +5164,14 @@ function exprToJsonForUdlSlot(
       "literalKeys" in clause &&
       clause.literalKeys === true,
   );
-  return exprToJson(expr, diagnostics, literalKeys);
+  return exprToJson(expr, diagnostics, literalKeys, resolvePrefix);
 }
 
 function exprToJson(
   expr: Expr,
   diagnostics: GeneralDiagnostic[],
   literalKeys = false,
+  resolvePrefix?: (target: string) => string | undefined,
 ): JsonValue {
   switch (expr.kind) {
     case "boolean":
@@ -5096,18 +5218,30 @@ function exprToJson(
       return `${expr.owner.name}.${expr.member.name}`;
     case "list":
       return expr.items.map((item) =>
-        exprToJson(item, diagnostics, literalKeys),
+        exprToJson(item, diagnostics, literalKeys, resolvePrefix),
       );
     case "block":
-      return blockToObject(expr, new Map(), diagnostics, literalKeys);
+      return blockToObject(
+        expr,
+        new Map(),
+        diagnostics,
+        literalKeys,
+        resolvePrefix,
+      );
     case "call":
-      return `${expr.callee.name}(${expr.args.map((arg) => String(exprToJson(arg, diagnostics))).join(",")})`;
+      return `${expr.callee.name}(${expr.args.map((arg) => String(exprToJson(arg, diagnostics, false, resolvePrefix))).join(",")})`;
     case "type_apply":
-      return `${expr.callee.name}<${expr.args.map((arg) => String(exprToJson(arg, diagnostics))).join(",")}>`;
+      return `${expr.callee.name}<${expr.args.map((arg) => String(exprToJson(arg, diagnostics, false, resolvePrefix))).join(",")}>`;
     case "binding":
-      return exprToJson(expr.type, diagnostics);
+      return exprToJson(expr.type, diagnostics, false, resolvePrefix);
     case "decided_amount":
-      return blockToObject(expr.body, new Map(), diagnostics);
+      return blockToObject(
+        expr.body,
+        new Map(),
+        diagnostics,
+        false,
+        resolvePrefix,
+      );
     case "port_ref":
       return expr.name.name;
     case "apply":

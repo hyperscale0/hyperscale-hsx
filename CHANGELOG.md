@@ -7,6 +7,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The IR format version (`"hsx": 1`, stamped into every compiled document) moves
 independently of the package version.
 
+## [2.4.1] - 2026-09-17
+
+Pairs with UDL 2.6.0.
+
+### Fixed
+
+- `prefix()` resolves declared instrument `id_prefix` from the catalogue or authored program when known to compilation, falling back to derived initials only when undeclared.
+
 ## [2.4.0] - 2026-09-17
 
 Pairs with UDL 2.6.0.

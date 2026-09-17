@@ -3075,4 +3075,97 @@ describe("money fields and zero", () => {
       }),
     );
   });
+
+  it("resolves declared id_prefix on published and authored instruments and falls back to derived initials", () => {
+    const publishedCatalog = {
+      instruments: [
+        {
+          actions: {},
+          description: "Authorised Decision",
+          fields: {},
+          id: "authorised_decision",
+          idPrefix: "adec",
+          lifecycle: {
+            initial: "created",
+            states: ["created"],
+            transitions: {},
+          },
+          parties: {},
+          summary: "Authorised Decision",
+          title: "Authorised Decision",
+        },
+      ],
+      operations: [],
+      product: "catalog",
+      subjects: [],
+      title: "Catalog",
+      udl: 1,
+      version: 1,
+    } as unknown as UdlDocument;
+    const result = compile(
+      `program prefix_resolution "Prefix Resolution"
+party alice: person
+party bob: person
+
+instrument custom_auth {
+  title: "Custom Auth";
+  summary: "Custom auth";
+  id_prefix: "cauth";
+  agent_description: "Custom auth description";
+  fields {}
+  parties { buyer: alice; seller: bob; }
+  lifecycle {
+    states created done;
+    initial created;
+    on act: created -> done;
+  }
+  action create {
+    summary: "Create";
+    agent_description: "Create action";
+    steps: [];
+  }
+  action act {
+    summary: "Act";
+    agent_description: "Act action";
+    steps: [];
+    input: {
+      type: object;
+      properties: {
+        declaredRef: {
+          type: string;
+          pattern: concat("^", prefix(custom_auth), "_[0-9]{1,32}$");
+        };
+        catalogRef: {
+          type: string;
+          pattern: concat("^", prefix(authorised_decision), "_[0-9]{1,32}$");
+        };
+        undeclaredRef: {
+          type: string;
+          pattern: concat("^", prefix(unknown_external_instrument), "_[0-9]{1,32}$");
+        };
+      };
+      required: [declaredRef, catalogRef, undeclaredRef];
+      additionalProperties: false;
+    };
+  }
+}`,
+      { publishedCatalog },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.verdict).toBe("valid");
+    const doc = result.artifacts?.document as UdlDocument;
+    const inst = doc.instruments.find((item) => item.id === "custom_auth")!;
+    const properties = (
+      inst.actions.act!.input as {
+        properties: {
+          declaredRef: { pattern: string };
+          catalogRef: { pattern: string };
+          undeclaredRef: { pattern: string };
+        };
+      }
+    ).properties;
+    expect(properties.declaredRef.pattern).toBe("^cauth_[0-9]{1,32}$");
+    expect(properties.catalogRef.pattern).toBe("^adec_[0-9]{1,32}$");
+    expect(properties.undeclaredRef.pattern).toBe("^uei_[0-9]{1,32}$");
+  });
 });
