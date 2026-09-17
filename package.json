@@ -76,7 +76,7 @@
     "generate": "bun run std:bundle && bun run docs:build && bun run playground:build"
   },
   "dependencies": {
-    "@hyperscale0/udl": "2.6.0"
+    "@hyperscale0/udl": "2.6.1"
   },
   "devDependencies": {
     "bun-types": "1.4.2",
