@@ -112,22 +112,22 @@ instrument installments(months: integer(1, 366), profit: percent, disburse_to: e
       action mature {
         from: pending, to: due, actor: clock, due: { at: self.dueAt }
       }
-      action collect_principal {
-        from: [pending, due, paid], to: due, actor: { parent: payment }
+      action collect {
+        from: [pending, due], to: due, actor: { parent: payment }
         input { payment: ref<payment> }
         requires input.payment.plan == self.plan
-        invoke: [{ instrument: principal_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.principalReceivable.balance } } }]
-      }
-      action collect_profit {
-        from: [pending, due, paid], to: due, actor: { parent: payment }
-        input { payment: ref<payment> }
-        requires input.payment.plan == self.plan
-        when profit_earned is on_payment { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitReceivable.balance } } }] }
-        when profit_earned is by_schedule { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitEarned.balance } } }] }
-        when profit_earned is at_disbursement { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitEarned.balance } } }] }
+        when profit_earned is on_payment { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitReceivable.balance }] }] }
+        when profit_earned is by_schedule { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitEarned.balance }] }] }
+        when profit_earned is at_disbursement { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitEarned.balance }] }] }
+        when apply is fines_profit_principal {
+          invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.collectibleProfit } } }, { instrument: principal_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.principalReceivable.balance } } }]
+        }
+        when apply is principal_profit {
+          invoke: [{ instrument: principal_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.principalReceivable.balance } } }, { instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.collectibleProfit } } }]
+        }
       }
       action collect_pro_rata {
-        from: [pending, due, paid], to: due, actor: { parent: payment }, input { payment: ref<payment> }
+        from: [pending, due], to: due, actor: { parent: payment }, input { payment: ref<payment> }
         requires input.payment.plan == self.plan
         when profit_earned is on_payment { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitReceivable.balance }] }] }
         when profit_earned is by_schedule { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitEarned.balance }] }] }
@@ -190,14 +190,14 @@ instrument installments(months: integer(1, 366), profit: percent, disburse_to: e
         requires self.plan in [active]; requires self.amount <= self.outstandingTotal
         moves self.amount from self.plan.borrower to self.held
         when apply is principal_profit {
-          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_principal, input: { payment: { field: self.id } } }, { selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_profit, input: { payment: { field: self.id } } }]
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due], limit: 366, order: [position] }, action: collect, input: { payment: { field: self.id } } }]
         }
         when apply is fines_profit_principal {
           invoke: [{ selection: { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: collect, input: { payment: { field: self.id } } }, { selection: { instrument: all(financing.late_charge.cost), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: collect, input: { payment: { field: self.id } } }]
-          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_profit, input: { payment: { field: self.id } } }, { selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_principal, input: { payment: { field: self.id } } }]
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due], limit: 366, order: [position] }, action: collect, input: { payment: { field: self.id } } }]
         }
         when apply is pro_rata {
-          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_pro_rata, input: { payment: { field: self.id } } }]
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due], limit: 366, order: [position] }, action: collect_pro_rata, input: { payment: { field: self.id } } }]
         }
         invoke: [{ reference: self.id, action: record, input: {} }]
       }
