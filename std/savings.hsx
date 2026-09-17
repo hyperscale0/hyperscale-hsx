@@ -1,0 +1,44 @@
+header savings
+
+instrument circle(contribution: money, members: integer(1, 366), starts: date, memberships: ref<savings.membership> = object(savings.membership)) {
+  summary: "A fixed group contributes on its explicit calendar and takes the pot in order."
+  fields { contribution: money = contribution, members: integer = members, startsAt: date = starts, dates: list(date, members), pot: money = multiply(self.contribution, self.members), held: account of self }
+  lifecycle { states: [forming, active, closed, disbanded], initial: forming }
+  action create { }
+  action activate {
+    from: forming, to: active, actor: clock, due: { at: self.startsAt }
+    requires count of { instrument: memberships, reference: "circle", anchor: self.id, states: [joined], limit: 60 } == self.members
+  }
+  action close {
+    from: active, to: closed
+    requires count of { instrument: memberships, reference: "circle", anchor: self.id, states: [paid], limit: 60 } == self.members
+    requires self.held.balance == "0"
+  }
+  action disband { from: forming, to: disbanded }
+}
+
+instrument membership(circle: ref<savings.circle>, member: party) {
+  fields { circle: ref<circle>, member: account of member, position: integer(1, 60), preceding: integer = subtract(self.position, 1), receivesAt: date = at(self.circle.dates, self.position), contribution: money = self.circle.contribution, total: money = self.circle.pot, dates: list(date, 60) }
+  lifecycle { states: [joined, active, paid, withdrawn], initial: joined }
+  action create { requires self.position <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.position]; requires unique "circle_member" on [self.circle, self.member] }
+  action activate {
+    from: joined, to: active
+    requires self.circle in [active]
+    requires count of { instrument: contribution, reference: "membership", anchor: self.id, states: [pending], limit: 60 } == self.circle.members
+  }
+  action receive {
+    from: active, to: paid, actor: clock, due: { at: self.receivesAt }
+    requires self.circle in [active]
+    requires count of { instrument: all(savings.membership), reference: "circle", anchor: self.circle, states: [paid], limit: 60 } == self.preceding
+    moves self.total from self.circle.held to self.member
+  }
+  action withdraw { from: joined, to: withdrawn, requires self.circle in [disbanded] }
+  records {
+    contribution: {
+      fields { membership: ref<parent>, position: integer(1, 60), dueAt: date = at(self.membership.circle.dates, self.position), amount: money = self.membership.contribution }
+      lifecycle { states: [pending, paid], initial: pending }
+      action create { requires self.position <= self.membership.circle.members; requires self.membership in [joined]; requires unique "seat_period" on [self.membership, self.position] }
+      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.membership in [active, paid]; requires self.membership.circle in [active], moves self.amount from self.membership.member to self.membership.circle.held }
+    }
+  }
+}

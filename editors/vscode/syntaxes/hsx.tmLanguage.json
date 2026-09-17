@@ -1,0 +1,33 @@
+{
+  "scopeName": "source.hsx",
+  "name": "HSX 3",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.hsx",
+      "match": "//.*$"
+    },
+    {
+      "name": "string.quoted.double.hsx",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.hsx"
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric.hsx",
+      "match": "\\b\\d+(?:\\.\\d+)?(?:%|\\s+SAR|ms|[smhdw])?"
+    },
+    {
+      "name": "keyword.control.hsx",
+      "match": "\\b(program|header|use|party|role|currency|instrument|fields|lifecycle|action|expose|hide|as|cap|of|when|constraints|requires|invariants|moves|from|to|in|by|for|is|unique|on|count|sum|hours|between|and|timezone|evidence|reserve|post|void|capture|fee|shares)\\b"
+    },
+    {
+      "name": "storage.type.hsx",
+      "match": "\\b(approval|money|account|ref|date|duration|text|integer|percent|boolean|enum|list)\\b"
+    }
+  ]
+}

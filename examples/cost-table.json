@@ -10,7 +10,6 @@
       "financial_address.active_month",
       "financial_address.issued.count",
       "instrument.event.count",
-      "instrument.event.volume_sar",
       "kyb.application.review",
       "payout.external.count",
       "payout.external.volume_sar",
@@ -21,7 +20,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "9b5320cba0645fdc2e736873e47aeff7740211869698ab3d12fcd3c51e153b17",
+    "effectiveTableDigest": "3cb4eb8a2524c1012da7db029f9f7a9cdb06052c78abd2144760497dc3ba0a2b",
     "fixed": {
       "activationBaseMinor": "500000",
       "activationPerPointMinor": "100000",
@@ -46,7 +45,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.accounts_ledger_first_party"
+        "signature": "calculate"
       },
       {
         "bps": 0,
@@ -54,7 +53,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.air_carrier"
+        "signature": "clock.deadline"
       },
       {
         "bps": 0,
@@ -62,87 +61,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.allocation"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.banking_or_card_issuing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.cascade_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.collections_agency"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_bureau"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_servicing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.email_or_notification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.enforcement_instrument"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.identity_verification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_carrier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_claims_adjuster"
+        "signature": "clock.due"
       },
       {
         "bps": 0,
@@ -182,79 +101,15 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.lodging_supplier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.national_identity"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.payouts"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.referenced_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.sanctions_screening"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.settlement_ingestion"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.subject_unique"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.tenant_port"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "holds.quote"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
         "signature": "holds.reserve"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "invoke"
       },
       {
         "bps": 0,
@@ -297,30 +152,12 @@
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 40,
-        "meter": "instrument.event.volume_sar",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "meters.instrument.event.volume_sar",
-        "volumeMeter": "instrument.event.volume_sar"
-      },
-      {
         "bps": 0,
         "meter": "kyb.application.review",
         "payer": "product",
         "perEventMinor": "20000",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
-      },
-      {
-        "bps": 6,
-        "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "75",
-        "settlement": "per_event",
-        "signature": "moves.allocation",
-        "volumeMeter": "transfer.internal.volume_sar"
       },
       {
         "bps": 8,
@@ -364,7 +201,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "notifies.email"
+        "signature": "requires.aggregate"
       },
       {
         "bps": 0,
@@ -372,7 +209,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.reconcile"
+        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -380,7 +217,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_aggregate"
+        "signature": "requires.compare"
       },
       {
         "bps": 0,
@@ -388,7 +225,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_checks"
+        "signature": "requires.evidence"
       },
       {
         "bps": 0,
@@ -396,7 +233,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_refs"
+        "signature": "requires.hours"
       },
       {
         "bps": 0,
@@ -404,7 +241,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.deadline"
+        "signature": "requires.state"
       },
       {
         "bps": 0,
@@ -412,7 +249,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.due"
+        "signature": "requires.unique"
       },
       {
         "bps": 0,
@@ -420,7 +257,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.expiry"
+        "signature": "unwinds.void"
       }
     ],
     "version": "2026-09-02.1"
@@ -436,7 +273,6 @@
       "financial_address.active_month",
       "financial_address.issued.count",
       "instrument.event.count",
-      "instrument.event.volume_usd",
       "kyb.application.review",
       "payout.external.count",
       "payout.external.volume_usd",
@@ -447,7 +283,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "e75a41ea689c621d41fa563963b2a8822ea54aff9ce756eb2f60aa0dc420dca2",
+    "effectiveTableDigest": "70454efb5184bc9246896752e64e85eb0b616c41544469df083a2dc8014c0785",
     "fixed": {
       "activationBaseMinor": "133300",
       "activationPerPointMinor": "26700",
@@ -472,7 +308,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.accounts_ledger_first_party"
+        "signature": "calculate"
       },
       {
         "bps": 0,
@@ -480,7 +316,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.air_carrier"
+        "signature": "clock.deadline"
       },
       {
         "bps": 0,
@@ -488,87 +324,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.allocation"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.banking_or_card_issuing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.cascade_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.collections_agency"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_bureau"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_servicing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.email_or_notification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.enforcement_instrument"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.identity_verification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_carrier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_claims_adjuster"
+        "signature": "clock.due"
       },
       {
         "bps": 0,
@@ -608,79 +364,15 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.lodging_supplier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.national_identity"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.payouts"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.referenced_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.sanctions_screening"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.settlement_ingestion"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.subject_unique"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.tenant_port"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "holds.quote"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
         "signature": "holds.reserve"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "invoke"
       },
       {
         "bps": 0,
@@ -723,30 +415,12 @@
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 40,
-        "meter": "instrument.event.volume_usd",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "meters.instrument.event.volume_sar",
-        "volumeMeter": "instrument.event.volume_usd"
-      },
-      {
         "bps": 0,
         "meter": "kyb.application.review",
         "payer": "product",
         "perEventMinor": "5333",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
-      },
-      {
-        "bps": 6,
-        "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "20",
-        "settlement": "per_event",
-        "signature": "moves.allocation",
-        "volumeMeter": "transfer.internal.volume_usd"
       },
       {
         "bps": 8,
@@ -790,7 +464,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "notifies.email"
+        "signature": "requires.aggregate"
       },
       {
         "bps": 0,
@@ -798,7 +472,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.reconcile"
+        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -806,7 +480,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_aggregate"
+        "signature": "requires.compare"
       },
       {
         "bps": 0,
@@ -814,7 +488,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_checks"
+        "signature": "requires.evidence"
       },
       {
         "bps": 0,
@@ -822,7 +496,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_refs"
+        "signature": "requires.hours"
       },
       {
         "bps": 0,
@@ -830,7 +504,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.deadline"
+        "signature": "requires.state"
       },
       {
         "bps": 0,
@@ -838,7 +512,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.due"
+        "signature": "requires.unique"
       },
       {
         "bps": 0,
@@ -846,7 +520,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.expiry"
+        "signature": "unwinds.void"
       }
     ],
     "version": "2026-09-02.1"
@@ -862,7 +536,6 @@
       "financial_address.active_month",
       "financial_address.issued.count",
       "instrument.event.count",
-      "instrument.event.volume_eur",
       "kyb.application.review",
       "payout.external.count",
       "payout.external.volume_eur",
@@ -873,7 +546,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "905ffe63c1d5e9af686e0be18cd156af159f79c4cc16ad74db8880b6126cb1cf",
+    "effectiveTableDigest": "d782642a28ab9225c7967f865f73e9453a9683ca7b5b55c8df6e18a53bbdd8e7",
     "fixed": {
       "activationBaseMinor": "125000",
       "activationPerPointMinor": "25000",
@@ -898,7 +571,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.accounts_ledger_first_party"
+        "signature": "calculate"
       },
       {
         "bps": 0,
@@ -906,7 +579,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.air_carrier"
+        "signature": "clock.deadline"
       },
       {
         "bps": 0,
@@ -914,87 +587,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.allocation"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.banking_or_card_issuing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.cascade_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.collections_agency"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_bureau"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_servicing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.email_or_notification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.enforcement_instrument"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.identity_verification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_carrier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_claims_adjuster"
+        "signature": "clock.due"
       },
       {
         "bps": 0,
@@ -1034,79 +627,15 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.lodging_supplier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.national_identity"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.payouts"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.referenced_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.sanctions_screening"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.settlement_ingestion"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.subject_unique"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.tenant_port"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "holds.quote"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
         "signature": "holds.reserve"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "invoke"
       },
       {
         "bps": 0,
@@ -1149,30 +678,12 @@
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 40,
-        "meter": "instrument.event.volume_eur",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "meters.instrument.event.volume_sar",
-        "volumeMeter": "instrument.event.volume_eur"
-      },
-      {
         "bps": 0,
         "meter": "kyb.application.review",
         "payer": "product",
         "perEventMinor": "5000",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
-      },
-      {
-        "bps": 6,
-        "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "19",
-        "settlement": "per_event",
-        "signature": "moves.allocation",
-        "volumeMeter": "transfer.internal.volume_eur"
       },
       {
         "bps": 8,
@@ -1216,7 +727,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "notifies.email"
+        "signature": "requires.aggregate"
       },
       {
         "bps": 0,
@@ -1224,7 +735,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.reconcile"
+        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -1232,7 +743,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_aggregate"
+        "signature": "requires.compare"
       },
       {
         "bps": 0,
@@ -1240,7 +751,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_checks"
+        "signature": "requires.evidence"
       },
       {
         "bps": 0,
@@ -1248,7 +759,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_refs"
+        "signature": "requires.hours"
       },
       {
         "bps": 0,
@@ -1256,7 +767,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.deadline"
+        "signature": "requires.state"
       },
       {
         "bps": 0,
@@ -1264,7 +775,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.due"
+        "signature": "requires.unique"
       },
       {
         "bps": 0,
@@ -1272,7 +783,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.expiry"
+        "signature": "unwinds.void"
       }
     ],
     "version": "2026-09-02.1"
@@ -1288,7 +799,6 @@
       "financial_address.active_month",
       "financial_address.issued.count",
       "instrument.event.count",
-      "instrument.event.volume_gbp",
       "kyb.application.review",
       "payout.external.count",
       "payout.external.volume_gbp",
@@ -1299,7 +809,7 @@
       "verification.kyc.investment.count",
       "verification.kyc.standard.count"
     ],
-    "effectiveTableDigest": "8b549d4054638116b4a42156cdcf8bf01f3fa50b6891ef0f4718d7922ae0ccf0",
+    "effectiveTableDigest": "0da12e42a0d68444e2776ef0905473698d2437e0d4eea5b7e5f5fad9e8d3fbfb",
     "fixed": {
       "activationBaseMinor": "104200",
       "activationPerPointMinor": "20800",
@@ -1324,7 +834,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.accounts_ledger_first_party"
+        "signature": "calculate"
       },
       {
         "bps": 0,
@@ -1332,7 +842,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.air_carrier"
+        "signature": "clock.deadline"
       },
       {
         "bps": 0,
@@ -1340,87 +850,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.allocation"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.banking_or_card_issuing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.cascade_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.collections_agency"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_bureau"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.credit_servicing"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.email_or_notification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.enforcement_instrument"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.identity_verification"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_carrier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.insurance_claims_adjuster"
+        "signature": "clock.due"
       },
       {
         "bps": 0,
@@ -1460,79 +890,15 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "decides.lodging_supplier"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.national_identity"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.payouts"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.referenced_transition"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.sanctions_screening"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.settlement_ingestion"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.subject_unique"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "decides.tenant_port"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "holds.quote"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
         "signature": "holds.reserve"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "invoke"
       },
       {
         "bps": 0,
@@ -1575,30 +941,12 @@
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 40,
-        "meter": "instrument.event.volume_gbp",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "meters.instrument.event.volume_sar",
-        "volumeMeter": "instrument.event.volume_gbp"
-      },
-      {
         "bps": 0,
         "meter": "kyb.application.review",
         "payer": "product",
         "perEventMinor": "4167",
         "settlement": "invoice",
         "signature": "meters.kyb.application.review"
-      },
-      {
-        "bps": 6,
-        "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "16",
-        "settlement": "per_event",
-        "signature": "moves.allocation",
-        "volumeMeter": "transfer.internal.volume_gbp"
       },
       {
         "bps": 8,
@@ -1642,7 +990,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "notifies.email"
+        "signature": "requires.aggregate"
       },
       {
         "bps": 0,
@@ -1650,7 +998,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.reconcile"
+        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -1658,7 +1006,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_aggregate"
+        "signature": "requires.compare"
       },
       {
         "bps": 0,
@@ -1666,7 +1014,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_checks"
+        "signature": "requires.evidence"
       },
       {
         "bps": 0,
@@ -1674,7 +1022,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "reads.requires_refs"
+        "signature": "requires.hours"
       },
       {
         "bps": 0,
@@ -1682,7 +1030,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.deadline"
+        "signature": "requires.state"
       },
       {
         "bps": 0,
@@ -1690,7 +1038,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.due"
+        "signature": "requires.unique"
       },
       {
         "bps": 0,
@@ -1698,7 +1046,7 @@
         "payer": "product",
         "perEventMinor": "0",
         "settlement": "invoice",
-        "signature": "schedules.expiry"
+        "signature": "unwinds.void"
       }
     ],
     "version": "2026-09-02.1"

@@ -1,0 +1,31 @@
+header collections
+
+instrument case(on: ref<financing.installments>[], agency: approval, overdue: duration = 3d, fee: percent = 20%) {
+  summary: "Refer an overdue installment without creating another debt."
+  fields { plan: ref<on>, slice: ref<on.slice>, payment: ref<on.payment>, eligibleAt: date = after(self.slice.dueAt, overdue), agencyFee: money = rate(self.payment.amount, fee) }
+  lifecycle { states: [opened, assigned, recovered, recalled, returned_uncollected], initial: opened }
+  action create {
+    due: { at: self.eligibleAt }
+    requires self.plan == self.slice.plan
+    requires self.slice.principalReceivable.balance > "0"
+    requires unique "overdue_referral" on [self.slice]
+  }
+  action assign { from: opened, to: assigned, requires approval by agency }
+  action recover { from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
+  action pay_fee { from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency }
+  action recall { from: [opened, assigned], to: recalled }
+  action return_uncollected { from: assigned, to: returned_uncollected, actor: { party: agency } }
+}
+
+instrument contact(case: ref<collections.case>[], agency: party, max_contacts: integer = 10, window: duration = 30d, contact_from: integer(0, 23) = 8, contact_until: integer(1, 23) = 20, timezone: text = "Asia/Riyadh") {
+  constraints { contact_from: less_than(contact_until) }
+  summary: "An agency contact admitted against the locked rolling count and local hours."
+  fields { case: ref<case>, attemptedAt: date?, evidence: text, maximum: integer = max_contacts }
+  lifecycle { states: [recorded], initial: recorded }
+  invariants count of { instrument: current(), reference: "case", anchor: self.case, states: [recorded], limit: 366, window: { field: attemptedAt, milliseconds: window } } <= self.maximum
+  action create {
+    actor: { party: agency }
+    set: { attemptedAt: { field: self.now } }
+    requires self.case in [assigned]; requires hours self.now between contact_from and contact_until timezone timezone
+  }
+}

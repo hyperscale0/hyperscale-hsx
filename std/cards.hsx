@@ -1,0 +1,63 @@
+header cards
+
+instrument cardholder(holder: party) {
+  fields { holder: account of holder }
+  lifecycle { states: [pending, active, suspended, closed], initial: pending }
+  action create {}
+  action activate { from: pending, to: active }
+  action suspend { from: active, to: suspended }
+  action resume { from: suspended, to: active }
+  action close { from: [active, suspended], to: closed }
+}
+
+instrument card(holder: ref<cards.cardholder>, spend_limit: money) {
+  fields { holder: ref<holder>, spendLimit: money = spend_limit }
+  lifecycle { states: [issued, active, frozen, cancelled], initial: issued }
+  action create { requires self.holder in [active] }
+  action activate { from: issued, to: active, requires self.holder in [active] }
+  action freeze { from: active, to: frozen }
+  action unfreeze { from: frozen, to: active, requires self.holder in [active] }
+  action cancel { from: [issued, active, frozen], to: cancelled }
+}
+
+instrument authorization(card: ref<cards.card>, merchant: party, approval: approval) {
+  fields { card: ref<card>, merchant: account of merchant, amount: money, expiresAt: date, reservation: text? }
+  lifecycle { states: [pending, approved, captured, declined, reversed, expired], initial: pending }
+  action create {
+    requires self.card in [active]
+    requires self.amount <= self.card.spendLimit
+  }
+  action approve {
+    from: pending, to: approved, deadline: { at: self.expiresAt }
+    requires approval by approval; requires self.card in [active]
+    moves reserve self.amount from self.card.holder.holder to merchant capture "reservation"
+  }
+  action capture { from: approved, to: captured, deadline: { at: self.expiresAt }, moves post self.reservation }
+  action reverse { from: approved, to: reversed, moves void self.reservation }
+  action decline { from: pending, to: declined, requires approval by approval for "approve" is "declined" }
+  action expire { from: approved, to: expired, actor: clock, due: { at: self.expiresAt }, moves void self.reservation }
+  action abandon { from: pending, to: expired, actor: clock, due: { at: self.expiresAt } }
+}
+
+instrument transaction(authorization: ref<cards.authorization>) {
+  fields { authorization: ref<authorization>, amount: money = self.authorization.amount }
+  lifecycle { states: [posted, refunded], initial: posted }
+  action create { requires self.authorization in [captured]; requires unique "captured_authorization" on [self.authorization] }
+  action refund {
+    from: posted, to: refunded, input { reason: text }
+    moves self.amount from self.authorization.merchant to self.authorization.card.holder.holder
+  }
+}
+
+instrument dispute(transaction: ref<cards.transaction>, approved_by: approval, within: duration = 90d) {
+  fields { transaction: ref<transaction>, evidence: text, expiresAt: date = after(self.createdAt, within) }
+  lifecycle { states: [filed, reviewing, won, lost], initial: filed }
+  action create { requires self.transaction in [posted]; requires unique "disputed_transaction" on [self.transaction] }
+  action review { from: filed, to: reviewing }
+  action win {
+    from: reviewing, to: won, deadline: { at: self.expiresAt }
+    requires approval by approved_by
+    invoke: [{ reference: self.transaction, action: refund, input: { reason: { field: self.evidence } } }]
+  }
+  action lose { from: [filed, reviewing], to: lost, actor: clock, due: { at: self.expiresAt } }
+}

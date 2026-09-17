@@ -1,21 +1,14 @@
 # Contributing to HSX
 
-Read `README.md`, `docs/README.md`, and `std/SEMANTICS.md` before changing
-this package. `open/hsx` is AGPL and cannot
-import proprietary code.
+Read [the language](docs/README.md) and [header inventory](docs/headers.md).
+The AGPL package does not import proprietary code. The frontend parses typed
+programs and headers; `compile.ts` binds references and lowers generic arithmetic
+and moves. Business behavior belongs in the twelve `std` headers.
 
-The compiler pipeline is `parse.ts` to `modules.ts` to `typecheck.ts` to
-`emit.ts`. `cost.ts` derives the compile-time cost manifest. `format.ts` owns
-the one canonical style. Settlement behavior belongs in `std/`, not in a
-compiler switch.
+Run `bun run check` for generation, types, builds and package tests.
+The platform repository checks its company programs with `bun toolchain/companies/hsx-check.ts`.
+Change a rule with one example that distinguishes admitted and refused programs.
+The package has no byte-fixture corpus or UDL 2 migration path.
 
-Run:
-
-```sh
-bun run check
-```
-
-The family specs compile standard library programs in place and assert their
-UDL semantic properties directly without fixture bytes. A standard module or
-semantic assertion may not disappear silently. New UDL clauses enter HSX
-through the UDL vocabulary without a grammar production.
+Report security defects through [SECURITY.md](SECURITY.md).
+Accepted contributions require [the CLA](CLA.md).

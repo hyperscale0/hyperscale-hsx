@@ -1,0 +1,195 @@
+header money
+
+instrument transfer(payer: party, payee: party, amount: money = runtime) {
+  summary: "One transfer between the bound parties."
+  fields { amount: money = amount }
+  lifecycle { states: [pending, paid, cancelled], initial: pending }
+  action create { actor: { party: payer } }
+  action pay {
+    from: pending, to: paid, actor: { party: payer }
+    moves self.amount from payer to payee
+  }
+  action cancel { from: pending, to: cancelled, actor: { party: payer } }
+}
+
+instrument hold(payer: party, payee: party, amount: money = runtime) {
+  summary: "Hold the declared amount until release or refund."
+  fields { payer: account of payer, payee: account of payee, amount: money = amount, price: money = self.amount, held: account of self }
+  lifecycle { states: [pending, funded, released, refunded, cancelled], initial: pending }
+  action create { }
+  action fund {
+    from: pending, to: funded, actor: { party: payer }
+    moves self.amount from payer to self.held
+  }
+  action confirm {
+    from: pending, to: funded
+    requires self.held.balance == self.amount
+  }
+  action release {
+    from: funded, to: released
+    moves self.amount from self.held to payee
+  }
+  action refund {
+    from: funded, to: refunded
+    moves self.amount from self.held to payer
+  }
+  action cancel { from: pending, to: cancelled }
+}
+
+instrument split(payer: party, amount: money = runtime, shares: split = { programOperator: 100% }) {
+  summary: "Split one amount; the last declared recipient receives the rounding remainder."
+  fields { amount: money = amount }
+  lifecycle { states: [pending, paid, cancelled], initial: pending }
+  action create {}
+  action pay { from: pending, to: paid, moves self.amount from payer shares shares }
+  action cancel { from: pending, to: cancelled }
+}
+
+instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366) = 12) {
+  summary: "A finite schedule whose dated pieces sum exactly to the declared total."
+  fields { amount: money = amount, count: integer = count, dates: list(date, count) }
+  lifecycle { states: [draft, active, complete, cancelled], initial: draft }
+  action create {}
+  action activate {
+    from: draft, to: active
+    requires count of { instrument: occurrence, reference: "schedule", anchor: self.id, states: [pending], limit: 366 } == self.count
+  }
+  action complete {
+    from: active, to: complete
+    requires count of { instrument: occurrence, reference: "schedule", anchor: self.id, states: [pending], limit: 366 } == 0
+  }
+  action cancel { from: [draft, active], to: cancelled }
+  records {
+    occurrence: {
+      fields {
+        schedule: ref<parent>, position: integer(1, count), dueAt: date = at(self.schedule.dates, self.position)
+        base: money = divide(self.schedule.amount, count)
+        allocated: money = multiply(self.base, count)
+        remainder: money = subtract(self.schedule.amount, self.allocated)
+        first: integer = divide(1, self.position)
+        adjustment: money = multiply(self.remainder, self.first)
+        amount: money = sum(self.base, self.adjustment)
+      }
+      lifecycle { states: [pending, paid, cancelled], initial: pending }
+      action create { requires self.schedule in [draft]; requires unique "scheduled_position" on [self.schedule, self.position] }
+      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.schedule in [active], moves self.amount from payer to payee }
+      action cancel { from: pending, to: cancelled, requires self.schedule in [cancelled] }
+    }
+  }
+}
+
+instrument pool(payer: party, payee: party, target: money, closes: date) {
+  summary: "Contributions fund one threshold or return to their original contributor."
+  fields { target: money = target, closesAt: date = closes, held: account of self }
+  lifecycle { states: [open, paid, failed], initial: open }
+  action create { }
+  action pay {
+    from: open, to: paid
+    requires self.held.balance == self.target
+    moves self.target from self.held to payee
+  }
+  action fail {
+    from: open, to: failed, actor: clock, due: { at: self.closesAt }
+    requires self.held.balance < self.target
+    invoke: [{ selection: { instrument: contribution, reference: "pool", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }]
+  }
+  records {
+    contribution: {
+      fields { pool: ref<parent>, payer: account of payer, amount: money }
+      lifecycle { states: [pending, paid, refunded], initial: pending }
+      action create { requires self.pool in [open] }
+      action pay { from: pending, to: paid, deadline: { at: self.pool.closesAt }, requires self.pool in [open], moves self.amount from self.payer to self.pool.held }
+      action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer }
+    }
+  }
+}
+
+instrument swap(first: party, second: party, first_amount: money, second_amount: money, expires: date) {
+  summary: "Two reservations settle together or both return."
+  fields { firstAmount: money = first_amount, secondAmount: money = second_amount, expiresAt: date = expires, firstReceipt: text?, secondReceipt: text? }
+  lifecycle { states: [pending, first_ready, second_ready, both_ready, exchanged, cancelled], initial: pending }
+  action create {}
+  action fund_first { from: pending, to: first_ready, actor: { party: first }, deadline: { at: self.expiresAt }, moves reserve self.firstAmount from first to second capture "firstReceipt" }
+  action fund_second { from: first_ready, to: both_ready, actor: { party: second }, deadline: { at: self.expiresAt }, moves reserve self.secondAmount from second to first capture "secondReceipt" }
+  action start_second { from: pending, to: second_ready, actor: { party: second }, deadline: { at: self.expiresAt }, moves reserve self.secondAmount from second to first capture "secondReceipt" }
+  action finish_first { from: second_ready, to: both_ready, actor: { party: first }, deadline: { at: self.expiresAt }, moves reserve self.firstAmount from first to second capture "firstReceipt" }
+  action expire_second { from: second_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.secondReceipt }
+  action exchange { from: both_ready, to: exchanged, moves post self.firstReceipt; moves post self.secondReceipt }
+  action cancel { from: pending, to: cancelled }
+  action expire_first { from: first_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.firstReceipt }
+  action expire_both { from: both_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.firstReceipt; moves void self.secondReceipt }
+}
+
+instrument deposit(payer: party, payee: party, amount: money, expires: date, approval: approval) {
+  fields { amount: money = amount, expiresAt: date = expires, reservation: text? }
+  lifecycle { states: [pending, held, claimed, returned, cancelled], initial: pending }
+  action create {}
+  action fund { from: pending, to: held, actor: { party: payer }, moves reserve self.amount from payer to payee capture "reservation" }
+  action claim { from: held, to: claimed, deadline: { at: self.expiresAt }, requires approval by approval, moves post self.reservation }
+  action return { from: held, to: returned, actor: clock, due: { at: self.expiresAt }, moves void self.reservation }
+  action cancel { from: pending, to: cancelled }
+}
+
+instrument payout(payer: party, payee: party, amount: money = runtime, reconcile_within: duration = 3d) {
+  summary: "A bank-linked transfer with confirmation bound to its captured identity."
+  fields { amount: money = amount, bank: account(payee, cash, external, "bank"), receipt: text?, expectedAt: date = after(self.createdAt, reconcile_within) }
+  lifecycle { states: [pending, instructed, settled, exception, reversed], initial: pending }
+  action create {}
+  action instruct { from: pending, to: instructed, actor: { party: payer }, moves self.amount from payer to self.bank capture "receipt" }
+  action confirm {
+    from: [instructed, exception], to: settled
+    requires self.receipt.status == "settled"
+  }
+  action expire {
+    from: instructed, to: exception, actor: clock, due: { at: self.expectedAt }
+    requires self.receipt.status != "settled"
+  }
+  action reverse {
+    from: [instructed, exception], to: reversed
+    requires self.receipt.status == "reversed"
+  }
+}
+
+instrument metered(payer: party, payee: party, unit_price: money, units: integer = 1, fee: fee = { seller: 0% }) {
+  summary: "A unique usage event priced once at the fixed unit price."
+  fields { usageIdentity: text, unitPrice: money = unit_price, units: integer = units, amount: money = multiply(self.unitPrice, self.units) }
+  lifecycle { states: [recorded, billed, cancelled], initial: recorded }
+  action create { requires unique "usage_event" on [self.usageIdentity] }
+  action bill { from: recorded, to: billed, moves self.amount from payer to payee fee fee }
+  action cancel { from: recorded, to: cancelled }
+}
+
+instrument batch(payer: party, payee: party, closes: date, approval: approval, reconcile_within: duration = 3d) {
+  summary: "A frozen positive net of credit and debit entries, paid once."
+  fields { closesAt: date = closes, credits: money, debits: money, amount: money = subtract(self.credits, self.debits), bank: account(payee, cash, external, "bank"), receipt: text?, instructedAt: date?, expectedAt: date? }
+  lifecycle { states: [open, closed, approved, instructed, exception, paid, reversed], initial: open }
+  action create {}
+  action close {
+    from: open, to: closed, actor: clock, due: { at: self.closesAt }
+    requires sum "amount" of { instrument: credit, reference: "batch", anchor: self.id, states: [recorded], limit: 366 } == self.credits
+    requires sum "amount" of { instrument: debit, reference: "batch", anchor: self.id, states: [recorded], limit: 366 } == self.debits
+    requires self.amount > "0"
+  }
+  action approve { from: closed, to: approved, requires approval by approval }
+  action pay {
+    from: approved, to: instructed
+    set: { instructedAt: { field: self.now } }
+    calculate: [{ target: "expectedAt", op: "shift", date: { field: self.now }, milliseconds: { literal: reconcile_within }, direction: "after" }]
+    moves self.amount from payer to self.bank capture "receipt"
+  }
+  action confirm { from: [instructed, exception], to: paid, requires self.receipt.status == "settled" }
+  action expire { from: instructed, to: exception, actor: clock, due: { at: self.expectedAt }, requires self.receipt.status != "settled" }
+  action reverse { from: [instructed, exception], to: reversed, requires self.receipt.status == "reversed" }
+  records {
+    credit: {
+      fields { batch: ref<parent>, identity: text, amount: money }
+      lifecycle { states: [recorded], initial: recorded }
+      action create { requires self.batch in [open]; requires unique "batch_credit" on [self.identity] }
+    }
+    debit: {
+      fields { batch: ref<parent>, identity: text, amount: money }
+      lifecycle { states: [recorded], initial: recorded }
+      action create { requires self.batch in [open]; requires unique "batch_debit" on [self.identity] }
+    }
+  }
+}

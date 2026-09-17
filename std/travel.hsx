@@ -1,0 +1,98 @@
+header travel
+
+instrument package(price: money, supplier_cost: money, departure: date) {
+  constraints { supplier_cost: at_most(price) }
+  summary: "Immutable package price, supplier cost and departure."
+  fields { price: money = price, supplierCost: money = supplier_cost, departure: date = departure }
+  lifecycle { states: [draft, published, closed], initial: draft }
+  action create { requires self.supplierCost <= self.price }
+  action publish { from: draft, to: published }
+  action close { from: published, to: closed, actor: clock, due: { at: self.departure } }
+}
+
+instrument booking(package: ref<travel.package>, buyer: party, supplier: approval, cover: ref<insurance.cover>, deposit: percent = 30%, balance_before: duration = 14d, confirm_within: duration = 24h, tax: percent = 15%, early_before: duration = 30d, middle_before: duration = 15d, middle_penalty: percent = 10%, late_penalty: percent = 30%) {
+  constraints { early_before: greater_than(middle_before) }
+  summary: "A deposited booking with three cancellation bands and supplier confirmation."
+  fields {
+    package: ref<package>, bookingReference: text, buyer: account of buyer, supplier: account of supplier
+    price: money = self.package.price, supplierCost: money = self.package.supplierCost
+    deposit: money = rate(self.price, deposit), balance: money = subtract(self.price, self.deposit)
+    margin: money = subtract(self.price, self.supplierCost)
+    tax: money = rate(self.margin, tax), operatorNet: money = subtract(self.margin, self.tax)
+    middlePenalty: money = rate(self.supplierCost, middle_penalty)
+    latePenalty: money = rate(self.supplierCost, late_penalty)
+    balanceAt: date = before(self.package.departure, balance_before)
+    earlyAt: date = before(self.package.departure, early_before)
+    middleAt: date = before(self.package.departure, middle_before)
+    lateAt: date = after(self.middleAt, 1ms)
+    confirmBy: date = after(self.package.departure, confirm_within)
+    held: account of self
+    refund: money?, retainedMargin: money?, retainedTax: money?, retainedNet: money?
+  }
+  lifecycle { states: [created, deposit_paid, paid, completed, cancelled, refunded], initial: created }
+  action create {
+    requires self.package in [published]
+    requires unique "booking_reference" on [self.bookingReference]
+  }
+  action deposit {
+    from: created, to: deposit_paid, actor: { party: buyer }, deadline: { at: self.balanceAt }
+    requires count of { instrument: child(cover, slice), reference: "covers", anchor: self.id, states: [pending], limit: 366 } >= 1
+    moves self.deposit from buyer to self.held
+    invoke: [{ selection: { instrument: child(cover, slice), reference: "covers", anchor: self.id, states: [pending], limit: 366 }, action: collect, input: {} }]
+  }
+  action balance {
+    from: deposit_paid, to: paid, actor: { party: buyer }, deadline: { at: self.balanceAt }
+    moves self.balance from buyer to self.held
+  }
+  action confirm {
+    from: paid, to: completed, actor: { party: supplier }
+    due: { at: self.package.departure }, deadline: { at: self.confirmBy }
+    requires approval by supplier
+    moves self.supplierCost from self.held to supplier
+    moves self.tax from self.held to programTax
+    moves self.operatorNet from self.held to programOperator
+  }
+  action timeout {
+    from: paid, to: refunded, actor: clock, due: { at: self.confirmBy }
+    moves self.price from self.held to buyer
+  }
+  action cancel_early {
+    from: [deposit_paid, paid], to: cancelled, deadline: { at: self.earlyAt }
+    moves self.held.balance from self.held to buyer
+  }
+  action cancel_middle {
+    from: [deposit_paid, paid], to: cancelled, due: { at: self.earlyAt }, deadline: { at: self.lateAt }
+    calculate: [
+      { target: refund, op: "subtract", base: { field: self.held.balance }, subtract: [{ field: self.deposit }] }
+      { target: retainedMargin, op: "subtract", base: { field: self.deposit }, subtract: [{ field: self.middlePenalty }] }
+      { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
+      { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
+    ]
+    moves self.refund from self.held to buyer
+    moves self.middlePenalty from self.held to supplier
+    moves self.retainedTax from self.held to programTax
+    moves self.retainedNet from self.held to programOperator
+  }
+  action cancel_late {
+    from: [deposit_paid, paid], to: cancelled, actor: caller, due: { at: self.lateAt }
+    calculate: [
+      { target: retainedMargin, op: "subtract", base: { field: self.held.balance }, subtract: [{ field: self.latePenalty }] }
+      { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
+      { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
+    ]
+    moves self.latePenalty from self.held to supplier
+    moves self.retainedTax from self.held to programTax
+    moves self.retainedNet from self.held to programOperator
+  }
+  action default_balance {
+    from: deposit_paid, to: cancelled, actor: clock, due: { at: self.balanceAt }
+    calculate: [
+      { target: retainedMargin, op: "subtract", base: { field: self.held.balance }, subtract: [{ field: self.latePenalty }] }
+      { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
+      { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
+    ]
+    moves self.latePenalty from self.held to supplier
+    moves self.retainedTax from self.held to programTax
+    moves self.retainedNet from self.held to programOperator
+  }
+}

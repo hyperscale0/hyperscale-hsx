@@ -1,0 +1,115 @@
+header lending
+
+instrument round(borrower: party, capital: party, plan: ref<financing.installments> = object(financing.installments), months: integer(1, 366) = 3, profit: percent = 3%, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
+  summary: "A threshold funding round; failed rounds return each original wallet contribution."
+  fields {
+    borrower: account of borrower, capital: account(capital, cash, "capital"), plan: ref<plan>, price: money, closesAt: date
+    months: integer = months, profit: money = rate(self.price, profit)
+    minimumTicket: money = minimum_ticket, maximumTicket: money = rate(self.price, investor_cap)
+    held: account of self
+  }
+  lifecycle { states: [open, funded, failed], initial: open }
+  action create { requires unique "funding_plan" on [self.plan]; requires self.months == self.plan.months; requires self.profit == self.plan.profit; requires self.price == self.plan.principal; requires self.borrower == self.plan.funds.payer }
+  action close {
+    from: open, to: funded
+    requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
+    requires self.held.balance == self.price
+    moves self.price from self.held to self.plan.capital
+    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: fund, input: {} }]
+  }
+  action fail {
+    from: open, to: failed, actor: clock, due: { at: self.closesAt }
+    requires self.held.balance < self.price
+    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: refund, input: {} }]
+  }
+}
+
+instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, investor: party = party(person)) {
+  summary: "One investor's original-wallet contribution, capped cumulatively within the round."
+  fields { round: ref<round>, wallet: ref<wallet>, amount: money, loss: account(investor, claim, "loss") }
+  lifecycle { states: [committed, funded, withdrawn, refunded], initial: committed }
+  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366, where: { wallet: { field: self.wallet } } } <= self.round.maximumTicket
+  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366 } <= self.round.price
+  action create {
+    requires self.round in [open]
+    requires self.wallet in [active]
+    requires self.amount >= self.round.minimumTicket
+    deadline: { at: self.round.closesAt }
+    moves self.amount from self.wallet.held to self.round.held
+  }
+  action fund { from: committed, to: funded, actor: { parent: round } }
+  action withdraw {
+    from: committed, to: withdrawn
+    requires self.round in [open]
+    deadline: { at: self.round.closesAt }
+    moves self.amount from self.round.held to self.wallet.held
+  }
+  action refund {
+    from: committed, to: refunded, actor: { parent: round }
+    moves self.amount from self.round.held to self.wallet.held
+  }
+}
+
+instrument distribution(round: ref<lending.round>, receipt: ref, commitments: ref<lending.commitment> = object(lending.commitment), mode: enum(cash, loss) = cash, residual_to: party = programOperator, fee: percent = 1%, tax: percent = 15%) {
+  summary: "Frozen weighted shares, floored once, with residual assigned to the chosen party."
+  fields {
+    round: ref<round>, source: ref<receipt>, mode: enum(cash, loss) = mode
+    principal: money?, profit: money?, grossTotal: money?, charge: money?, vat: money?, net: money?
+    held: account of self, losses: account(self, claim), residualLoss: account(residual_to, claim, "loss")
+  }
+  lifecycle { states: [pending, cash_ready, loss_ready, distributed], initial: pending }
+  action create { requires self.round in [funded]; requires self.source.plan == self.round.plan; requires unique "settlement_consumption" on [self.source.plan, self.source.identity] }
+  action prepare_cash {
+    from: pending, to: cash_ready
+    requires self.mode == "cash"; requires self.source.kind == "cash"
+    calculate: [
+      { target: "principal", op: "sum", values: [{ field: self.source.principal }] }
+      { target: "profit", op: "sum", values: [{ field: self.source.profit }] }
+      { target: "charge", op: "rate", base: { field: self.profit }, bps: { literal: fee }, rounding: "floor" }
+      { target: "vat", op: "rate", base: { field: self.charge }, bps: { literal: tax }, rounding: "floor" }
+      { target: "grossTotal", op: "sum", values: [{ field: self.principal }, { field: self.profit }] }
+      { target: "net", op: "subtract", base: { field: self.grossTotal }, subtract: [{ field: self.charge }, { field: self.vat }] }
+    ]
+  }
+  action prepare_loss {
+    from: pending, to: loss_ready
+    requires self.mode == "loss"; requires self.source.kind == "loss"
+    calculate: [{ target: "net", op: "sum", values: [{ field: self.source.loss }] }]
+  }
+  action distribute_cash {
+    from: cash_ready, to: distributed
+    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
+    moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator; moves self.vat from self.held to programTax
+    invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
+  }
+  action residual_cash {
+    from: distributed, to: distributed, actor: { parent: current() }
+    moves self.held.balance from self.held to residual_to
+  }
+  action distribute_loss {
+    from: loss_ready, to: distributed
+    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
+    moves self.net from self.source.lossAccount to self.losses
+    invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
+  }
+  action residual_loss {
+    from: distributed, to: distributed, actor: { parent: current() }
+    moves self.losses.balance from self.losses to self.residualLoss
+  }
+  records {
+    share: {
+      fields {
+        distribution: ref<parent>, commitment: ref<commitments>
+        weight: money = self.commitment.amount
+        gross: money = ratio(self.distribution.net, self.weight, self.distribution.round.price)
+      }
+      lifecycle { states: [pending, paid], initial: pending }
+      action create { requires self.distribution in [cash_ready, loss_ready]; requires self.commitment in [funded]; requires unique "distribution_weight" on [self.distribution, self.commitment]; requires self.commitment.round == self.distribution.round }
+      action cash {
+        from: pending, to: paid, actor: { parent: parent }
+        moves self.gross from self.distribution.held to self.commitment.wallet.held
+      }
+      action loss { from: pending, to: paid, actor: { parent: parent }, moves self.gross from self.distribution.losses to self.commitment.loss }
+    }
+  }
+}

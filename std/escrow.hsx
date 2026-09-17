@@ -1,0 +1,43 @@
+header escrow
+
+instrument hold(payer: party, payee: party, for: ref<marketplace.order>, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
+  summary: "Hold an order's price through delivery, acceptance and verified return."
+  fields { payer: account of payer, payee: account of payee, order: ref<for>, price: money, held: account of self, deliveredAt: date? }
+  lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
+  action create {
+    requires self.payer == self.order.buyer; requires self.payee == self.order.listing.seller; requires self.price == self.order.price
+  }
+  action fund {
+    from: pending, to: funded, actor: { party: payer }
+    requires self.order in [placed]
+    moves self.price from payer to self.held
+  }
+  action confirm {
+    from: pending, to: funded
+    requires self.held.balance == self.price
+  }
+  action deliver {
+    from: funded, to: delivered, actor: { party: payee }
+    set: { deliveredAt: { field: self.now } }
+  }
+  action accept {
+    from: delivered, to: released, actor: { party: payer }
+    input { acceptanceReference: text, titleReference: text, coverReference: text }
+    deadline: { at: self.deliveredAt, offset: accept_within }
+    moves self.price from self.held to payee fee fee
+  }
+  action expire_acceptance {
+    from: delivered, to: disputed, actor: clock
+    due: { at: self.deliveredAt, offset: accept_within }
+  }
+  action dispute {
+    from: delivered, to: disputed, actor: { party: payer }
+    deadline: { at: self.deliveredAt, offset: accept_within }
+  }
+  action verify_return { from: disputed, to: return_verified, input { returnReference: text } }
+  action refund {
+    from: dispute.refund_after, to: refunded
+    moves self.price from self.held to payer
+  }
+  action cancel { from: pending, to: cancelled }
+}

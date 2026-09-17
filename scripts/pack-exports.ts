@@ -1,24 +1,4 @@
-/**
- * Pack-time entry-point rewrite (prepack applies, postpack restores).
- *
- * The product package.json keeps main/module/types/exports on a `.ts`
- * source: a dist-pointing mapping visible to the product would let a
- * consumer read the untracked (and possibly stale) dist/ build during
- * `vp test`. The published tarball needs the opposite, because native Node
- * cannot import .ts out of node_modules. That is the split pnpm formalizes as
- * publishConfig field overrides; npm has no equivalent, hence the two hooks.
- *
- * Both modes write the same field set, so `restore` puts the manifest back
- * whether or not `apply` ran.
- *
- * The rewrite reaches those four fields because a consumer reads them from the
- * package.json INSIDE the installed tarball. It cannot reach `bin`: npm links
- * node_modules/.bin from the registry packument, and publish.js re-reads
- * package.json from disk AFTER postpack has already restored it. 1.0.0-alpha.1
- * shipped that way, so every install got a .bin/hsx pointing at bin/hsx.ts and
- * Node refused to execute it. `bin` stays dist-pointing at rest and is absent
- * from both entry sets below; scripts/check-bin.ts holds it there.
- */
+/** Publish JavaScript entry points while source checkouts resolve TypeScript. */
 const packageJsonPath = new URL("../package.json", import.meta.url);
 
 const dataExports = {
@@ -33,7 +13,6 @@ const sourceEntries = {
   exports: {
     ".": "./src/index.ts",
     "./cost": "./src/cost.ts",
-    "./lsp": "./src/lsp/server.ts",
     ...dataExports,
   },
 };
@@ -47,10 +26,6 @@ const distEntries = {
     "./cost": {
       types: "./dist/src/cost.d.ts",
       default: "./dist/src/cost.js",
-    },
-    "./lsp": {
-      types: "./dist/src/lsp/server.d.ts",
-      default: "./dist/src/lsp/server.js",
     },
     ...dataExports,
   },

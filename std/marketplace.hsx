@@ -1,0 +1,24 @@
+header marketplace
+
+instrument listing(seller: party) {
+  summary: "A seller's offer and its asking price."
+  fields { seller: account of seller, title: text, price: money }
+  lifecycle { states: [draft, active, withdrawn, sold], initial: draft }
+  action create { actor: { party: seller } }
+  action publish { from: draft, to: active, actor: { party: seller } }
+  action withdraw { from: active, to: withdrawn, actor: { party: seller } }
+  action sell { from: active, to: sold, actor: { party: seller } }
+}
+
+instrument order(listing: ref<marketplace.listing>, buyer: party) {
+  summary: "A buyer's order for one listing at its declared price."
+  fields { listing: ref<listing>, buyer: account of buyer, price: money }
+  lifecycle { states: [placed, fulfilled, cancelled], initial: placed }
+  action create {
+    actor: { party: buyer }
+    requires self.listing in [active]
+    requires self.price == self.listing.price
+  }
+  action fulfill { from: placed, to: fulfilled }
+  action cancel { from: placed, to: cancelled, actor: { party: buyer } }
+}

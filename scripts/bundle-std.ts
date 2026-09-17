@@ -1,30 +1,18 @@
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const packageRoot = join(import.meta.dir, "..");
 const stdRoot = join(packageRoot, "std");
 const targetPath = join(packageRoot, "src", "std-bundle.ts");
 
-function collectFiles(dir: string): string[] {
-  const entries = readdirSync(dir).sort();
-  const files: string[] = [];
-  for (const entry of entries) {
-    const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
-      files.push(...collectFiles(full));
-    } else if (stat.isFile()) {
-      files.push(full);
-    }
-  }
-  return files;
-}
-
 export function generateStdBundleCode(): {
   readonly code: string;
   readonly files: ReadonlyMap<string, string>;
 } {
-  const files = collectFiles(stdRoot);
+  const files = readdirSync(stdRoot)
+    .filter((name) => name.endsWith(".hsx"))
+    .sort()
+    .map((name) => join(stdRoot, name));
   const fileMap = new Map<string, string>();
   for (const full of files) {
     const rel = relative(stdRoot, full);

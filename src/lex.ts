@@ -1,216 +1,120 @@
-/**
- * The HSX lexer. Hand-written, total: every input produces a token stream
- * ending in `eof`, with malformed stretches reported as diagnostics and
- * skipped. Tokens carry byte-offset spans; whitespace and `//` comments are
- * insignificant everywhere.
- */
-
 import type { Diagnostic, Span } from "./ast.ts";
-
-type TokenKind =
-  | "eof"
-  | "ident"
-  | "keyword"
-  | "number"
-  | "percent"
-  | "punct"
-  | "string";
-
 export const KEYWORDS = [
-  "action",
-  "as",
-  "asset",
-  "commit",
-  "const",
-  "expect",
-  "expose",
-  "expires",
-  "export",
-  "from",
-  "import",
-  "instrument",
-  "module",
-  "party",
-  "port",
   "program",
-  "quote",
-  "rate",
-  "reconcile",
-  "settlement",
-  "subject",
-  "type",
+  "header",
   "use",
+  "party",
+  "role",
+  "currency",
+  "instrument",
+  "fields",
+  "lifecycle",
+  "action",
+  "expose",
+  "hide",
+  "as",
+  "cap",
+  "of",
+  "when",
+  "constraints",
+  "requires",
+  "invariants",
+  "moves",
+  "from",
+  "to",
+  "in",
+  "by",
+  "for",
+  "is",
+  "approval",
+  "unique",
+  "on",
+  "count",
+  "sum",
+  "hours",
+  "between",
+  "and",
+  "timezone",
+  "evidence",
+  "reserve",
+  "post",
+  "void",
+  "capture",
+  "fee",
+  "shares",
 ] as const;
-
 export interface Token {
-  readonly kind: TokenKind;
-  readonly span: Span;
-  /** Identifier name, keyword, punctuation glyph, or raw literal text. */
-  readonly text: string;
-  /** Decoded value for string literals; raw digits for numbers/percents. */
-  readonly value: string;
+  kind: "name" | "number" | "string" | "date" | "punct" | "eof";
+  text: string;
+  span: Span;
 }
-
-/** Source trivia retained for tools that must reproduce author comments. */
-export interface CommentTrivia {
-  readonly kind: "line_comment";
-  readonly span: Span;
-  readonly text: string;
-}
-
-export const PUNCT = [
-  "{",
-  "}",
-  "(",
-  ")",
-  "[",
-  "]",
-  ":",
-  ",",
-  ";",
-  "=",
-  "|",
-  ".",
-  "<",
-  ">",
-  "?",
-] as const;
-const PUNCT_SET: ReadonlySet<string> = new Set(PUNCT);
-const KEYWORD_SET: ReadonlySet<string> = new Set(KEYWORDS);
-
-// Case conventions (snake_case declarations, uppercase currency codes) are
-// semantic rules the typechecker words per position; the lexer stays permissive.
-const isIdentStart = (ch: string): boolean => /[A-Za-z]/.test(ch);
-const isIdentPart = (ch: string): boolean => /[A-Za-z0-9_]/.test(ch);
-const isDigit = (ch: string): boolean => ch >= "0" && ch <= "9";
-
-export interface LexResult {
-  readonly comments: readonly CommentTrivia[];
-  readonly diagnostics: readonly Diagnostic[];
-  readonly tokens: readonly Token[];
-}
-
-export function lex(source: string): LexResult {
+export function lex(source: string): {
+  tokens: Token[];
+  diagnostics: Diagnostic[];
+} {
   const tokens: Token[] = [];
-  const comments: CommentTrivia[] = [];
   const diagnostics: Diagnostic[] = [];
   let index = 0;
-
-  const push = (kind: TokenKind, start: number, text: string, value = text) => {
-    tokens.push({ kind, span: { end: index, start }, text, value });
-  };
-
   while (index < source.length) {
-    const ch = source[index] as string;
-
-    if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n") {
-      index += 1;
-      continue;
-    }
-
-    if (ch === "/" && source[index + 1] === "/") {
-      const start = index;
-      while (index < source.length && source[index] !== "\n") index += 1;
-      comments.push({
-        kind: "line_comment",
-        span: { end: index, start },
-        text: source.slice(start, index),
-      });
-      continue;
-    }
-
-    if (PUNCT_SET.has(ch)) {
-      const start = index;
-      index += 1;
-      push("punct", start, ch);
-      continue;
-    }
-
-    if (ch === "-" && source[index + 1] === ">") {
-      const start = index;
-      index += 2;
-      push("punct", start, "->");
-      continue;
-    }
-
-    if (ch === '"') {
-      const start = index;
-      index += 1;
-      let value = "";
-      let closed = false;
-      while (index < source.length) {
-        const next = source[index] as string;
-        if (next === '"') {
-          index += 1;
-          closed = true;
-          break;
-        }
-        if (next === "\n") break;
-        value += next;
-        index += 1;
-      }
-      if (!closed) {
-        diagnostics.push({
-          message: "this string never closes; add the ending double quote",
-          span: { end: index, start },
-        });
-      }
-      push("string", start, source.slice(start, index), value);
-      continue;
-    }
-
-    if (isDigit(ch)) {
-      const start = index;
-      while (index < source.length && isDigit(source[index] as string)) {
-        index += 1;
-      }
-      if (source[index] === "." && isDigit(source[index + 1] ?? "")) {
-        index += 1;
-        while (index < source.length && isDigit(source[index] as string)) {
-          index += 1;
-        }
-      }
-      const raw = source.slice(start, index);
-      if (source[index] === "%") {
-        index += 1;
-        push("percent", start, source.slice(start, index), raw);
-      } else {
-        push("number", start, raw, raw);
-      }
-      continue;
-    }
-
-    if (isIdentStart(ch)) {
-      const start = index;
-      while (index < source.length && isIdentPart(source[index] as string)) {
-        index += 1;
-      }
-      const text = source.slice(start, index);
-      push(KEYWORD_SET.has(text) ? "keyword" : "ident", start, text);
-      continue;
-    }
-
     const start = index;
-    while (
-      index < source.length &&
-      !/[\sA-Za-z0-9_"]/.test(source[index] as string) &&
-      !PUNCT_SET.has(source[index] as string) &&
-      !(source[index] === "/" && source[index + 1] === "/")
-    ) {
-      index += 1;
+    const tail = source.slice(index);
+    const whitespace = /^\s+|^\/\/[^\n]*/.exec(tail);
+    if (whitespace) {
+      index += whitespace[0].length;
+      continue;
     }
-    if (index === start) index += 1;
-    diagnostics.push({
-      message: `"${source.slice(start, index)}" is not part of the HSX language`,
-      span: { end: index, start },
-    });
+    const date =
+      /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2}))?/.exec(
+        tail,
+      );
+    const number = /^-?\d+(?:\.\d+)?(?:%|ms|[smhdw])?/.exec(tail);
+    const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(tail);
+    let kind: Token["kind"];
+    let text: string;
+    if (date) {
+      kind = "date";
+      text = date[0];
+    } else if (number) {
+      kind = "number";
+      text = number[0];
+    } else if (name) {
+      kind = "name";
+      text = name[0];
+    } else if (tail[0] === '"') {
+      const quoted = /^"(?:[^"\\\n]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"/.exec(
+        tail,
+      );
+      if (!quoted) {
+        diagnostics.push({
+          code: "HSX1000",
+          message: "unclosed or invalid string",
+          fix: "close the string and use JSON escapes",
+          span: { start, end: start + 1 },
+        });
+        index++;
+        continue;
+      }
+      kind = "string";
+      text = quoted[0];
+    } else if (/^(==|!=|<=|>=)/.test(tail)) {
+      kind = "punct";
+      text = tail.slice(0, 2);
+    } else if (/^[{}()[\]:,;=<>?.|]/.test(tail)) {
+      kind = "punct";
+      text = tail[0]!;
+    } else {
+      diagnostics.push({
+        code: "HSX1000",
+        message: `unexpected character ${tail[0]}`,
+        fix: "remove this character",
+        span: { start, end: start + 1 },
+      });
+      index++;
+      continue;
+    }
+    index += text.length;
+    tokens.push({ kind, text, span: { start, end: index } });
   }
-
-  tokens.push({
-    kind: "eof",
-    span: { end: source.length, start: source.length },
-    text: "",
-    value: "",
-  });
-  return { comments, diagnostics, tokens };
+  tokens.push({ kind: "eof", text: "", span: { start: index, end: index } });
+  return { tokens, diagnostics };
 }

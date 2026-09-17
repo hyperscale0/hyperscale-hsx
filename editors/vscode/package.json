@@ -1,47 +1,23 @@
 {
   "name": "hsx-vscode",
-  "displayName": "Hyperscale HSX",
-  "description": "Syntax highlighting, language server diagnostics, and formatting for the HSX settlement language.",
-  "version": "1.0.0",
+  "displayName": "HSX 3",
+  "description": "Syntax highlighting for typed HSX programs and headers.",
+  "version": "3.0.0",
   "publisher": "hyperscale0",
   "license": "AGPL-3.0-only",
   "private": true,
-  "main": "./dist/extension.js",
-  "activationEvents": [
-    "onLanguage:hsx"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/hyperscale0/hyperscale-hsx.git",
-    "directory": "editors/vscode"
-  },
   "engines": {
-    "vscode": "^1.134.0"
+    "vscode": "^1.90.0"
   },
   "categories": [
     "Programming Languages"
   ],
-  "scripts": {
-    "build": "bun run --cwd ../.. docs:build && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "package": "bun run build && vsce package --no-dependencies",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
-  },
-  "dependencies": {
-    "vscode-languageclient": "10.1.1"
-  },
-  "devDependencies": {
-    "@types/vscode": "1.134.0",
-    "@vscode/vsce": "3.9.2",
-    "esbuild": "0.28.2",
-    "typescript": "7.0.2"
-  },
   "contributes": {
     "languages": [
       {
         "id": "hsx",
         "aliases": [
-          "HSX",
-          "hsx"
+          "HSX"
         ],
         "extensions": [
           ".hsx"
@@ -61,17 +37,6 @@
         "language": "hsx",
         "path": "./snippets/hsx.json"
       }
-    ],
-    "configuration": {
-      "type": "object",
-      "title": "Hyperscale HSX",
-      "properties": {
-        "hsx.serverPath": {
-          "type": "string",
-          "default": "hsx",
-          "description": "Path to the hsx executable."
-        }
-      }
-    }
+    ]
   }
 }

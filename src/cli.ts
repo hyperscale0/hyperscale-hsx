@@ -1,383 +1,98 @@
-/**
- * The `hsx` command line over the one compiler entry point and catalog.
- *
- * `check` prints diagnostics and says nothing else; `build` writes the
- * compiled artifacts as JSON. Neither reads the environment, neither touches
- * a network, and neither writes outside the path the caller names.
- *
- * Everything here is a pure function of `argv` plus the injected `Io`, so the
- * spec drives the real code paths with an in-memory filesystem instead of
- * asserting on a subprocess's scrollback.
- */
-
-import { parseUdl, type UdlDocument } from "@hyperscale0/udl";
-import { fileURLToPath } from "node:url";
-import { compile, type CompileResult } from "./compile.ts";
-import type { UdlCostManifest, UdlCostTables } from "./cost.ts";
-import { hsxDiagnostics } from "./diagnostics.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { headerManifest } from "./headers.ts";
+import { compile } from "./compile.ts";
 import { format } from "./format.ts";
-import { startLspServer } from "./lsp/server.ts";
-import { HSX_TARGET_UDL_VERSION, HSX_VERSION } from "./version.ts";
+import { serializeUdl } from "@hyperscale0/udl";
+const standardLibrary = {
+  source: (header: string) => {
+    for (const base of ["../std/", "../../std/"]) {
+      const file = new URL(`${base}${header}.hsx`, import.meta.url);
+      if (existsSync(file)) return readFileSync(file, "utf8");
+    }
+    return undefined;
+  },
+};
 
-/** Filesystem and streams, injected so the CLI stays testable. */
 export interface Io {
-  readonly err: (line: string) => void;
-  readonly out: (line: string) => void;
-  readonly readFile: (path: string) => Promise<string>;
-  readonly writeFile: (path: string, contents: string) => Promise<void>;
-  readonly stdin?: NodeJS.ReadableStream;
-  readonly stdout?: NodeJS.WritableStream;
+  out(line: string): void;
+  err(line: string): void;
+  readFile(path: string): Promise<string>;
+  writeFile(path: string, text: string): Promise<void>;
+  stdin?: NodeJS.ReadableStream;
+  stdout?: NodeJS.WritableStream;
 }
-
-/**
- * Exit codes. `warning` exits 0 because a lint note is not a failure; pass
- * `--strict` to make it one.
- */
-const OK = 0;
-const REFUSED = 1;
-const USAGE = 2;
-
-export const USAGE_TEXT = `hsx ${HSX_VERSION}, the HSX compiler
-
-Usage:
-  hsx check <file.hsx> [--catalog <catalog.udl>] [--strict]
-  hsx build <file.hsx> [--catalog <catalog.udl>] [--out <file.json>] [--strict]
-  hsx cost <file.hsx> [--catalog <catalog.udl>] [--json] [--out <file.json>] [--strict]
-  hsx explain <HSX####>
-  hsx format <file.hsx>
-  hsx lsp
-  hsx --version
-  hsx --help
-
-Commands:
-  check   Compile and report diagnostics. Prints nothing when the program is clean.
-  build   Compile and write canonical UDL as JSON.
-  cost    Compile and print the version-pinned cost manifest as a table or JSON.
-  explain Print one diagnostic title, fix, and source example.
-  format  Print the source in the one canonical HSX style.
-  lsp     Run the language server over stdin and stdout.
-
-Options:
-  --catalog <file>  Read the published instrument catalogue as canonical UDL JSON.
-  --json        Print the cost manifest as JSON instead of a table.
-  --out <file>  Write build or cost JSON to this path instead of stdout.
-  --strict      Treat warning-severity diagnostics as failures.
-
-Exit codes:
-  0  the program compiled (verdict valid, or warning without --strict)
-  1  the program was refused (verdict invalid, or warning with --strict)
-  2  the command line or the input file could not be used`;
-
 export async function runCli(argv: readonly string[], io: Io): Promise<number> {
-  const [command, ...rest] = argv;
-
-  if (command === undefined || command === "--help" || command === "-h") {
-    io.out(USAGE_TEXT);
-    return command === undefined ? USAGE : OK;
+  const [command, file, ...options] = argv;
+  if (command === "headers") {
+    if (file !== "--json" || options.length) {
+      io.err("usage: hsx headers --json");
+      return 2;
+    }
+    io.out(JSON.stringify(headerManifest(standardLibrary), null, 2));
+    return 0;
   }
-  if (command === "--version" || command === "-v") {
-    io.out(`${HSX_VERSION} (UDL version ${HSX_TARGET_UDL_VERSION})`);
-    return OK;
+  if (["--help", "help", "-h"].includes(command ?? "")) {
+    io.out("hsx build|check|format|cost <file> [--out path]");
+    return 0;
   }
-  if (command === "explain") return explainDiagnostic(rest, io);
-  if (command === "lsp") {
-    const input = io.stdin ?? process.stdin;
-    const output = io.stdout ?? process.stdout;
-    return new Promise<number>((resolve) => {
-      startLspServer(input, output, {
-        onExit: resolve,
-      });
-    });
+  if (command === "--version") {
+    io.out("3.0.0 (UDL 3)");
+    return 0;
   }
   if (
-    command !== "check" &&
-    command !== "build" &&
-    command !== "cost" &&
-    command !== "format"
+    !command ||
+    !file ||
+    !["build", "check", "format", "cost"].includes(command)
   ) {
-    io.err(`hsx: unknown command "${command}"`);
-    io.err(USAGE_TEXT);
-    return USAGE;
+    io.err("usage: hsx build|check|format|cost <file> [--out path]");
+    return 2;
   }
-
-  const parsed = parseOptions(rest, command);
-  if ("error" in parsed) {
-    io.err(`hsx: ${parsed.error}`);
-    return USAGE;
+  let output: string | undefined;
+  for (let i = 0; i < options.length; i++) {
+    if (options[i] === "--out" && options[i + 1] && output === undefined)
+      output = options[++i];
+    else if (!["--json", "--strict"].includes(options[i]!)) {
+      io.err(`unknown option ${options[i]}`);
+      return 2;
+    }
   }
-
-  let source: string;
   try {
-    source = await io.readFile(parsed.file);
-  } catch (cause) {
-    io.err(`hsx: cannot read ${parsed.file}: ${messageOf(cause)}`);
-    return USAGE;
-  }
-
-  if (command === "format") {
-    const result = format(source);
-    if (!result.ok) {
-      for (const diagnostic of result.diagnostics) {
-        const codePrefix = diagnostic.code ? `${diagnostic.code}: ` : "";
+    const source = await io.readFile(file);
+    let text: string;
+    if (command === "format") {
+      const result = format(source);
+      if (!result.ok) {
+        result.diagnostics.forEach((d) => io.err(`${file}: ${d.message}`));
+        return 1;
+      }
+      text = result.formatted;
+    } else {
+      const result = compile(source, { standardLibrary });
+      for (const d of result.diagnostics)
         io.err(
-          `${parsed.file}:1:1: error [parse] ${codePrefix}${diagnostic.message}`,
+          `${file}:${d.line}:${d.column}: ${d.code} ${d.message}. ${d.fix}`,
         );
-      }
-      return REFUSED;
+      if (!result.artifacts || result.verdict !== "valid") return 1;
+      if (command === "check") return 0;
+      text =
+        command === "cost"
+          ? JSON.stringify(result.artifacts.costManifest, null, 2) + "\n"
+          : serializeUdl(result.artifacts.document);
     }
-    io.out(result.formatted.trimEnd());
-    return OK;
+    if (output) await io.writeFile(output, text);
+    else io.out(text.trimEnd());
+    return 0;
+  } catch (error) {
+    io.err(error instanceof Error ? error.message : String(error));
+    return 2;
   }
-
-  let costTable: UdlCostTables;
-  try {
-    costTable = await readDefaultCostTable(io);
-  } catch (cause) {
-    io.err(`hsx: cannot read the packaged cost table: ${messageOf(cause)}`);
-    return USAGE;
-  }
-  let publishedCatalog: UdlDocument | undefined;
-  if (parsed.catalog !== undefined) {
-    try {
-      publishedCatalog = parseUdl(await io.readFile(parsed.catalog));
-    } catch (cause) {
-      io.err(
-        `hsx: cannot read catalogue ${parsed.catalog}: ${messageOf(cause)}`,
-      );
-      return USAGE;
-    }
-  }
-  const result = compile(source, {
-    costTable,
-    ...(publishedCatalog === undefined ? {} : { publishedCatalog }),
-  });
-  for (const line of diagnosticLines(parsed.file, result)) io.err(line);
-
-  const refused =
-    result.verdict === "invalid" ||
-    (parsed.strict && result.verdict === "warning");
-
-  if (command === "check") {
-    return refused ? REFUSED : OK;
-  }
-
-  if (!result.artifacts) return REFUSED;
-  if (command === "cost") {
-    const json = `${JSON.stringify(result.artifacts.costManifest, null, 2)}\n`;
-    if (parsed.out !== undefined) {
-      const writeCode = await writeOutput(parsed.out, json, io);
-      return writeCode === OK && refused ? REFUSED : writeCode;
-    }
-    io.out(
-      parsed.json
-        ? json.trimEnd()
-        : renderCostTable(result.artifacts.costManifest),
-    );
-    return refused ? REFUSED : OK;
-  }
-  const json = `${JSON.stringify(result.artifacts.document, null, 2)}\n`;
-  if (parsed.out === undefined) {
-    io.out(json.trimEnd());
-  } else {
-    try {
-      await io.writeFile(parsed.out, json);
-    } catch (cause) {
-      io.err(`hsx: cannot write ${parsed.out}: ${messageOf(cause)}`);
-      return USAGE;
-    }
-  }
-  return refused ? REFUSED : OK;
 }
 
-interface Options {
-  readonly catalog?: string;
-  readonly file: string;
-  readonly json: boolean;
-  readonly out?: string;
-  readonly strict: boolean;
-}
-
-function parseOptions(
-  args: readonly string[],
-  command: "build" | "check" | "cost" | "format",
-): Options | { readonly error: string } {
-  let file: string | undefined;
-  let catalog: string | undefined;
-  let json = false;
-  let out: string | undefined;
-  let strict = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index] as string;
-    if (argument === "--strict") {
-      if (command === "format") {
-        return { error: "hsx format has no style options" };
-      }
-      strict = true;
-      continue;
-    }
-    if (argument === "--json") {
-      if (command !== "cost") return { error: "--json belongs to hsx cost" };
-      json = true;
-      continue;
-    }
-    if (argument === "--catalog") {
-      if (command === "format")
-        return { error: "--catalog belongs to check, build or cost" };
-      const value = args[index + 1];
-      if (value === undefined || value.startsWith("--"))
-        return { error: "--catalog needs a file path" };
-      if (catalog !== undefined)
-        return { error: "--catalog may be supplied only once" };
-      catalog = value;
-      index += 1;
-      continue;
-    }
-    if (argument === "--out") {
-      if (command !== "build" && command !== "cost") {
-        return { error: "--out belongs to hsx build or hsx cost" };
-      }
-      const value = args[index + 1];
-      if (value === undefined || value.startsWith("--")) {
-        return { error: "--out needs a file path" };
-      }
-      out = value;
-      index += 1;
-      continue;
-    }
-    if (argument.startsWith("-")) {
-      return { error: `unknown option "${argument}"` };
-    }
-    if (file !== undefined) {
-      return { error: `hsx ${command} takes one file, got "${argument}" too` };
-    }
-    file = argument;
-  }
-
-  if (file === undefined) return { error: `hsx ${command} needs a file` };
-  return {
-    file,
-    json,
-    ...(catalog === undefined ? {} : { catalog }),
-    ...(out === undefined ? {} : { out }),
-    strict,
-  };
-}
-
-function explainDiagnostic(args: readonly string[], io: Io): number {
-  if (args.length !== 1 || args[0]?.startsWith("-")) {
-    io.err("hsx: explain needs one diagnostic code");
-    return USAGE;
-  }
-  const diagnostic = hsxDiagnostics.find(({ code }) => code === args[0]);
-  if (!diagnostic) {
-    io.err(`hsx: unknown diagnostic code ${args[0]}`);
-    return USAGE;
-  }
-  io.out(
-    [
-      `${diagnostic.code} ${diagnostic.title}`,
-      `Stage: ${diagnostic.stage}`,
-      `Fix: ${diagnostic.fix}`,
-      diagnostic.example === null
-        ? "Example: unavailable from source alone"
-        : `Example:\n${diagnostic.example}`,
-    ].join("\n"),
-  );
-  return OK;
-}
-
-function renderCostTable(manifest: UdlCostManifest): string {
-  const rows = [
-    `costTableVersion\t${manifest.costTableVersion}`,
-    "instrument.action\teffect\tunit\tcount\ttotal\tpayer",
-  ];
-  for (const action of manifest.actions) {
-    for (const component of action.components) {
-      const fixed = BigInt(component.perEventMinor) * BigInt(component.count);
-      const unit = [
-        `${component.perEventMinor} ${manifest.currency} minor`,
-        component.bps > 0 ? `${component.bps} bps` : undefined,
-      ]
-        .filter((part): part is string => part !== undefined)
-        .join(" + ");
-      const total =
-        component.bps === 0
-          ? `${fixed} ${manifest.currency} minor`
-          : [
-              fixed === 0n ? undefined : `${fixed} ${manifest.currency} minor`,
-              `amount-dependent (${component.bps} bps)`,
-            ]
-              .filter((part): part is string => part !== undefined)
-              .join(" + ");
-      rows.push(
-        [
-          `${action.instrument}.${action.action}`,
-          component.signature,
-          unit,
-          component.count,
-          total,
-          component.payer,
-        ].join("\t"),
-      );
-    }
-  }
-  return rows.join("\n");
-}
-
-async function writeOutput(
-  path: string,
-  contents: string,
-  io: Io,
-): Promise<number> {
-  try {
-    await io.writeFile(path, contents);
-  } catch (cause) {
-    io.err(`hsx: cannot write ${path}: ${messageOf(cause)}`);
-    return USAGE;
-  }
-  return OK;
-}
-
-async function readDefaultCostTable(io: Io): Promise<UdlCostTables> {
-  const candidates = [
-    fileURLToPath(new URL("../examples/cost-table.json", import.meta.url)),
-    fileURLToPath(new URL("../../examples/cost-table.json", import.meta.url)),
-  ];
-  let lastError: unknown;
-  for (const path of candidates) {
-    try {
-      return JSON.parse(await io.readFile(path)) as UdlCostTables;
-    } catch (cause) {
-      lastError = cause;
-    }
-  }
-  throw lastError;
-}
-
-/** `file:line:col: severity [stage] message`, the shape editors already parse. */
-function diagnosticLines(
-  file: string,
-  result: CompileResult,
-): readonly string[] {
-  return result.diagnostics.map((diagnostic) => {
-    const codePrefix = diagnostic.code ? `${diagnostic.code}: ` : "";
-    return `${diagnostic.file ?? file}:${diagnostic.line}:${diagnostic.column}: ${diagnostic.severity} [${diagnostic.stage}] ${codePrefix}${diagnostic.message}`;
-  });
-}
-
-function messageOf(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-if (import.meta.main) {
-  const { readFile, writeFile } = await import("node:fs/promises");
+if (import.meta.main)
   process.exitCode = await runCli(process.argv.slice(2), {
-    err: (line) => process.stderr.write(`${line}\n`),
-    out: (line) => process.stdout.write(`${line}\n`),
+    out: (line) => process.stdout.write(line + "\n"),
+    err: (line) => process.stderr.write(line + "\n"),
     readFile: (path) => readFile(path, "utf8"),
-    writeFile: (path, contents) => writeFile(path, contents, "utf8"),
-    stdin: process.stdin,
-    stdout: process.stdout,
+    writeFile: (path, text) => writeFile(path, text, "utf8"),
   });
-}

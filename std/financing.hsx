@@ -1,0 +1,372 @@
+header financing
+
+instrument installments(months: integer(1, 366), profit: percent, disburse_to: enum(funds, borrower) = funds, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, down_payment: percent = 0%, funds: ref, approval: approval, borrower: party = party(person), capital: party = programOperator, profit_to: party = programOperator, limits: ref<financing.limits> = object(financing.limits)) {
+  summary: "Funding, profit recognition and payment order chosen by the program."
+  fields {
+    funds: ref<funds>, borrower: account of borrower, settlementIdentity: text, borrowerLimit: ref<limits>, portfolioLimit: ref<limits.portfolio>
+    months: integer = months, dates: list(date, months)
+    capital: account(capital, cash, "capital"), profitIncome: account(profit_to, cash, "profitIncome"), loss: account(capital, claim, "loss")
+    principalReturned: money?, profitReturned: money?, lossRecorded: money?
+    price: money = self.funds.price
+    downPayment: money = rate(self.price, down_payment)
+    principal: money = subtract(self.price, self.downPayment)
+    profit: money = rate(self.principal, profit)
+    total: money = sum(self.principal, self.profit)
+  }
+  lifecycle { states: [quoted, signed, active, paid, written_off, cancelled], initial: quoted }
+  invariants count of { instrument: all(financing.installments), reference: "borrowerLimit", anchor: self.borrowerLimit, states: [active], limit: 366 } <= self.borrowerLimit.activePlans
+  invariants sum "principalReceivable.balance" of { instrument: all(financing.installments.slice), reference: "borrowerLimit", anchor: self.borrowerLimit, states: [pending, due, paid], limit: 366 } <= self.borrowerLimit.limit
+  invariants sum "principalReceivable.balance" of { instrument: all(financing.installments.slice), reference: "portfolioLimit", anchor: self.portfolioLimit, states: [pending, due, paid], limit: 366 } <= self.portfolioLimit.limit
+  action create { requires self.borrower == self.funds.payer; requires self.borrowerLimit.borrower == self.funds.payer }
+  action sign {
+    from: quoted, to: signed, input { signedOffer: text, affordabilityReference: text }
+    requires count of { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366 } == self.months
+  }
+  action disburse {
+    from: signed, to: active
+    requires approval by approval
+    requires self.borrowerLimit in [approved]
+    requires self.portfolioLimit in [approved]
+    when disburse_to is funds {
+      requires self.funds in [pending]
+      moves self.downPayment from self.funds.payer to self.funds.held
+      moves self.principal from self.capital to self.funds.held
+    }
+    when disburse_to is borrower { moves self.principal from self.capital to self.borrower }
+    invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366, order: [position] }, action: activate, input: {} }]
+    when disburse_to is funds { invoke: [{ reference: self.funds, action: confirm, input: {} }] }
+  }
+  action complete {
+    from: active, to: paid
+    requires count of { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366 } == 0
+  }
+  action restore { from: [active, paid], to: active, actor: { parent: payment } }
+  action payoff {
+    from: active, to: paid
+    calculate: [
+      { target: "principalReturned", op: "aggregate", selection: { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366 }, measure: { sum: "principalReceivable.balance" } }
+    ]
+    invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366, order: [position] }, action: payoff, input: { identity: { field: self.settlementIdentity } } }, { reference: self.id, action: record_payoff, input: {} }]
+  }
+  action record_payoff {
+    from: paid, to: paid, actor: { parent: current() }
+    calculate: [{ target: profitReturned, op: aggregate, selection: { instrument: slice, reference: "plan", anchor: self.id, states: [paid], limit: 366, where: { payoffIdentity: { field: self.settlementIdentity } } }, measure: { sum: "payoffProfit" } }]
+    invoke: [{ instrument: settlement, action: create, input: { plan: { field: self.id }, identity: { field: self.settlementIdentity }, principal: { field: self.principalReturned }, profit: { field: self.profitReturned }, loss: { literal: "0" }, kind: { literal: "cash" } } }]
+  }
+  action write_off {
+    from: active, to: written_off
+    input { overdueSlice: ref<slice> }
+    calculate: [{ target: "lossRecorded", op: "aggregate", selection: { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366 }, measure: { sum: "principalReceivable.balance" } }]
+    due: { at: input.overdueSlice.lossEligibleAt }
+    requires approval by approval; requires input.overdueSlice.plan == self.id; requires input.overdueSlice.principalReceivable.balance > "0"
+    invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366, order: [position] }, action: write_off, input: {} }, { instrument: settlement, action: create, input: { plan: { field: self.id }, identity: { field: self.settlementIdentity }, principal: { literal: "0" }, profit: { literal: "0" }, loss: { field: self.lossRecorded }, kind: { literal: "loss" } } }]
+  }
+  action record_payment {
+    from: active, to: active, actor: { parent: payment }
+    input { identity: text, principal: money, profit: money }
+    invoke: [{ instrument: settlement, action: create, input: { plan: { field: self.id }, identity: { field: input.identity }, principal: { field: input.principal }, profit: { field: input.profit }, loss: { literal: "0" }, kind: { literal: "cash" } } }]
+  }
+  action cancel { from: quoted, to: cancelled }
+  records {
+    settlement: {
+      fields { plan: ref<parent>, identity: text, principal: money, profit: money, loss: money, kind: enum(cash, loss)
+        capital: account(capital, cash, "capital"), profitIncome: account(profit_to, cash, "profitIncome"), lossAccount: account(capital, claim, "loss") }
+      lifecycle { states: [recorded], initial: recorded }
+      action create {
+        actor: { parent: parent }
+        input { plan: ref<parent>, identity: text, principal: money, profit: money, loss: money, kind: enum(cash, loss) }
+        requires unique "settlement_identity" on [self.plan, self.identity]
+      }
+    }
+    slice: {
+      fields {
+        plan: ref<parent>, borrowerLimit: ref<limits>, portfolioLimit: ref<limits.portfolio>, position: integer(1, months)
+        dueAt: date = at(self.plan.dates, self.position), lossEligibleAt: date = after(self.dueAt, 90d)
+        principalBase: money = divide(self.plan.principal, months)
+        principalAllocated: money = multiply(self.principalBase, months)
+        principalRemainder: money = subtract(self.plan.principal, self.principalAllocated)
+        profitBase: money = divide(self.plan.profit, months)
+        profitAllocated: money = multiply(self.profitBase, months)
+        profitRemainder: money = subtract(self.plan.profit, self.profitAllocated)
+        first: integer = divide(1, self.position)
+        principalAdjustment: money = multiply(self.principalRemainder, self.first)
+        profitAdjustment: money = multiply(self.profitRemainder, self.first)
+        principal: money = sum(self.principalBase, self.principalAdjustment)
+        profit: money = sum(self.profitBase, self.profitAdjustment)
+        principalReceivable: account(self, claim), profitReceivable: account(self, claim), profitEarned: account(self, claim)
+        payoffIdentity: text?, payoffRebate: money?, payoffProfitTotal: money?, payoffProfit: money?
+        paymentBudget: money?, principalPayment: money?, principalBasePayment: money?, principalRatio: money?, profitPayment: money?, profitBudget: money?, collectibleProfit: money?, collectibleTotal: money?, ratioDenominator: integer = sum(10000, profit)
+        debt: account(borrower, claim, contra, "debt"), loss: account(capital, claim, "loss")
+      }
+      lifecycle { states: [draft, pending, due, paid, written_off], initial: draft }
+      action create {
+        requires self.plan in [quoted]; requires unique "signed_position" on [self.plan, self.position]; requires self.borrowerLimit == self.plan.borrowerLimit; requires self.portfolioLimit == self.plan.portfolioLimit
+      }
+      action activate {
+        from: draft, to: pending, actor: { parent: parent }
+        moves self.principal from self.debt to self.principalReceivable
+        moves self.profit from self.debt to self.profitReceivable
+        when profit_earned is at_disbursement { moves self.profit from self.profitReceivable to self.profitEarned }
+        when profit_earned is by_schedule { invoke: [{ instrument: recognition, action: create, input: { slice: { field: self.id } } }] }
+      }
+      action mature {
+        from: pending, to: due, actor: clock, due: { at: self.dueAt }
+      }
+      action collect_principal {
+        from: [pending, due, paid], to: due, actor: { parent: payment }
+        input { payment: ref<payment> }
+        requires input.payment.plan == self.plan
+        invoke: [{ instrument: principal_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.principalReceivable.balance } } }]
+      }
+      action collect_profit {
+        from: [pending, due, paid], to: due, actor: { parent: payment }
+        input { payment: ref<payment> }
+        requires input.payment.plan == self.plan
+        when profit_earned is on_payment { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitReceivable.balance } } }] }
+        when profit_earned is by_schedule { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitEarned.balance } } }] }
+        when profit_earned is at_disbursement { invoke: [{ instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitEarned.balance } } }] }
+      }
+      action collect_pro_rata {
+        from: [pending, due, paid], to: due, actor: { parent: payment }, input { payment: ref<payment> }
+        requires input.payment.plan == self.plan
+        when profit_earned is on_payment { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitReceivable.balance }] }] }
+        when profit_earned is by_schedule { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitEarned.balance }] }] }
+        when profit_earned is at_disbursement { calculate: [{ target: collectibleProfit, op: sum, values: [{ field: self.profitEarned.balance }] }] }
+        calculate: [
+          { target: collectibleTotal, op: sum, values: [{ field: self.principalReceivable.balance }, { field: self.collectibleProfit }] }
+          { target: paymentBudget, op: minimum, values: [{ field: input.payment.held.balance }, { field: self.collectibleTotal }] }
+          { target: principalRatio, op: ratio, amount: { field: self.paymentBudget }, numerator: { literal: 10000 }, denominator: { field: self.ratioDenominator }, rounding: floor }
+          { target: principalBasePayment, op: minimum, values: [{ field: self.principalRatio }, { field: self.principalReceivable.balance }] }
+          { target: profitBudget, op: subtract, base: { field: self.paymentBudget }, subtract: [{ field: self.principalBasePayment }] }
+          { target: profitPayment, op: minimum, values: [{ field: self.profitBudget }, { field: self.collectibleProfit }] }
+          { target: principalPayment, op: subtract, base: { field: self.paymentBudget }, subtract: [{ field: self.profitPayment }] }
+        ]
+        invoke: [{ instrument: principal_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.principalPayment } } }, { instrument: profit_piece, action: create, input: { slice: { field: self.id }, payment: { field: input.payment }, limit: { field: self.profitPayment } } }]
+      }
+      action complete {
+        from: [pending, due], to: paid
+        requires self.principalReceivable.balance == "0"; requires self.profitReceivable.balance == "0"; requires self.profitEarned.balance == "0"
+      }
+      action restore { from: [pending, due, paid], to: due, actor: { parent: payment } }
+      action payoff {
+        from: [pending, due], to: paid, actor: { parent: parent }, input { identity: text }
+        set: { payoffIdentity: { field: input.identity } }
+        calculate: [{ target: payoffRebate, op: rate, base: { field: self.profitReceivable.balance }, bps: { literal: payoff_rebate }, rounding: floor }, { target: payoffProfitTotal, op: sum, values: [{ field: self.profitReceivable.balance }, { field: self.profitEarned.balance }] }, { target: payoffProfit, op: subtract, base: { field: self.payoffProfitTotal }, subtract: [{ field: self.payoffRebate }] }]
+        moves self.principalReceivable.balance from self.plan.borrower to self.plan.capital
+        moves self.payoffProfit from self.plan.borrower to self.plan.profitIncome
+        moves self.principalReceivable.balance from self.principalReceivable to self.debt
+        moves self.profitReceivable.balance from self.profitReceivable to self.debt
+        moves self.profitEarned.balance from self.profitEarned to self.debt
+      }
+      action write_off {
+        from: [pending, due], to: written_off, actor: { parent: parent }
+        moves self.principalReceivable.balance from self.principalReceivable to self.loss; moves self.profitReceivable.balance from self.profitReceivable to self.debt; moves self.profitEarned.balance from self.profitEarned to self.loss
+      }
+    }
+    recognition: {
+      fields { slice: ref<slice>, dueAt: date = after(self.slice.dueAt, 0) }
+      lifecycle { states: [pending, recognised], initial: pending }
+      action create { actor: { parent: slice }, input { slice: ref<slice> }, requires unique "profit_recognition" on [self.slice] }
+      action mature { from: pending, to: recognised, actor: clock, due: { at: self.dueAt }, moves self.slice.profitReceivable.balance from self.slice.profitReceivable to self.slice.profitEarned }
+    }
+    payment: {
+      fields { plan: ref<parent>, amount: money, paymentIdentity: text, held: account of self
+        capital: account(capital, cash, "capital"), profitIncome: account(profit_to, cash, "profitIncome"), loss: account(capital, claim, "loss")
+        outstandingPrincipal: money?, outstandingProfit: money?, outstandingFines: money?, outstandingCosts: money?, outstandingTotal: money?, principalReturned: money?, profitReturned: money?, lossRecorded: money? }
+
+      lifecycle { states: [pending, paid, refunded], initial: pending }
+      action create { input { plan: ref<parent>, amount: money, paymentIdentity: text } requires self.plan in [active]; requires unique "payment_identity" on [self.plan, self.paymentIdentity] }
+      action pay {
+        from: pending, to: paid
+        calculate: [{ target: outstandingPrincipal, op: aggregate, selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, measure: { sum: "principalReceivable.balance" } }]
+        when profit_earned is on_payment { calculate: [{ target: outstandingProfit, op: aggregate, selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, measure: { sum: "profitReceivable.balance" } }] }
+        when profit_earned is by_schedule { calculate: [{ target: outstandingProfit, op: aggregate, selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, measure: { sum: "profitEarned.balance" } }] }
+        when profit_earned is at_disbursement { calculate: [{ target: outstandingProfit, op: aggregate, selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, measure: { sum: "profitEarned.balance" } }] }
+        when apply is fines_profit_principal {
+          calculate: [{ target: outstandingFines, op: aggregate, selection: { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, measure: { sum: "receivable.balance" } }, { target: outstandingCosts, op: aggregate, selection: { instrument: all(financing.late_charge.cost), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, measure: { sum: "receivable.balance" } }, { target: outstandingTotal, op: sum, values: [{ field: self.outstandingPrincipal }, { field: self.outstandingProfit }, { field: self.outstandingFines }, { field: self.outstandingCosts }] }]
+        }
+        when apply is principal_profit { calculate: [{ target: outstandingTotal, op: sum, values: [{ field: self.outstandingPrincipal }, { field: self.outstandingProfit }] }] }
+        when apply is pro_rata { calculate: [{ target: outstandingTotal, op: sum, values: [{ field: self.outstandingPrincipal }, { field: self.outstandingProfit }] }] }
+        requires self.plan in [active]; requires self.amount <= self.outstandingTotal
+        moves self.amount from self.plan.borrower to self.held
+        when apply is principal_profit {
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_principal, input: { payment: { field: self.id } } }, { selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_profit, input: { payment: { field: self.id } } }]
+        }
+        when apply is fines_profit_principal {
+          invoke: [{ selection: { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: collect, input: { payment: { field: self.id } } }, { selection: { instrument: all(financing.late_charge.cost), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: collect, input: { payment: { field: self.id } } }]
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_profit, input: { payment: { field: self.id } } }, { selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_principal, input: { payment: { field: self.id } } }]
+        }
+        when apply is pro_rata {
+          invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366, order: [position] }, action: collect_pro_rata, input: { payment: { field: self.id } } }]
+        }
+        invoke: [{ reference: self.id, action: record, input: {} }]
+      }
+      action record {
+        from: paid, to: paid, actor: { parent: current() }
+        requires self.held.balance == "0"
+        calculate: [{ target: principalReturned, op: aggregate, selection: { instrument: principal_piece, reference: "payment", anchor: self.id, states: [paid], limit: 366 }, measure: { sum: "amount" } }, { target: profitReturned, op: aggregate, selection: { instrument: profit_piece, reference: "payment", anchor: self.id, states: [paid], limit: 366 }, measure: { sum: "amount" } }]
+        invoke: [{ reference: self.plan, action: record_payment, input: { identity: { field: self.paymentIdentity }, principal: { field: self.principalReturned }, profit: { field: self.profitReturned } } }]
+      }
+      action refund {
+        from: paid, to: refunded
+        requires unique "settlement_consumption" on [self.plan, self.paymentIdentity]; requires self.plan in [active, paid]
+        when apply is fines_profit_principal {
+          invoke: [{ selection: { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: refund, input: { payment: { field: self.id } } }, { selection: { instrument: all(financing.late_charge.cost), reference: "plan", anchor: self.plan, states: [assessed, collected], limit: 366, order: [overdueAt] }, action: refund, input: { payment: { field: self.id } } }]
+        }
+        invoke: [{ reference: self.plan, action: restore, input: {} }, { selection: { instrument: slice, reference: "plan", anchor: self.plan, states: [pending, due, paid], limit: 366 }, action: restore, input: {} }, { selection: { instrument: principal_piece, reference: "payment", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }, { selection: { instrument: profit_piece, reference: "payment", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }]
+      }
+    }
+    principal_piece: {
+      fields { slice: ref<slice>, payment: ref<payment>, limit: money, amount: money = minimum(self.payment.held.balance, self.slice.principalReceivable.balance, self.limit) }
+      lifecycle { states: [paid, refunded], initial: paid }
+      action create {
+        actor: { parent: slice }
+        input { slice: ref<slice>, payment: ref<payment>, limit: money }
+        requires unique "principal_receipt" on [self.slice, self.payment]
+        moves self.amount from self.payment.held to self.slice.plan.capital; moves self.amount from self.slice.principalReceivable to self.slice.debt
+      }
+      action refund {
+        from: paid, to: refunded, actor: { parent: payment }
+        moves self.amount from self.slice.plan.capital to self.slice.plan.funds.payer; moves self.amount from self.slice.debt to self.slice.principalReceivable
+      }
+    }
+    profit_piece: {
+      fields { slice: ref<slice>, payment: ref<payment>, limit: money, amount: money = minimum(self.payment.held.balance, self.limit) }
+      lifecycle { states: [paid, refunded], initial: paid }
+      action create {
+        actor: { parent: slice }
+        input { slice: ref<slice>, payment: ref<payment>, limit: money }
+        requires unique "profit_receipt" on [self.slice, self.payment]
+        moves self.amount from self.payment.held to self.slice.plan.profitIncome
+        when profit_earned is on_payment { moves self.amount from self.slice.profitReceivable to self.slice.debt }
+        when profit_earned is by_schedule { moves self.amount from self.slice.profitEarned to self.slice.debt }
+        when profit_earned is at_disbursement { moves self.amount from self.slice.profitEarned to self.slice.debt }
+      }
+      action refund {
+        from: paid, to: refunded, actor: { parent: payment }
+        moves self.amount from self.slice.plan.profitIncome to self.slice.plan.borrower
+        when profit_earned is on_payment { moves self.amount from self.slice.debt to self.slice.profitReceivable }
+        when profit_earned is by_schedule { moves self.amount from self.slice.debt to self.slice.profitEarned }
+        when profit_earned is at_disbursement { moves self.amount from self.slice.debt to self.slice.profitEarned }
+      }
+    }
+  }
+}
+
+instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, fine: money = 50 SAR, cap: money = 25 SAR, fines_to: party = programOperator, costs_to: party = programOperator, approval: approval = programOperator, borrower: party = party(person)) {
+  summary: "Separate approved fine and evidenced recovery claims on an overdue installment."
+  fields {
+    plan: ref<on>, slice: ref<on.slice>, borrower: account of borrower, fine: money = fine, overdueAt: date = after(self.slice.dueAt, grace)
+    receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")
+  }
+  lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
+  action create { requires unique "late_assessment" on [self.slice]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan }
+  action assess {
+    from: proposed, to: assessed, due: { at: self.overdueAt }
+    requires self.slice.principalReceivable.balance > "0"; requires approval by approval
+    moves self.fine from self.debt to self.receivable
+  }
+  action collect {
+    from: [assessed, collected], to: assessed, input { payment: ref<on.payment> }
+    requires input.payment in [paid]
+    requires input.payment.plan == self.plan
+    invoke: [{ instrument: receipt, action: create, input: { assessment: { field: self.id }, payment: { field: input.payment } } }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
+  }
+  action finish { from: assessed, to: collected, actor: { parent: current() }, requires self.receivable.balance == "0" }
+  action cancel { from: proposed, to: waived }
+  action waive { from: assessed, to: waived, moves self.receivable.balance from self.receivable to self.debt }
+  action refund {
+    from: [assessed, collected], to: assessed, input { payment: ref<on.payment> }
+    requires input.payment in [paid, refunded]
+    requires input.payment.plan == self.plan
+    invoke: [{ selection: { instrument: receipt, reference: "payment", anchor: input.payment, states: [paid], limit: 1, where: { assessment: { field: self.id } } }, action: refund, input: {} }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
+  }
+  records {
+    receipt: {
+      fields { assessment: ref<parent>, payment: ref<on.payment>, amount: money = minimum(self.payment.held.balance, self.assessment.receivable.balance) }
+      lifecycle { states: [paid, refunded], initial: paid }
+      action create { actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "fine_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to fines_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
+      action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from fines_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
+    }
+
+    cost: {
+      fields {
+        plan: ref<on>, assessment: ref<parent>, overdueAt: date = after(self.assessment.slice.dueAt, grace), evidence: text, evidencedCost: money, amount: money = minimum(self.evidencedCost, cap)
+        receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")
+      }
+      lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
+      action create { requires unique "recovery_assessment" on [self.assessment]; requires self.plan == self.assessment.plan }
+      action assess {
+        from: proposed, to: assessed, due: { at: self.assessment.overdueAt }
+        requires self.assessment.slice.principalReceivable.balance > "0"; requires approval by approval
+        moves self.amount from self.debt to self.receivable
+      }
+      action collect {
+        from: [assessed, collected], to: assessed, input { payment: ref<on.payment> }
+        requires input.payment in [paid]
+        requires input.payment.plan == self.plan
+        invoke: [{ instrument: receipt, action: create, input: { assessment: { field: self.id }, payment: { field: input.payment } } }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
+      }
+      action finish { from: assessed, to: collected, actor: { parent: current() }, requires self.receivable.balance == "0" }
+      action cancel { from: proposed, to: waived }
+      action waive { from: assessed, to: waived, moves self.receivable.balance from self.receivable to self.debt }
+      action refund {
+        from: [assessed, collected], to: assessed, input { payment: ref<on.payment> }
+        requires input.payment in [paid, refunded]
+        requires input.payment.plan == self.plan
+        invoke: [{ selection: { instrument: receipt, reference: "payment", anchor: input.payment, states: [paid], limit: 1, where: { assessment: { field: self.id } } }, action: refund, input: {} }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
+      }
+      records {
+        receipt: {
+          fields { assessment: ref<parent>, payment: ref<on.payment>, amount: money = minimum(self.payment.held.balance, self.assessment.receivable.balance) }
+          lifecycle { states: [paid, refunded], initial: paid }
+          action create { actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "cost_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to costs_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
+          action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from costs_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
+        }
+      }
+    }
+  }
+}
+
+instrument limits(per_borrower: money, portfolio: money, borrower: party = party(person), active_plans: integer = 1) {
+  summary: "One borrower ceiling and one shared portfolio ceiling."
+  fields { borrower: account of borrower, limit: money = per_borrower, activePlans: integer = active_plans }
+  lifecycle { states: [pending, approved], initial: pending }
+  action create { requires unique "borrower_limit" on [self.borrower] }
+  action approve { from: pending, to: approved }
+  records {
+    portfolio: {
+      fields { key: text = "portfolio", limit: money = portfolio }
+      lifecycle { states: [pending, approved], initial: pending }
+      action create { requires unique "portfolio_limit" on [self.key] }
+      action approve { from: pending, to: approved }
+    }
+  }
+}
+
+instrument credit_line(borrower: party, lender: party, limit: money, expires: date) {
+  summary: "A revolving facility; each draw is a separate immutable advance."
+  fields { borrower: account of borrower, lender: account of lender, debt: account(borrower, claim, contra, "debt"), limit: money = limit, expiresAt: date = expires }
+  lifecycle { states: [pending, active, suspended, closed], initial: pending }
+  action create {}
+  action activate { from: pending, to: active, actor: { party: lender } }
+  action suspend { from: active, to: suspended, actor: { party: lender } }
+  action resume { from: suspended, to: active, actor: { party: lender } }
+  action close { from: [active, suspended], to: closed, due: { at: self.expiresAt }, requires count of { instrument: all(financing.advance), reference: "line", anchor: self.id, states: [drawn], limit: 366 } == 0 }
+}
+
+instrument advance(line: ref<financing.credit_line>, amount: money = runtime) {
+  summary: "A single facility draw with an immutable principal and full repayment."
+  fields { line: ref<line>, amount: money = amount, principalReceivable: account(self, claim) }
+  lifecycle { states: [pending, drawn, repaid, cancelled], initial: pending }
+  action create { requires self.amount <= self.line.limit }
+  invariants sum "principalReceivable.balance" of { instrument: all(financing.advance), reference: "line", anchor: self.line, states: [drawn], limit: 366 } <= self.line.limit
+  action draw {
+    from: pending, to: drawn
+    requires self.line in [active]
+    deadline: { at: self.line.expiresAt }
+    moves self.amount from self.line.lender to self.line.borrower; moves self.amount from self.line.debt to self.principalReceivable
+  }
+  action repay { from: drawn, to: repaid, moves self.amount from self.line.borrower to self.line.lender; moves self.amount from self.principalReceivable to self.line.debt }
+  action cancel { from: pending, to: cancelled }
+}

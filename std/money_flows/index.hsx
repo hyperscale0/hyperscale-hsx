@@ -1,4 +1,0 @@
-module std.money_flows
-
-// Import named exports from "std/money_flows".
-// SEMANTICS.md groups modules by lifecycle and explains their money effects.

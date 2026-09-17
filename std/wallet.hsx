@@ -1,0 +1,41 @@
+header wallet
+
+instrument balance(holder: party, spend_limit: money = 100000 SAR) {
+  summary: "A holder's reusable balance with an immutable per-spend ceiling."
+  fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit }
+  lifecycle { states: [pending, active, frozen, closed], initial: pending }
+  action create { }
+  action activate { from: pending, to: active, actor: { party: holder } }
+  action topup {
+    from: active, to: active, actor: { party: holder }
+    input { amount: money }
+    moves input.amount from holder to self.held
+  }
+  action withdraw {
+    from: active, to: active, actor: { party: holder }
+    input { amount: money }
+    moves input.amount from self.held to holder
+  }
+  action freeze { from: active, to: frozen, }
+  action unfreeze { from: frozen, to: active, }
+  action close { from: [pending, active], to: closed, requires self.held.balance == "0" }
+}
+
+instrument spend(wallet: ref<wallet.balance>, payee: party) {
+  summary: "Reserve one wallet spend, then post or void the same reservation."
+  fields { wallet: ref<wallet>, amount: money, expiresAt: date, reservation: text? }
+  lifecycle { states: [pending, reserved, paid, cancelled, expired], initial: pending }
+  action create {
+    requires self.wallet in [active]
+    requires self.amount <= self.wallet.spendLimit
+  }
+  action reserve {
+    from: pending, to: reserved
+    requires self.wallet in [active]
+    deadline: { at: self.expiresAt }
+    moves reserve self.amount from self.wallet.held to payee capture "reservation"
+  }
+  action pay { from: reserved, to: paid, moves post self.reservation }
+  action cancel { from: reserved, to: cancelled, moves void self.reservation }
+  action expire { from: reserved, to: expired, actor: clock, due: { at: self.expiresAt }, moves void self.reservation }
+}
