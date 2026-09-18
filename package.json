@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -21,7 +21,7 @@
     "type": "git",
     "url": "git+https://github.com/hyperscale0/hyperscale-hsx.git"
   },
-  "license": "AGPL-3.0-only",
+  "license": "SEE LICENSE IN LICENSE.md",
   "author": "Hyperscale LLC",
   "type": "module",
   "sideEffects": false,
@@ -38,13 +38,12 @@
     "./std/*": "./std/*"
   },
   "files": [
+    "LICENSE.md",
+    "NOTICE.md",
     "AUTHORS",
     "CHANGELOG.md",
-    "LICENSE",
-    "LICENSING.md",
     "README.md",
     "SECURITY.md",
-    "TRADEMARKS.md",
     "bin",
     "dist",
     "docs",
@@ -71,7 +70,7 @@
     "check": "bun run generate && bun run typecheck && bun run build && tsc -p playground/tsconfig.json && bun scripts/build-playground.ts && bun test test"
   },
   "dependencies": {
-    "@hyperscale0/udl": "3.0.2"
+    "@hyperscale0/udl": "3.1.0"
   },
   "devDependencies": {
     "bun-types": "1.4.2",

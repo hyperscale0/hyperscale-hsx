@@ -37,18 +37,16 @@ combination with the project it was submitted to, infringes them. It terminates
 for any party that files a patent claim alleging the project or a contribution
 to it infringes a patent.
 
-## 4. Dual licensing
+## 4. Relicensing
 
-Hyperscale publishes this project under the GNU Affero General Public License
-version 3 only, and sells a commercial license to organisations that cannot
-accept the AGPL. The license in section 2 is granted for both: Hyperscale may
-distribute your contribution under the AGPL and under the terms of the
-commercial license it offers, without asking you again and without paying you.
-The AGPL alone does not let Hyperscale offer someone else's contribution under
-commercial terms, and a file with mixed copyright cannot be dual-licensed by
-anyone. Nothing here takes the AGPL copy away from you: your contribution stays
-yours to use, and the AGPL copy of the project stays available to you on the
-same terms as to everyone else.
+Hyperscale publishes this project under the Hyperscale Intellectual Property
+and Copyright License and sells a commercial license to organisations whose
+use falls outside it. The license in section 2 is granted for both, and for
+any later license Hyperscale adopts: Hyperscale may distribute your
+contribution under any of them without asking you again and without paying
+you. A file with mixed copyright cannot be relicensed by anyone, which is why
+this agreement exists. Nothing here takes your own copy away from you: your
+contribution stays yours to use.
 
 ## 5. You are entitled to submit
 

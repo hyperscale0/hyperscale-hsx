@@ -1,7 +1,7 @@
 # Contributing to HSX
 
 Read [the language](docs/README.md) and [header inventory](docs/headers.md).
-The AGPL package does not import proprietary code. The frontend parses typed
+The published package does not import private platform code. The frontend parses typed
 programs and headers; `compile.ts` binds references and lowers generic arithmetic
 and moves. Business behavior belongs in the twelve `std` headers.
 
