@@ -153,8 +153,6 @@ for (const header of manifest.headers)
         }))
         .filter((entry) => entry.values.length);
       const cases = combinations(varied.map((entry) => entry.values));
-      let accepted = 0,
-        refused = 0;
       for (const row of cases) {
         const overrides = Object.fromEntries(
           varied.map((entry, index) => [entry.tunable.name, row[index]!]),
@@ -179,7 +177,6 @@ for (const header of manifest.headers)
                 ),
               ),
           ).toBe(true);
-          refused++;
           continue;
         }
         if (!result.artifacts)
@@ -233,7 +230,6 @@ for (const header of manifest.headers)
           true,
           true,
         ]);
-        accepted++;
       }
       for (const { tunable } of varied) {
         if (tunable.values) {
@@ -246,7 +242,6 @@ for (const header of manifest.headers)
                 diagnostic.message.includes(tunable.name),
               ),
           ).toBe(true);
-          refused++;
         }
         if (tunable.maximum === undefined || tunable.minimum === undefined)
           continue;
@@ -265,11 +260,65 @@ for (const header of manifest.headers)
                 diagnostic.message.includes(tunable.name),
               ),
           ).toBe(true);
-          refused++;
         }
       }
-      process.stdout.write(
-        `${object.qualifiedName}: ${cases.length} combinations, ${accepted} accepted, ${refused} refused\n`,
-      );
     }, 120000);
   }
+
+// Mutations: omit a required binding, emit an instrument declaration, or name the wrong header.
+test("compiler authoring templates become valid programs after binding their placeholders", () => {
+  for (const header of manifest.headers) {
+    for (const entry of header.objects) {
+      const witness = objects.find(
+        (object) => object.object === entry.qualifiedName,
+      )!;
+      const template = entry.authoringTemplate;
+      let completed = template.source.replaceAll(
+        template.instancePlaceholder,
+        witness.name,
+      );
+      for (const binding of template.requiredBindings) {
+        const value = witness.body.entries.find(
+          (item) => item.key === binding.name,
+        );
+        const referencedType = binding.type.match(/^ref<([^>]+)>/)?.[1];
+        const implicitObject = objects.find(
+          (object) => object.object === referencedType,
+        );
+        const fallback = entry.tunables.find(
+          (tunable) => tunable.name === binding.name,
+        )?.default;
+        const partyKind = fallback?.match(/^party\(([^)]+)\)$/)?.[1];
+        const implicitParty = parsed.decls
+          .filter((decl) => decl.kind === "party")
+          .find((decl) => decl.partyKind === partyKind);
+        const spelling = value
+          ? spell(value.value)
+          : (implicitObject?.name ?? implicitParty?.name ?? fallback);
+        if (!spelling)
+          throw new Error(
+            `Missing witness binding ${entry.qualifiedName}.${binding.name}`,
+          );
+        completed = completed.replaceAll(binding.placeholder, spelling);
+      }
+      const program = source.replace(
+        `use ${header.name}`,
+        template.requiredImport,
+      );
+      const target = parseProgram(program).program.decls.find(
+        (decl) => decl.kind === "object" && decl.name === witness.name,
+      )!;
+      const result = compile(
+        program.slice(0, target.span.start) +
+          completed +
+          program.slice(target.span.end),
+      );
+      expect(
+        result.diagnostics.filter(
+          (diagnostic) => diagnostic.severity === "error",
+        ),
+      ).toEqual([]);
+      expect(result.artifacts).toBeDefined();
+    }
+  }
+});

@@ -84,6 +84,18 @@ export function headerManifest(
                 ...(fallback ? { default: spelling(fallback) } : {}),
               };
             });
+            // Reference selectors need program context, and text can name a target
+            // action. Templates require explicit bindings instead of guessing them.
+            const bindings = tunables.filter((tunable, index) => {
+              const value = decl.parameters[index]!.value;
+              return (
+                tunable.required ||
+                tunable.type === "text" ||
+                (value.kind === "default" &&
+                  value.value.kind === "call" &&
+                  ["object", "party"].includes(value.value.name))
+              );
+            });
             const summary = decl.body.entries.find(
               (e) => e.key === "summary",
             )?.value;
@@ -94,6 +106,22 @@ export function headerManifest(
                 summary?.kind === "text"
                   ? summary.value
                   : decl.name.replaceAll("_", " "),
+              authoringTemplate: {
+                requiredImport: `use ${name}`,
+                instancePlaceholder: "${instance}",
+                source:
+                  "${instance} = " +
+                  `${name}.${decl.name} { ` +
+                  bindings
+                    .map((t) => t.name + ": ${" + t.name + "}")
+                    .join(", ") +
+                  " }",
+                requiredBindings: bindings.map((t) => ({
+                  name: t.name,
+                  type: t.type,
+                  placeholder: "${" + t.name + "}",
+                })),
+              },
               tunables,
               constraints: (() => {
                 const block = decl.body.entries.find(
