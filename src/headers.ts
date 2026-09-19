@@ -16,6 +16,8 @@ export const HEADER_NAMES = [
   "travel",
   "cards",
   "savings",
+  "reporting",
+  "vehicles",
 ] as const;
 
 /** The compiler frontend owns header metadata used by docs and catalogue consumers. */

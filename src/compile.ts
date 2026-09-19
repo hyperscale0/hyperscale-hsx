@@ -596,6 +596,8 @@ export function compile(
             "summary",
             "invariants",
             "constraints",
+            "reports",
+            "revisioned",
           ].includes(key) &&
           !key.startsWith("action ")
         )
@@ -698,6 +700,17 @@ export function compile(
             ...(t.kind === "type" && t.optional ? { optional: true } : {}),
           };
           if (type === "enum" && t.kind === "call") f.values = t.args.map(text);
+          if (type === "text" && t.kind === "call") {
+            if (t.args.length < 2 || t.args.length > 3)
+              fail(
+                t,
+                "bounded text needs length bounds and an optional pattern",
+                "write text(1, 80)",
+              );
+            f.minLength = literal(resolve(t.args[0]!));
+            f.maxLength = literal(resolve(t.args[1]!));
+            if (t.args[2]) f.pattern = literal(resolve(t.args[2]));
+          }
           if (["integer", "money"].includes(type) && t.kind === "call") {
             if (t.args.length !== 2)
               fail(
@@ -894,20 +907,53 @@ export function compile(
           ...block,
           entries: block.entries.flatMap((entry) => {
             if (!entry.key.startsWith("when ")) return [entry];
-            const [, tunable, , choice] = entry.key.split(" ");
+            const [, tunable, relation, choice] = entry.key.split(" ");
             const binding = environment.get(tunable!);
             if (!binding)
               fail(
                 entry,
                 `unknown branch tunable ${tunable}`,
-                "name an enum tunable declared by this header",
+                "name an enum or reference tunable declared by this header",
               );
-            if (!enums.get(tunable!)?.includes(choice!))
-              fail(
-                entry,
-                `unknown enum branch ${choice}`,
-                "use a declared enum value",
+            let matches: boolean;
+            if (relation === "has") {
+              // Inspect declarations, not lowering order: a bound object may
+              // appear after the instrument that asks about its fields.
+              const bound = resolve(binding!);
+              const [root, ...children] = text(bound).split(".");
+              const object = objects.get(root!);
+              let target = object
+                ? templates.get(object.object)?.body
+                : program.decls
+                    .filter(
+                      (decl): decl is InstrumentDecl =>
+                        decl.kind === "instrument",
+                    )
+                    .find((decl) => decl.name === root)?.body;
+              for (const child of children) {
+                const record = target
+                  ? entries(asBlock(entries(target).get("records"))).get(child)
+                  : undefined;
+                target = record ? asBlock(record) : undefined;
+              }
+              if (!target)
+                fail(
+                  entry,
+                  "field branch needs a declared object",
+                  "bind a reference to a declared object",
+                );
+              matches = entries(asBlock(entries(target!).get("fields"))).has(
+                choice!,
               );
+            } else {
+              if (!enums.get(tunable!)?.includes(choice!))
+                fail(
+                  entry,
+                  `unknown enum branch ${choice}`,
+                  "use a declared enum value",
+                );
+              matches = text(binding!) === choice;
+            }
             const body = asBlock(entry.value);
             for (const clause of body.entries)
               if (
@@ -921,7 +967,7 @@ export function compile(
                   "when permits requirements, calculations, moves and invocations",
                   "keep lifecycle and actor clauses outside the branch",
                 );
-            return text(binding) === choice ? selected(body).entries : [];
+            return matches ? selected(body).entries : [];
           }),
         });
         const slots = entries(selected(asBlock(row.value)));
@@ -1278,7 +1324,7 @@ export function compile(
         inst.actions[name] = a;
         inst.actionOrder.push(name);
       }
-      for (const key of ["invariants"] as const)
+      for (const key of ["invariants", "reports", "revisioned"] as const)
         if (body.has(key))
           (inst as unknown as Record<string, unknown>)[key] = data(
             body.get(key)!,
@@ -1361,7 +1407,7 @@ export function compile(
       for (let n = 0; n < inst.lifecycle.states.length; n++)
         for (const edge of Object.values(inst.lifecycle.transitions))
           if (edge.from.some((state) => reachable.has(state)))
-            reachable.add(edge.to);
+            if (edge.to !== "preserve") reachable.add(edge.to);
       for (const [key, edge] of Object.entries(inst.lifecycle.transitions)) {
         edge.from = edge.from.filter((state) => reachable.has(state));
         if (!edge.from.length) {

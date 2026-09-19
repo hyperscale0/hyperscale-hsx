@@ -132,3 +132,44 @@ sale = choice.transfer { direction: forward }`;
     "invalid",
   ]);
 });
+
+test("field branches follow the bound object shape in either declaration order", () => {
+  const standardLibrary = {
+    source: () => `header shape
+instrument linked {
+ fields { relation: text }
+ lifecycle { states: [ready], initial: ready }
+ action create {}
+}
+instrument plain {
+ fields {}
+ lifecycle { states: [ready], initial: ready }
+ action create {}
+}
+instrument consumer(target: ref) {
+ fields { amount: money = 1 SAR }
+ lifecycle { states: [ready], initial: ready }
+ action create {
+  when target has relation { moves self.amount from buyer to seller }
+ }
+}`,
+  };
+  for (const kind of ["linked", "plain"])
+    for (const reversed of [false, true]) {
+      const declarations = [
+        `object = shape.${kind} {}`,
+        "consumer = shape.consumer { target: object }",
+      ];
+      if (reversed) declarations.reverse();
+      const result = compile(
+        `program shapes "Shapes"\nuse shape\nparty buyer: person\nparty seller: business\n${declarations.join("\n")}`,
+        { standardLibrary },
+      );
+      if (!result.artifacts)
+        throw new Error(JSON.stringify(result.diagnostics));
+      expect(
+        result.artifacts.document.instruments.find((i) => i.id === "consumer")!
+          .actions.create!.moves.length,
+      ).toBe(kind === "linked" ? 1 : 0);
+    }
+});

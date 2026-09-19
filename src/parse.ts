@@ -198,10 +198,11 @@ class Parser {
       if (key === "action" && !this.at(":")) key += " " + this.identifier();
       if (key === "when") {
         const tunable = this.identifier();
-        this.expect("is");
+        const relation = this.eat("has") ? "has" : "is";
+        if (relation === "is") this.expect("is");
         const choice = this.identifier();
         entries.push({
-          key: `when ${tunable} is ${choice}`,
+          key: `when ${tunable} ${relation} ${choice}`,
           value: this.block(),
           span: this.span(start),
         });

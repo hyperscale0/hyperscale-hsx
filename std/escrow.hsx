@@ -1,20 +1,27 @@
 header escrow
 
 instrument hold(payer: party, payee: party, for: ref<marketplace.order>, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
+  revisioned: true
   summary: "Hold an order's price through delivery, acceptance and verified return."
-  fields { payer: account of payer, payee: account of payee, order: ref<for>, price: money, held: account of self, deliveredAt: date? }
+  fields { payer: account of payer, payee: account of payee, order: ref<for>, price: money, held: account of self, deliveredAt: date?, buyerTopUp: money? }
   lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
   action create {
     requires self.payer == self.order.buyer; requires self.payee == self.order.listing.seller; requires self.price == self.order.price
   }
   action fund {
     from: pending, to: funded, actor: { party: payer }
-    requires self.order in [placed]
-    moves self.price from payer to self.held
+    requires self.order in [quoted, placed]
+    invoke: [{ reference: self.order, action: commit, input: {} }, { selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.order.listing, states: [active], limit: 1, where: { buyer: { field: self.payer } } }, action: credit, input: { funds: { field: self.id }, contribution: { field: self.price } } }, { reference: self.id, action: fund_remainder, input: {} }]
+  }
+  action fund_remainder {
+    from: funded, to: funded, actor: { parent: current() }
+    calculate: [{ target: buyerTopUp, op: subtract, base: { field: self.price }, subtract: [{ field: self.held.balance }] }]
+    moves self.buyerTopUp from payer to self.held
   }
   action confirm {
     from: pending, to: funded
     requires self.held.balance == self.price
+    invoke: [{ reference: self.order, action: commit, input: {} }]
   }
   action deliver {
     from: funded, to: delivered, actor: { party: payee }

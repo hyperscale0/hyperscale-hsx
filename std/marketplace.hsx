@@ -1,24 +1,111 @@
 header marketplace
 
-instrument listing(seller: party) {
+instrument listing(seller: party, vehicle_facts: enum(optional, required) = optional) {
+  revisioned: true
   summary: "A seller's offer and its asking price."
   fields { seller: account of seller, title: text, price: money }
   lifecycle { states: [draft, active, withdrawn, sold], initial: draft }
   action create { actor: { party: seller } }
-  action publish { from: draft, to: active, actor: { party: seller } }
-  action withdraw { from: active, to: withdrawn, actor: { party: seller } }
-  action sell { from: active, to: sold, actor: { party: seller } }
+  action publish {
+    from: draft, to: active, actor: { party: seller }
+    when vehicle_facts is required { requires count of { instrument: all(vehicles.vehicle), reference: "listing", anchor: self.id, states: [draft], limit: 1 } == 1 }
+    invoke: [{ selection: { instrument: all(vehicles.vehicle), reference: "listing", anchor: self.id, states: [draft], limit: 1 }, action: publish, input: {} }]
+  }
+  action withdraw { from: active, to: withdrawn, actor: { party: seller }, requires count of { instrument: all(marketplace.reservation), reference: "listing", anchor: self.id, states: [active], limit: 366 } == 0 }
+  action sell { from: active, to: sold, actor: { party: seller }, requires count of { instrument: all(marketplace.reservation), reference: "listing", anchor: self.id, states: [active], limit: 366 } == 0 }
 }
 
 instrument order(listing: ref<marketplace.listing>, buyer: party) {
+  revisioned: true
   summary: "A buyer's order for one listing at its declared price."
-  fields { listing: ref<listing>, buyer: account of buyer, price: money }
-  lifecycle { states: [placed, fulfilled, cancelled], initial: placed }
+  fields { listing: ref<listing>, buyer: account of buyer, price: money, reservations: integer?, ownReservations: integer?, blockingQuotes: integer?, ownBlockingQuotes: integer? }
+  lifecycle { states: [quoted, placed, fulfilled, cancelled], initial: quoted }
   action create {
     actor: { party: buyer }
     requires self.listing in [active]
+    calculate: [
+      { target: blockingQuotes, op: aggregate, selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.listing, states: [active], limit: 366, where: { quotePolicy: { literal: "blocked" } } }, measure: count }
+      { target: ownBlockingQuotes, op: aggregate, selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.listing, states: [active], limit: 366, where: { quotePolicy: { literal: "blocked" }, buyer: { field: self.buyer } } }, measure: count }
+    ]
+    requires self.blockingQuotes == self.ownBlockingQuotes
     requires self.price == self.listing.price
   }
+  action commit {
+    from: [quoted, placed], to: placed
+    requires self.listing in [active]
+    calculate: [
+      { target: reservations, op: aggregate, selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.listing, states: [active], limit: 366 }, measure: count }
+      { target: ownReservations, op: aggregate, selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.listing, states: [active], limit: 366, where: { buyer: { field: self.buyer } } }, measure: count }
+    ]
+    requires self.reservations == self.ownReservations
+    requires count of { instrument: current(), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } <= 1
+  }
+  invariants count of { instrument: current(), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } <= 1
   action fulfill { from: placed, to: fulfilled }
-  action cancel { from: placed, to: cancelled, actor: { party: buyer } }
+  action cancel { from: [quoted, placed], to: cancelled, actor: { party: buyer } }
+}
+
+instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold>, plans: ref<financing.installments>[], converters: ref[], buyer: party, seller: party, expires_after: duration = 48h, deposit: money = 1000 SAR, cancellation_refund: percent = 100%, expiry_refund: percent = 100%, retained_to: party = programOperator, operator: party = programOperator, competing_quotes: enum(allowed, blocked) = allowed) {
+  revisioned: true
+  summary: "Exclusive timed listing hold with explicit deposit credit and refund."
+  fields {
+    listing: ref<listing>, funds: ref<funds>, buyer: account of buyer, seller: account of seller, price: money, terms: text
+    held: account of self, quotePolicy: enum(allowed, blocked) = competing_quotes, deposit: money = deposit, proposalExpiresAt: date = after(self.createdAt, expires_after), expiresAt: date?
+    credit: money?, refund: money?, retained: money?, dispositionAt: date?, reason: text?
+  }
+  lifecycle { states: [proposed, active, converted, cancelled, expired], initial: proposed }
+  invariants count of { instrument: current(), reference: "listing", anchor: self.listing, states: [active], limit: 366 } <= 1
+  action create { actor: { party: buyer }, requires self.listing in [active]; requires self.seller == self.listing.seller; requires self.price == self.listing.price }
+  action activate {
+    from: proposed, to: active, actor: { party: buyer }, deadline: { at: self.proposalExpiresAt }
+    calculate: [{ target: expiresAt, op: shift, date: { field: self.now }, milliseconds: { literal: expires_after }, direction: after }]
+    requires self.listing in [active]; requires self.price == self.listing.price
+    requires count of { instrument: all(marketplace.order), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } == 0
+    moves self.deposit from self.buyer to self.held
+  }
+  action convert_financed {
+    from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.funds; requires input.plan.borrower == self.buyer
+    invoke: [{ reference: input.plan, action: disburse, input: {} }]
+  }
+  action convert_cash {
+    from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
+    invoke: [{ reference: self.funds, action: fund, input: {} }]
+  }
+  action credit {
+    from: active, to: converted, actor: { parent: converters }, deadline: { at: self.expiresAt }
+    input { funds: ref<funds>, contribution: money }
+    requires input.funds == self.funds; requires input.funds in [pending, funded]; requires input.funds.order.listing == self.listing; requires input.funds.payer == self.buyer; requires input.funds.price == self.price
+    requires input.contribution <= self.price
+    calculate: [{ target: credit, op: minimum, values: [{ field: self.held.balance }, { field: input.contribution }] }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.credit }] }]
+    set: { dispositionAt: { field: self.now } }
+    moves self.credit from self.held to input.funds.held
+    moves self.refund from self.held to self.buyer
+    invoke: [{ reference: input.funds.order, action: commit, input: {} }]
+  }
+  action cancel {
+    from: active, to: cancelled, actor: { party: buyer }, input { reason: text }
+    calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: cancellation_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
+    set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
+    moves self.refund from self.held to self.buyer; moves self.retained from self.held to retained_to
+  }
+  action seller_cancel {
+    from: active, to: cancelled, actor: { party: seller }, input { reason: text }
+    set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
+    moves self.held.balance from self.held to self.buyer
+  }
+  action operator_cancel {
+    from: active, to: cancelled, actor: { party: operator }, input { reason: text }
+    set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
+    moves self.held.balance from self.held to self.buyer
+  }
+  action withdraw { from: proposed, to: cancelled, actor: { party: buyer } }
+  action expire {
+    from: active, to: expired, actor: clock, due: { at: self.expiresAt }
+    calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: expiry_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
+    set: { dispositionAt: { field: self.now } }
+    moves self.refund from self.held to self.buyer; moves self.retained from self.held to retained_to
+  }
+  action expire_proposal { from: proposed, to: expired, actor: clock, due: { at: self.proposalExpiresAt } }
 }

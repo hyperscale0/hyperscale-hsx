@@ -1,3 +1,7 @@
+# HSX 3.3.0
+
+The standard library adds financing (range primitive, installment waterfall, late charges, collections, vehicles, marketplace and escrow), reporting.portfolio, collections.reminder with clock actions, and money.payout distinct-member approval. Cost estimation covers the nested children of the financing range. The compiler targets UDL 3.2.0.
+
 # HSX 3.2.0
 
 Header manifests carry an `authoringTemplate` per object: the `use` import, an instance placeholder, the source line with one placeholder per required binding, and the typed binding list. Required tunables, text tunables and reference selectors (`object`, `party`) are bindings; everything else keeps its default. The permutation suite proves every template compiles once its placeholders are bound. No grammar change.

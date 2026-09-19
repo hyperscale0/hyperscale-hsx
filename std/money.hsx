@@ -135,7 +135,7 @@ instrument payout(payer: party, payee: party, amount: money = runtime, reconcile
   fields { amount: money = amount, bank: account(payee, cash, external, "bank"), receipt: text?, expectedAt: date = after(self.createdAt, reconcile_within) }
   lifecycle { states: [pending, instructed, settled, exception, reversed], initial: pending }
   action create {}
-  action instruct { from: pending, to: instructed, actor: { party: payer }, moves self.amount from payer to self.bank capture "receipt" }
+  action instruct { from: pending, to: instructed, actor: { party: payer }, humanApproval: "distinct_member", moves self.amount from payer to self.bank capture "receipt" }
   action confirm {
     from: [instructed, exception], to: settled
     requires self.receipt.status == "settled"

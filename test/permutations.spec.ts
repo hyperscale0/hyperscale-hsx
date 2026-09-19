@@ -83,6 +83,7 @@ function sample(tunable: Tunable, fallback: string | undefined): string[] {
         : type === "percent"
           ? 10000n
           : 366n;
+  const upper = large < minimum ? minimum : large < maximum ? large : maximum;
   const middle =
     tunable.default && tunable.default !== "runtime"
       ? tunable.default
@@ -90,9 +91,8 @@ function sample(tunable: Tunable, fallback: string | undefined): string[] {
   return [
     ...new Set([
       notation(type, minimum),
-      middle ??
-        notation(type, (minimum + (large < maximum ? large : maximum)) / 2n),
-      notation(type, large < maximum ? large : maximum),
+      middle ?? notation(type, (minimum + upper) / 2n),
+      notation(type, upper),
     ]),
   ];
 }

@@ -143,6 +143,12 @@ when disburse_to is borrower {
 }
 ```
 
+`when <reference tunable> has <field>` includes its clauses only when the bound
+object declares that field. The compiler checks the object's declared shape,
+regardless of declaration order, and emits no runtime branch. Financing uses
+this to commit marketplace orders for order-backed holds while plain money
+holds need no order relation.
+
 `when <enum tunable> is <value>` accepts requirements, calculations, moves and
 invocations, including nested branches. The compiler emits only the selected
 clauses and preserves their order within each UDL phase. Lifecycle and actor

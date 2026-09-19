@@ -1,6 +1,7 @@
 program library "Standard library"
 use money
 use marketplace
+use vehicles
 use escrow
 use wallet
 use financing
@@ -11,6 +12,7 @@ use collections
 use travel
 use cards
 use savings
+use reporting
 party buyer: person
 party seller: business
 party officer: staff role credit_underwriter
@@ -27,7 +29,7 @@ deposit = money.deposit { payer: buyer, payee: seller, amount: 100 SAR, expires:
 payout = money.payout { payer: seller, payee: buyer, amount: 100 SAR, reconcile_within: 3d }
 metered = money.metered { payer: buyer, payee: seller, unit_price: 10 SAR, units: 2 }
 batch = money.batch { payer: buyer, payee: seller, closes: 2030-01-01, approval: officer }
-listing = marketplace.listing { seller: seller }
+listing = marketplace.listing { seller: seller, vehicle_facts: required }
 order = marketplace.order { listing: listing, buyer: buyer }
 sale = escrow.hold { payer: buyer, payee: seller, for: order, fee { seller: 1% cap 750 SAR, tax: 15% }, dispute { refund_after: return_verified } }
 purse = wallet.balance { holder: buyer, spend_limit: 1000 SAR }
@@ -45,8 +47,9 @@ distribution = lending.distribution { round: round, receipt: plan.settlement, re
 cover = insurance.cover { holder: buyer, insurer: carrier, covers: sale, commission: 10% }
 claim = insurance.claim { cover: cover, approved_by: carrier }
 decision = approvals.decision { for: transfer, approved_by: officer, action: "pay" }
-case = collections.case { on: plan, agency: seller, fee: 20% }
+case = collections.case { on: [plan, plan_schedule, plan_upfront], agency: seller, fee: 20% }
 contact = collections.contact { case: case, agency: seller }
+reminder = collections.reminder { on: plan }
 package = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2030-01-01 }
 booking = travel.booking { package: package, buyer: buyer, supplier: seller, cover: travel_cover }
 cardholder = cards.cardholder { holder: buyer }
@@ -57,3 +60,7 @@ dispute = cards.dispute { transaction: transaction, approved_by: officer }
 circle = savings.circle { contribution: 100 SAR, members: 3, starts: 2030-01-01 }
 membership = savings.membership { circle: circle, member: buyer }
 travel_cover = insurance.cover { holder: buyer, insurer: carrier, commission: 10%, covers: booking }
+
+reports = reporting.portfolio { on: [plan, plan_schedule, plan_upfront] }
+vehicle = vehicles.vehicle { listing: listing, seller: seller }
+reservation = marketplace.reservation { listing: listing, funds: sale, plans: [plan, plan_schedule, plan_upfront], converters: [sale, plan, plan_schedule, plan_upfront], buyer: buyer, seller: seller }

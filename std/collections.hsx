@@ -1,8 +1,9 @@
 header collections
 
 instrument case(on: ref<financing.installments>[], agency: approval, overdue: duration = 3d, fee: percent = 20%) {
+  revisioned: true
   summary: "Refer an overdue installment without creating another debt."
-  fields { plan: ref<on>, slice: ref<on.slice>, payment: ref<on.payment>, eligibleAt: date = after(self.slice.dueAt, overdue), agencyFee: money = rate(self.payment.amount, fee) }
+  fields { assignedAgency: account of agency, plan: ref<on>, slice: ref<on.slice>, payment: ref<on.payment>, eligibleAt: date = after(self.slice.dueAt, overdue), agencyFee: money = rate(self.payment.amount, fee) }
   lifecycle { states: [opened, assigned, recovered, recalled, returned_uncollected], initial: opened }
   action create {
     due: { at: self.eligibleAt }
@@ -11,7 +12,7 @@ instrument case(on: ref<financing.installments>[], agency: approval, overdue: du
     requires unique "overdue_referral" on [self.slice]
   }
   action assign { from: opened, to: assigned, requires approval by agency }
-  action recover { from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
+  action recover { expansionLimit: 8192, from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
   action pay_fee { from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency }
   action recall { from: [opened, assigned], to: recalled }
   action return_uncollected { from: assigned, to: returned_uncollected, actor: { party: agency } }
@@ -20,12 +21,52 @@ instrument case(on: ref<financing.installments>[], agency: approval, overdue: du
 instrument contact(case: ref<collections.case>[], agency: party, max_contacts: integer = 10, window: duration = 30d, contact_from: integer(0, 23) = 8, contact_until: integer(1, 23) = 20, timezone: text = "Asia/Riyadh") {
   constraints { contact_from: less_than(contact_until) }
   summary: "An agency contact admitted against the locked rolling count and local hours."
-  fields { case: ref<case>, attemptedAt: date?, evidence: text, maximum: integer = max_contacts }
+  fields { agency: account of agency, case: ref<case>, attemptedAt: date?, evidence: text, maximum: integer = max_contacts }
   lifecycle { states: [recorded], initial: recorded }
   invariants count of { instrument: current(), reference: "case", anchor: self.case, states: [recorded], limit: 366, window: { field: attemptedAt, milliseconds: window } } <= self.maximum
   action create {
     actor: { party: agency }
     set: { attemptedAt: { field: self.now } }
-    requires self.case in [assigned]; requires hours self.now between contact_from and contact_until timezone timezone
+    requires self.agency == self.case.assignedAgency; requires self.case in [assigned]; requires hours self.now between contact_from and contact_until timezone timezone
+  }
+  records {
+    outcome: {
+      fields { contact: ref<parent>, agency: account of agency, outcome: enum(reached, no_answer, promise_to_pay, disputed, wrong_contact, refused), evidence: text, recordedAt: date? }
+      lifecycle { states: [recorded], initial: recorded }
+      action create {
+        actor: { party: agency }
+        requires self.agency == self.contact.case.assignedAgency
+        set: { recordedAt: { field: self.now } }
+      }
+    }
+  }
+}
+
+
+instrument reminder(on: ref<financing.installments>[], operator: party = programOperator, before_days: integer(0, 366) = 3, overdue_days: integer(1, 366) = 1, max_per_day: integer(1, 10) = 1, send_from: integer(0, 23) = 8, send_until: integer(1, 24) = 20, timezone: text = "Asia/Riyadh") {
+  constraints { send_from: less_than(send_until) }
+  summary: "Send an email to the installment borrower's stored contact address."
+  fields { slice: ref<on.slice> }
+  lifecycle { states: [ready], initial: ready }
+  action create { requires unique "installment_reminder" on [self.slice] }
+  action dispatch {
+    from: ready, to: ready, actor: { party: operator }
+    invoke: [{ reference: self.id, action: send, input: {} }]
+  }
+  action before_due {
+    from: ready, to: ready, actor: clock
+    due: { at: self.slice.dueAt, localDay: { days: before_days, direction: "before", hour: send_from, timezone: timezone } }
+    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.principalReceivable.balance }, operator: ">", right: { literal: "0" } }, input: {} }]
+  }
+  action overdue {
+    from: ready, to: ready, actor: clock
+    due: { at: self.slice.dueAt, localDay: { days: overdue_days, direction: "after", hour: send_from, timezone: timezone } }
+    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.principalReceivable.balance }, operator: ">", right: { literal: "0" } }, input: {} }]
+  }
+  action send {
+    from: ready, to: ready, actor: { parent: current() }
+    requires self.slice.plan in [active]
+    requires self.slice.principalReceivable.balance > "0"
+    reminder: { installment: self.slice, recipient: self.slice.plan.borrower, dueAt: self.slice.dueAt, channel: "email", template: "payment_reminder", beforeDays: before_days, overdueDays: overdue_days, maxPerDay: max_per_day, startHour: send_from, endHour: send_until, timezone: timezone }
   }
 }

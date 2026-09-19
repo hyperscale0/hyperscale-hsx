@@ -1,0 +1,34 @@
+header vehicles
+
+instrument vehicle(listing: ref<marketplace.listing>, seller: party) {
+  summary: "Seller-declared vehicle identity and kilometre odometer, corrected only before publication."
+  fields {
+    listing: ref<listing>, seller: account of seller
+    vin: text(17, 17, "^[A-HJ-NPR-Z0-9]{17}$"), make: text(1, 80), model: text(1, 80)
+    year: integer(1886, 2200), odometer: integer(0, 10000000), odometerUnit: enum(kilometres) = kilometres
+    correctedAt: date?, correctionEvidence: text?
+  }
+  lifecycle { states: [draft, published], initial: draft }
+  action create {
+    actor: { party: seller }
+    requires self.listing in [draft]; requires self.seller == self.listing.seller
+    requires unique "listing_vehicle" on [self.listing]
+  }
+  action publish {
+    from: draft, to: published, actor: { parent: listing }
+    requires self.listing in [active]
+    requires unique "vehicle_identity" on [self.vin]
+  }
+  action correct {
+    from: draft, to: draft, actor: { party: seller }
+    input { make: text(1, 80), model: text(1, 80), year: integer(1886, 2200), odometer: integer(0, 10000000), evidence: text }
+    requires self.listing in [draft]; requires self.seller == self.listing.seller
+    set: { make: { field: input.make }, model: { field: input.model }, year: { field: input.year }, odometer: { field: input.odometer }, correctionEvidence: { field: input.evidence }, correctedAt: { field: self.now } }
+  }
+  action correct_identity {
+    from: draft, to: draft, actor: { party: seller }
+    input { vin: text(17, 17, "^[A-HJ-NPR-Z0-9]{17}$"), evidence: text }
+    requires self.listing in [draft]; requires self.seller == self.listing.seller
+    set: { vin: { field: input.vin }, correctionEvidence: { field: input.evidence }, correctedAt: { field: self.now } }
+  }
+}
