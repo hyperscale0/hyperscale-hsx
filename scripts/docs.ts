@@ -31,6 +31,6 @@ await writeFile(new URL("docs/headers.md", root), inventory);
 const reference = await readFile(new URL("docs/README.md", root), "utf8");
 await writeFile(
   new URL("llms.txt", root),
-  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Example](examples/library.hsx)\n",
+  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Example](examples/library.hsx)\n- [Serviced financing](examples/serviced.hsx)\n",
 );
 await writeFile(new URL("llms-full.txt", root), reference + "\n" + inventory);

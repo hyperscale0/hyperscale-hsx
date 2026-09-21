@@ -1,0 +1,23 @@
+program car_financing "Car financing"
+use escrow
+use financing
+use collections
+object car "Car" {
+ fields { make: text, model: text, year: integer, vin: text, price: money }
+ columns: [make, model, year, vin, price]
+ attach sale = escrow.hold { payer: actor, payee: operator, expose fund as purchase }
+ attach limits = financing.limits { borrower: actor, per_borrower: 250000 SAR }
+ attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
+ attach plan = financing.installments {
+  borrower: actor, capital: operator
+  months: 36, profit: 8.5%, down_payment: 10%
+  apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
+  funds: sale, limits: limits, portfolio: ceiling
+  expose create as finance, expose sign as sign_contract, expose payoff as payoff
+ }
+ attach late = financing.late_charge {
+  on: plan, grace: 3d, fine: 50 SAR, cap: 25 SAR
+  fines_to: operator, costs_to: operator, borrower: actor
+ }
+ attach reminders = collections.reminder { on: plan, operator: operator, before_days: 3, overdue_days: 1 }
+}

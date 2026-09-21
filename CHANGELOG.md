@@ -1,3 +1,7 @@
+# HSX 4.1.1
+
+`examples/serviced.hsx` is a second worked programme: a financed sale with a late charge, payment reminders, an early payoff rebate and a write-off. The car financing spec compiles it from the file. No grammar or standard library change.
+
 # HSX 4.1.0
 
 Second-person approval is deleted from the grammar and the standard library. `financing.portfolio_limit` is a top-level instrument, a plan's `funds` hold is optional, and `insurance.cover` and `financing.credit_line` name their provider with `adapter: text` instead of a party. A car financing programme compiles from the standard library and is covered by its own spec.
