@@ -57,7 +57,7 @@ test("late-charge waterfall needs the bounded ceiling while ordinary actions ret
     .replace("months: 3", "months: 366")
     .replace(
       /\}\s*$/,
-      `\n attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, approval: underwriter, borrower: actor }\n}`,
+      `\n attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, borrower: actor }\n}`,
     );
   const result = compile(witness);
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
@@ -78,8 +78,32 @@ test("late-charge waterfall needs the bounded ceiling while ordinary actions ret
 });
 
 test("source-backed compilation accepts all five changed std modules", () => {
-  const p =
-    'program p "All"\nuse money\nuse escrow\nuse financing\nuse insurance\nuse travel\nuse lending\nuse wallet\nparty underwriter: staff role credit_underwriter\nparty insurer: business\nparty supplier: business\nparty inspector: staff role claim_inspector\nparty investor: business\nobject item "Item" {\n  attach pay = money.transfer { payer: actor, payee: owner, amount: 750 SAR }\n  attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }\n  attach cov = insurance.cover { holder: actor, insurer: insurer, approval: inspector, covers: book }\n  attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, approval: inspector, cover: cov }\n  attach clm = insurance.claim { cover: cov, approved_by: inspector }\n  attach sale = escrow.hold { payer: actor, payee: owner }\n  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR, portfolio: 1500000 SAR }\n  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, approval: underwriter, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits }\n  attach inv_wallet = wallet.balance { holder: investor }\n  attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }\n  attach commit = lending.commitment { round: round, wallet: inv_wallet, investor: investor }\n  attach dist = lending.distribution { round: round, receipt: plan.settlement, fee: 0%, tax: 0% }\n}';
+  const p = `program p "All"
+use money
+use escrow
+use financing
+use insurance
+use travel
+use lending
+use wallet
+party supplier: business
+party inspector: staff role claim_inspector
+party investor: business
+object item "Item" {
+  attach pay = money.transfer { payer: actor, payee: owner, amount: 750 SAR }
+  attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }
+  attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: book }
+  attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, cover: cov }
+  attach clm = insurance.claim { cover: cov, inspector: inspector }
+  attach sale = escrow.hold { payer: actor, payee: owner }
+  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
+  attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
+  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+  attach inv_wallet = wallet.balance { holder: investor }
+  attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }
+  attach commit = lending.commitment { round: round, wallet: inv_wallet, investor: investor }
+  attach dist = lending.distribution { round: round, receipt: plan.settlement, fee: 0%, tax: 0% }
+}`;
   const res = compile(p);
   expect(res.verdict).toBe("valid");
   const doc = res.artifacts!.document;
@@ -105,12 +129,4 @@ test("source-backed compilation accepts all five changed std modules", () => {
     "loss",
     "profitIncome",
   ]);
-  const hasDiffInit = (id: string, act: string) =>
-    doc.instruments
-      .find((i) => i.id === id)!
-      .actions[act]!.requires.some(
-        (r) => r.kind === "approval" && r.differentFromInitiator,
-      );
-  expect(hasDiffInit("item_cov", "activate")).toBe(true);
-  expect(hasDiffInit("item_book", "confirm")).toBe(true);
 });

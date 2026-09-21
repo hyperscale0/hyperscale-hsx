@@ -101,8 +101,7 @@ test("Resolved bindings are reused by executable references", () => {
 test("Invalid selected binding does not fall through", () => {
   for (const result of [
     binding("payer: party = agency", "payer: missing"),
-    binding("underwriter: party = agency"),
-    binding("approval: approval = underwriter", "approval: operator"),
+    binding("customer: party = agency"),
   ])
     expect(result.verdict).toBe("invalid");
 });
@@ -141,35 +140,22 @@ test("Role names cannot be declared as parties", () => {
   }
 });
 
-test("Declared businesses and staff retain their distinct binding kinds", () => {
+test("Declared businesses retain their binding kinds", () => {
   const result = binding(
-    "payer: party = agency, approval: approval = underwriter",
+    "payer: party = agency",
     "",
     declarations,
-    "actor: { party: approval } requires approval by approval",
+    "actor: { party: payer }",
   );
   expect(bindings(result)).toEqual({
     payer: { party: "agency" },
-    approval: { party: "underwriter" },
   });
-  const document = result.artifacts!.document;
-  expect(document.instruments[0]!.actions.run!.requires[0]).toMatchObject({
-    party: "underwriter",
-  });
-  expect(
-    document.instruments.find((item) => item.id === "car_sale_run_decision")!
-      .actions.approve!.approval,
-  ).toMatchObject({ party: "underwriter", protectedRequest: "self.target" });
 });
 
 test("Attachment parameter kind controls admission", () => {
   for (const [type, party] of [
-    ["party", "underwriter"],
+    ["party", "roleless"],
     ["party", "customer"],
-    ["approval", "actor"],
-    ["approval", "agency"],
-    ["approval", "customer"],
-    ["approval", "roleless"],
   ])
     expect(
       binding(`binding: ${type}`, `binding: ${party}`).diagnostics[0]?.code,
@@ -177,24 +163,6 @@ test("Attachment parameter kind controls admission", () => {
 });
 
 test("Named canonical diagnostics retain source spans and fixes", () => {
-  // The direct action clause bypasses parameter-kind checks and reaches UDL validation.
-  const source = `program p "P"
-party agency: business
-instrument sale {
- fields {}
- lifecycle { states: [open], initial: open }
- action create { requires approval by agency }
-}`;
-  const result = compile(source);
-  const diagnostic = result.diagnostics.find(
-    (item) => item.code === "party_kind_mismatch",
-  )!;
-  expect(diagnostic.stage).toBe("lower");
-  expect(diagnostic.span.end).toBeGreaterThan(diagnostic.span.start);
-  expect(source.slice(diagnostic.span.start, diagnostic.span.end)).toContain(
-    "requires approval",
-  );
-  expect(diagnostic.fix).toContain("staff");
   const header = `header fixture
 instrument sale(payer: party = missing) {
  fields {}
@@ -208,67 +176,4 @@ instrument sale(payer: party = missing) {
   expect(imported.source).toBe("fixture");
   expect(header.slice(imported.span.start, imported.span.end)).toBe("missing");
   expect([imported.line, imported.column]).toEqual([2, 32]);
-});
-
-test("Issuance path follows the requirement's protectedRequest", () => {
-  const source = `program p "P"
-use fixture
-party underwriter: staff role underwrite
-instrument request {
- fields {}
- lifecycle { states: [open], initial: open }
- action create {}
-}
-object car "Car" { attach sale = fixture.sale { expose run as run } }`;
-  const header = `header fixture
-instrument sale(approval: approval = underwriter) {
- fields { request: ref<request> }
- lifecycle { states: [open, closed], initial: open }
- action create {}
- action run {
-  from: open, to: closed
-  requires approval by approval protectedRequest self.request
- }
-}`;
-  const options = (text: string) => ({
-    standardLibrary: {
-      source: (name: string) =>
-        name === "fixture"
-          ? text
-          : readFileSync(
-              new URL(`../std/${name}.hsx`, import.meta.url),
-              "utf8",
-            ),
-    },
-  });
-  const result = compile(source, options(header));
-  expect(result.diagnostics).toEqual([]);
-  expect(
-    result.artifacts!.document.instruments.find(
-      (item) => item.id === "car_sale_run_decision",
-    )!.actions.approve!.approval?.protectedRequest,
-  ).toBe("self.target.request");
-  const inputRequest = header
-    .replace(
-      "from: open, to: closed",
-      "from: open, to: closed input { request: ref<request> }",
-    )
-    .replace("protectedRequest self.request", "protectedRequest input.request");
-  expect(
-    compile(source, options(inputRequest)).diagnostics[0]?.message,
-  ).toContain("implicit approval needs a stored protected request");
-  const explicit =
-    source +
-    `
-use approvals
-decision = approvals.decision { for: car_sale, approved_by: underwriter, action: "run" }
-`;
-  expect(
-    compile(explicit, options(inputRequest)).diagnostics[0]?.message,
-  ).toContain("implicit approval needs a stored protected request");
-  const matching = explicit.replace(
-    'action: "run" }',
-    'action: "run", protected_request: "self.material_request" }',
-  );
-  expect(compile(matching, options(inputRequest)).diagnostics).toEqual([]);
 });

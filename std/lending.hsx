@@ -1,6 +1,6 @@
 header lending
 
-instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
+instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), operator: party = programOperator, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
   summary: "A threshold funding round; failed rounds return each original wallet contribution."
   fields {
     borrower: account of borrower, plan: ref<plan>, price: money = self.plan.principal, closesAt: date
@@ -8,9 +8,9 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
     held: account of self
   }
   lifecycle { states: [open, funded, failed], initial: open }
-  action create { requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.funds.payer }
+  action create { requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.borrower }
   action close {
-    from: open, to: funded
+    from: open, to: funded, actor: { party: operator }
     requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
     requires self.held.balance == self.price
     moves self.price from self.held to self.plan.capital
@@ -30,6 +30,7 @@ instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, in
   invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366, where: { wallet: { field: self.wallet } } } <= self.round.maximumTicket
   invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366 } <= self.round.price
   action create {
+    actor: { party: investor }
     requires self.round in [open]
     requires self.wallet in [active]
     requires self.amount >= self.round.minimumTicket
@@ -38,7 +39,7 @@ instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, in
   }
   action fund { from: committed, to: funded, actor: { parent: round } }
   action withdraw {
-    from: committed, to: withdrawn
+    from: committed, to: withdrawn, actor: { party: investor }
     requires self.round in [open]
     deadline: { at: self.round.closesAt }
     moves self.amount from self.round.held to self.wallet.held
@@ -49,7 +50,7 @@ instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, in
   }
 }
 
-instrument distribution(round: ref<lending.round>, receipt: ref, commitments: ref<lending.commitment> = object(lending.commitment), mode: enum(cash, loss) = cash, residual_to: party = programOperator, fee: percent = 1%, tax: percent = 15%) {
+instrument distribution(round: ref<lending.round>, receipt: ref, commitments: ref<lending.commitment> = object(lending.commitment), mode: enum(cash, loss) = cash, residual_to: party = programOperator, operator: party = programOperator, fee: percent = 1%, tax: percent = 15%) {
   summary: "Frozen weighted shares, floored once, with residual assigned to the chosen party."
   fields {
     round: ref<round>, source: ref<receipt>, mode: enum(cash, loss) = mode
@@ -76,7 +77,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     calculate: [{ target: "net", op: "sum", values: [{ field: self.source.loss }] }]
   }
   action distribute_cash {
-    from: cash_ready, to: distributed
+    from: cash_ready, to: distributed, actor: { party: operator }
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator; moves self.vat from self.held to programTax
     invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
@@ -86,7 +87,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     moves self.held.balance from self.held to residual_to
   }
   action distribute_loss {
-    from: loss_ready, to: distributed
+    from: loss_ready, to: distributed, actor: { party: operator }
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.net from self.source.lossAccount to self.losses
     invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]

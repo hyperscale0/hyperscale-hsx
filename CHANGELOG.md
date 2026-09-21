@@ -1,3 +1,7 @@
+# HSX 4.1.0
+
+Second-person approval is deleted from the grammar and the standard library. `financing.portfolio_limit` is a top-level instrument, a plan's `funds` hold is optional, and `insurance.cover` and `financing.credit_line` name their provider with `adapter: text` instead of a party. A car financing programme compiles from the standard library and is covered by its own spec.
+
 # HSX 4.0.1
 
 The compiler resolves list targets in field blocks and child record export paths, refuses duplicate child export path suffixes naming both candidates, and no longer restricts aggregate limit bounds at compile time; `<= self.<field>` bounds resolve at runtime. No grammar change.

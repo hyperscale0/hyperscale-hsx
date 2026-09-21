@@ -330,20 +330,6 @@ class Parser {
     return this.node(operator.text);
   }
   private requirement(): BlockExpr {
-    if (this.eat("approval")) {
-      this.expect("by");
-      const party = this.atom();
-      const values: Record<string, Expr> = {
-        kind: this.node("approval"),
-        party,
-        decision: this.node("approved"),
-      };
-      if (this.eat("for")) values.action = this.atom();
-      if (this.eat("is")) values.decision = this.atom();
-      for (const key of ["protectedRequest", "differentFromInitiator"])
-        if (this.eat(key)) values[key] = this.atom();
-      return this.record(values);
-    }
     if (this.eat("unique")) {
       const namespace = this.atom();
       this.expect("on");

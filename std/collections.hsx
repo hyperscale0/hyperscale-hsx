@@ -1,6 +1,6 @@
 header collections
 
-instrument case(on: ref<financing.installments>[], agency: approval, overdue: duration = 3d, fee: percent = 20%) {
+instrument case(on: ref<financing.installments>[], agency: party, capital: party = programOperator, overdue: duration = 3d, fee: percent = 20%) {
   revisioned: true
   summary: "Refer an overdue installment without creating another debt."
   fields { assignedAgency: account of agency, plan: ref<on>, slice: ref<on.slice>, payment: ref<on.payment>, eligibleAt: date = after(self.slice.dueAt, overdue), agencyFee: money = rate(self.payment.amount, fee) }
@@ -11,10 +11,10 @@ instrument case(on: ref<financing.installments>[], agency: approval, overdue: du
     requires self.slice.principalReceivable.balance > "0"
     requires unique "overdue_referral" on [self.slice]
   }
-  action assign { from: opened, to: assigned, requires approval by agency }
+  action assign { from: opened, to: assigned, actor: { party: capital } }
   action recover { expansionLimit: 8192, from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
   action pay_fee { from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency }
-  action recall { from: [opened, assigned], to: recalled }
+  action recall { from: [opened, assigned], to: recalled, actor: { party: capital } }
   action return_uncollected { from: assigned, to: returned_uncollected, actor: { party: agency } }
 }
 

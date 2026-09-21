@@ -26,11 +26,11 @@ instrument hold(payer: party, payee: party, amount: money = runtime) {
     requires self.held.balance == self.amount
   }
   action release {
-    from: funded, to: released
+    from: funded, to: released, actor: { party: payer }
     moves self.amount from self.held to payee
   }
   action refund {
-    from: funded, to: refunded
+    from: funded, to: refunded, actor: { party: payee }
     moves self.amount from self.held to payer
   }
   action cancel { from: pending, to: cancelled }
@@ -41,7 +41,7 @@ instrument split(payer: party, amount: money = runtime, shares: split = { progra
   fields { amount: money = amount }
   lifecycle { states: [pending, paid, cancelled], initial: pending }
   action create {}
-  action pay { from: pending, to: paid, moves self.amount from payer shares shares }
+  action pay { from: pending, to: paid, actor: { party: payer }, moves self.amount from payer shares shares }
   action cancel { from: pending, to: cancelled }
 }
 
@@ -84,7 +84,7 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
   lifecycle { states: [open, paid, failed], initial: open }
   action create { }
   action pay {
-    from: open, to: paid
+    from: open, to: paid, actor: { party: payee }
     requires self.held.balance == self.target
     moves self.target from self.held to payee
   }
@@ -98,7 +98,7 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
       fields { pool: ref<parent>, payer: account of payer, amount: money }
       lifecycle { states: [pending, paid, refunded], initial: pending }
       action create { requires self.pool in [open] }
-      action pay { from: pending, to: paid, deadline: { at: self.pool.closesAt }, requires self.pool in [open], moves self.amount from self.payer to self.pool.held }
+      action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], moves self.amount from self.payer to self.pool.held }
       action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer }
     }
   }
@@ -114,20 +114,10 @@ instrument swap(first: party, second: party, first_amount: money, second_amount:
   action start_second { from: pending, to: second_ready, actor: { party: second }, deadline: { at: self.expiresAt }, moves reserve self.secondAmount from second to first capture "secondReceipt" }
   action finish_first { from: second_ready, to: both_ready, actor: { party: first }, deadline: { at: self.expiresAt }, moves reserve self.firstAmount from first to second capture "firstReceipt" }
   action expire_second { from: second_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.secondReceipt }
-  action exchange { from: both_ready, to: exchanged, moves post self.firstReceipt; moves post self.secondReceipt }
+  action exchange { from: both_ready, to: exchanged, actor: { party: first }, moves post self.firstReceipt; moves post self.secondReceipt }
   action cancel { from: pending, to: cancelled }
   action expire_first { from: first_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.firstReceipt }
   action expire_both { from: both_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.firstReceipt; moves void self.secondReceipt }
-}
-
-instrument deposit(payer: party, payee: party, amount: money, expires: date, approval: approval) {
-  fields { amount: money = amount, expiresAt: date = expires, reservation: text? }
-  lifecycle { states: [pending, held, claimed, returned, cancelled], initial: pending }
-  action create {}
-  action fund { from: pending, to: held, actor: { party: payer }, moves reserve self.amount from payer to payee capture "reservation" }
-  action claim { from: held, to: claimed, deadline: { at: self.expiresAt }, requires approval by approval, moves post self.reservation }
-  action return { from: held, to: returned, actor: clock, due: { at: self.expiresAt }, moves void self.reservation }
-  action cancel { from: pending, to: cancelled }
 }
 
 instrument payout(payer: party, payee: party, adapter: text, max_age: duration, amount: money = runtime) {
@@ -136,7 +126,7 @@ instrument payout(payer: party, payee: party, adapter: text, max_age: duration, 
   lifecycle { states: [pending, instructed, settled, rejected], initial: pending }
   action create {}
   action instruct {
-    from: pending, to: instructed, actor: { party: payer }, humanApproval: "distinct_member"
+    from: pending, to: instructed, actor: { party: payer }
     moves reserve self.amount from payer to payee capture "receipt" boundary adapter
   }
   action confirm {
@@ -156,6 +146,6 @@ instrument metered(payer: party, payee: party, unit_price: money, units: integer
   fields { usageIdentity: text, unitPrice: money = unit_price, units: integer = units, amount: money = multiply(self.unitPrice, self.units) }
   lifecycle { states: [recorded, billed, cancelled], initial: recorded }
   action create { requires unique "usage_event" on [self.usageIdentity] }
-  action bill { from: recorded, to: billed, moves self.amount from payer to payee fee fee }
+  action bill { from: recorded, to: billed, actor: { party: payee }, moves self.amount from payer to payee fee fee }
   action cancel { from: recorded, to: cancelled }
 }

@@ -1,14 +1,14 @@
 program cars "Cars"
 use escrow
 use financing
-party underwriter: staff role credit_underwriter
 object car "Cars" {
  fields { make: text, model: text, year: integer }
  attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
- attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR, portfolio: 1500000 SAR }
+ attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
+ attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
  attach plan = financing.installments {
-  borrower: actor, capital: operator, share: 25%, approval: underwriter
-  months: 3, profit: 2.5%, funds: sale, limits: limits
+  borrower: actor, capital: operator, share: 25%
+  months: 3, profit: 2.5%, funds: sale, limits: limits, portfolio: ceiling
   expose create as finance
  }
 }

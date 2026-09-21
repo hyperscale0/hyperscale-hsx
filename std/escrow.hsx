@@ -41,11 +41,11 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     deadline: { at: self.deliveredAt, offset: accept_within }
   }
   action verify_return {
-    from: disputed, to: return_verified
+    from: disputed, to: return_verified, actor: { party: payee }
     input { returnEvidence: text }
   }
   action refund {
-    from: dispute.refund_after, to: refunded
+    from: dispute.refund_after, to: refunded, actor: { party: payee }
     moves self.price from self.held to payer
   }
   action cancel { from: pending, to: cancelled }

@@ -27,7 +27,7 @@
     },
     {
       "name": "storage.type.hsx",
-      "match": "\\b(approval|money|account|ref|date|duration|text|integer|percent|boolean|enum|list)\\b"
+      "match": "\\b(money|account|ref|date|duration|text|integer|percent|boolean|enum|list)\\b"
     }
   ]
 }

@@ -30,12 +30,12 @@ instrument spend(wallet: ref<wallet.balance>, payee: party) {
     requires self.amount <= self.wallet.spendLimit
   }
   action reserve {
-    from: pending, to: reserved
+    from: pending, to: reserved, actor: { party: payee }
     requires self.wallet in [active]
     deadline: { at: self.expiresAt }
     moves reserve self.amount from self.wallet.held to payee capture "reservation"
   }
-  action pay { from: reserved, to: paid, moves post self.reservation }
-  action cancel { from: reserved, to: cancelled, moves void self.reservation }
+  action pay { from: reserved, to: paid, actor: { party: payee }, moves post self.reservation }
+  action cancel { from: reserved, to: cancelled, actor: { party: payee }, moves void self.reservation }
   action expire { from: reserved, to: expired, actor: clock, due: { at: self.expiresAt }, moves void self.reservation }
 }

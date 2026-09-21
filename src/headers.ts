@@ -11,7 +11,6 @@ export const HEADER_NAMES = [
   "financing",
   "lending",
   "insurance",
-  "approvals",
   "collections",
   "travel",
   "cards",
@@ -144,7 +143,7 @@ export function headerManifest(
                   : [];
               })(),
               parties: tunables
-                .filter((t) => ["party", "approval"].includes(t.type))
+                .filter((t) => t.type === "party")
                 .map((t) => t.name),
               actions: actions(decl.body),
             };

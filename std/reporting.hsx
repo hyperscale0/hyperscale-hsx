@@ -351,7 +351,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
         request: [ "owner", "finance" ],
         read: [ "owner", "admin", "operations", "finance", "viewer" ],
         release: [  ],
-        independentApproval: true,
         retention: { policy: "report_replay", years: retention_years }
       }
     },
@@ -632,7 +631,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
         request: [ "owner", "finance" ],
         read: [ "owner", "admin", "operations", "finance", "viewer" ],
         release: [  ],
-        independentApproval: true,
         retention: { policy: "report_replay", years: retention_years }
       }
     },
@@ -1002,7 +1000,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
         request: [ "owner", "finance" ],
         read: [ "owner", "admin", "operations", "finance", "viewer" ],
         release: [  ],
-        independentApproval: true,
         retention: { policy: "report_replay", years: retention_years }
       }
     },
@@ -1278,7 +1275,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
         request: [ "owner", "finance" ],
         read: [ "owner", "admin", "operations", "finance", "viewer" ],
         release: [  ],
-        independentApproval: true,
         retention: { policy: "report_replay", years: retention_years }
       }
     }

@@ -85,7 +85,6 @@ write ordered requirements and moves as expressions:
 ```hsx
 requires self.payer == self.order.buyer
 requires self.order in [placed]
-requires approval by underwriter
 moves self.price from payer to self.held
 moves self.price from self.held to payee fee fee
 ```
@@ -111,15 +110,6 @@ They cannot add kernel instructions. `at(list, position)` reads a dated list;
 floors a weighted share. `records` declares child types. `invoke` can create a child
 with typed input in the same transaction.
 
-An `approval` tunable binds a party and emits a decision record for each gated
-action, including child actions. `approval: underwriter` needs no separate object.
-Generated records are named `<object>_<action>_decision`; child names retain their
-object prefix. `requires approval by approver for approve is declined` reuses the
-approve decision for a declined branch. Decisions keep the target action's typed
-material input and expiry. `approvals.decision` remains available to attach an
-explicit decision to an action without a library approval tunable. A decision
-alone does not add a requirement to that action. Approval declarations with
-`input: "material"` infer immutable material fields from the target action's input.
 The compiler removes branches excluded by fixed enum tunables. An invalid program reports its source line
 and a correction. No artifact is returned with diagnostics.
 

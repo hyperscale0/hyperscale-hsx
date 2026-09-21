@@ -4,12 +4,10 @@
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "kyb.application.review",
       "transfer.internal.count",
-      "transfer.internal.volume_sar",
-      "verification.kyb.count"
+      "transfer.internal.volume_sar"
     ],
-    "effectiveTableDigest": "dae11d13d84dc4c66ae4f3ec61e26259fb45b25bd29f96a14e0378662e485da0",
+    "effectiveTableDigest": "2d53121d200de2cb7567113ebf5bc0ce9377e7089fd4697f4b694bd557e32063",
     "fixed": {
       "activationBaseMinor": "500000",
       "activationPerPointMinor": "100000",
@@ -53,14 +51,6 @@
       },
       {
         "bps": 0,
-        "meter": "verification.kyb.count",
-        "payer": "product",
-        "perEventMinor": "8000",
-        "settlement": "invoice",
-        "signature": "decides.kyb"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "0",
@@ -85,27 +75,11 @@
       },
       {
         "bps": 0,
-        "meter": "billing.invoice.settlement",
-        "payer": "product",
-        "perEventMinor": "1",
-        "settlement": "invoice",
-        "signature": "meters.billing.invoice.settlement"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "150",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
-      },
-      {
-        "bps": 0,
-        "meter": "kyb.application.review",
-        "payer": "product",
-        "perEventMinor": "20000",
-        "settlement": "invoice",
-        "signature": "meters.kyb.application.review"
       },
       {
         "bps": 6,
@@ -131,14 +105,6 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "requires.aggregate"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -196,12 +162,10 @@
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "kyb.application.review",
       "transfer.internal.count",
-      "transfer.internal.volume_usd",
-      "verification.kyb.count"
+      "transfer.internal.volume_usd"
     ],
-    "effectiveTableDigest": "6c96c3fb4174551132edfbab439b1ca709fa2d75a029d7a6da7e584726cb7ba3",
+    "effectiveTableDigest": "44fa81226359fcafa8bd66b70c2311ee999c9bae66ff59c85ccb14d7d68126a9",
     "fixed": {
       "activationBaseMinor": "133300",
       "activationPerPointMinor": "26700",
@@ -245,14 +209,6 @@
       },
       {
         "bps": 0,
-        "meter": "verification.kyb.count",
-        "payer": "product",
-        "perEventMinor": "2133",
-        "settlement": "invoice",
-        "signature": "decides.kyb"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "0",
@@ -277,27 +233,11 @@
       },
       {
         "bps": 0,
-        "meter": "billing.invoice.settlement",
-        "payer": "product",
-        "perEventMinor": "1",
-        "settlement": "invoice",
-        "signature": "meters.billing.invoice.settlement"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "40",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
-      },
-      {
-        "bps": 0,
-        "meter": "kyb.application.review",
-        "payer": "product",
-        "perEventMinor": "5333",
-        "settlement": "invoice",
-        "signature": "meters.kyb.application.review"
       },
       {
         "bps": 6,
@@ -323,14 +263,6 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "requires.aggregate"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -388,12 +320,10 @@
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "kyb.application.review",
       "transfer.internal.count",
-      "transfer.internal.volume_eur",
-      "verification.kyb.count"
+      "transfer.internal.volume_eur"
     ],
-    "effectiveTableDigest": "302de8af1672e643a0e173c4e1fedbcc90fd59b120897ab41b29daf123ee619b",
+    "effectiveTableDigest": "613d900e38f98a6bf3934e7940ff4d06c76f1dddc695c79ee3b5ee1ad45b8636",
     "fixed": {
       "activationBaseMinor": "125000",
       "activationPerPointMinor": "25000",
@@ -437,14 +367,6 @@
       },
       {
         "bps": 0,
-        "meter": "verification.kyb.count",
-        "payer": "product",
-        "perEventMinor": "2000",
-        "settlement": "invoice",
-        "signature": "decides.kyb"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "0",
@@ -469,27 +391,11 @@
       },
       {
         "bps": 0,
-        "meter": "billing.invoice.settlement",
-        "payer": "product",
-        "perEventMinor": "1",
-        "settlement": "invoice",
-        "signature": "meters.billing.invoice.settlement"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "38",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
-      },
-      {
-        "bps": 0,
-        "meter": "kyb.application.review",
-        "payer": "product",
-        "perEventMinor": "5000",
-        "settlement": "invoice",
-        "signature": "meters.kyb.application.review"
       },
       {
         "bps": 6,
@@ -515,14 +421,6 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "requires.aggregate"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "requires.approval"
       },
       {
         "bps": 0,
@@ -580,12 +478,10 @@
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "kyb.application.review",
       "transfer.internal.count",
-      "transfer.internal.volume_gbp",
-      "verification.kyb.count"
+      "transfer.internal.volume_gbp"
     ],
-    "effectiveTableDigest": "1620e8016c6dcd451d220e024ef66852528ce6aef20038810bcfdb10a03ea70e",
+    "effectiveTableDigest": "11ff399b5078ba8ba544a518d5483fced9da63da9c7b1cc2124fea1f17a5b01c",
     "fixed": {
       "activationBaseMinor": "104200",
       "activationPerPointMinor": "20800",
@@ -629,14 +525,6 @@
       },
       {
         "bps": 0,
-        "meter": "verification.kyb.count",
-        "payer": "product",
-        "perEventMinor": "1667",
-        "settlement": "invoice",
-        "signature": "decides.kyb"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "0",
@@ -661,27 +549,11 @@
       },
       {
         "bps": 0,
-        "meter": "billing.invoice.settlement",
-        "payer": "product",
-        "perEventMinor": "1",
-        "settlement": "invoice",
-        "signature": "meters.billing.invoice.settlement"
-      },
-      {
-        "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
         "perEventMinor": "31",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
-      },
-      {
-        "bps": 0,
-        "meter": "kyb.application.review",
-        "payer": "product",
-        "perEventMinor": "4167",
-        "settlement": "invoice",
-        "signature": "meters.kyb.application.review"
       },
       {
         "bps": 6,
@@ -707,14 +579,6 @@
         "perEventMinor": "0",
         "settlement": "invoice",
         "signature": "requires.aggregate"
-      },
-      {
-        "bps": 0,
-        "meter": "instrument.event.count",
-        "payer": "product",
-        "perEventMinor": "0",
-        "settlement": "invoice",
-        "signature": "requires.approval"
       },
       {
         "bps": 0,

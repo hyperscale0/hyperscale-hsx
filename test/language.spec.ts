@@ -171,49 +171,6 @@ instrument consumer(target: ref) {
     }
 });
 
-const protectedApproval = `program requests "Requests"
-party underwriter: staff role underwrite
-instrument request {
- fields {}
- lifecycle { states: [open], initial: open }
- action create {}
-}
-instrument decision {
- fields { request: ref<request>, expires: date }
- lifecycle { states: [open], initial: open }
- action create {
-  requires approval by underwriter protectedRequest self.request differentFromInitiator true
-  approval: { target: self.request, protectedRequest: self.request, party: underwriter,
-    action: create, expires: self.expires, input: {}, decision: approved }
- }
-}`;
-
-const approvalActions = [
-  protectedApproval,
-  protectedApproval.replace(
-    "requires approval by underwriter protectedRequest self.request differentFromInitiator true",
-    "requires: [{ kind: approval, party: underwriter, protectedRequest: self.request, differentFromInitiator: true, decision: approved }]",
-  ),
-].map((source) => {
-  const result = compile(source);
-  if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
-  return result.artifacts.document.instruments[1]!.actions.create!;
-});
-
-test("Authored separation survives compact and generic HSX lowering", () => {
-  for (const action of approvalActions)
-    expect(action.requires[0]).toMatchObject({ differentFromInitiator: true });
-});
-
-test("Protected request survives compact and generic HSX lowering", () => {
-  for (const action of approvalActions) {
-    expect(action.requires[0]).toMatchObject({
-      protectedRequest: "self.request",
-    });
-    expect(action.approval).toMatchObject({ protectedRequest: "self.request" });
-  }
-});
-
 test("payout reserves before instruction-bound confirmation posts", () => {
   const result = compile(
     `program payout_test "Payout"

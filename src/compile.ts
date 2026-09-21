@@ -545,17 +545,6 @@ export function compile(
       }
     }
     const origins: CompileOriginMapEntry[] = [];
-    const materialApprovals = new Set<UdlAction>();
-    const implicitDecisions = new Map<
-      string,
-      {
-        target: string;
-        action: string;
-        party: string;
-        protectedRequest: string;
-        origin: Span;
-      }
-    >();
     const resolveFamily = (
       rawPath: string,
       expr: { span: Span; source?: string },
@@ -629,7 +618,6 @@ export function compile(
       arguments_: BlockExpr,
       origin: Span,
       inherited = new Map<string, Expr>(),
-      inheritedApprovers = new Set<string>(),
       inheritedEnums = new Map<string, string[]>(),
       attachmentInfo?: {
         subjectKindId: string;
@@ -822,7 +810,6 @@ export function compile(
         if (type.kind === "call" && type.name === "enum")
           enums.set(parameter.key, type.args.map(text));
       }
-      const approvers = new Set(inheritedApprovers);
       const supplied = new Map<string, Expr>();
       for (const entry of arguments_.entries) {
         if (supplied.has(entry.key))
@@ -841,8 +828,7 @@ export function compile(
           param.value.kind === "default" ? param.value.value : undefined;
         const typeName =
           type.kind === "type" || type.kind === "call" ? type.name : text(type);
-        const partyParameter =
-          attachmentInfo && (typeName === "party" || typeName === "approval");
+        const partyParameter = attachmentInfo && typeName === "party";
         const byName: Expr | undefined =
           partyParameter &&
           (subjectPartyRoles.includes(param.key as SubjectPartyRole) ||
@@ -1000,11 +986,7 @@ export function compile(
         const v =
           (supplied.has(param.key) && !attachmentInfo) || type === "enum"
             ? actual
-            : resolve(
-                actual,
-                new Set(),
-                !!attachmentInfo && (type === "party" || type === "approval"),
-              );
+            : resolve(actual, new Set(), !!attachmentInfo && type === "party");
         environment.set(param.key, v);
         if (type === "enum" && t.kind === "call") {
           if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
@@ -1016,7 +998,7 @@ export function compile(
         } else if (type === "list") {
           if (v.kind !== "list")
             fail(v, `${param.key} needs a list`, "write [value, value]");
-        } else if (type === "party" || type === "approval") {
+        } else if (type === "party") {
           if (v.kind !== "name" || !isParty(v.value))
             failWithCode(
               actual,
@@ -1026,18 +1008,14 @@ export function compile(
             );
           const party = document.parties[v.value];
           if (
-            (type === "approval" && (party?.kind !== "staff" || !party.role)) ||
-            (type === "party" &&
-              (party?.kind === "staff" ||
-                (attachmentInfo && party?.kind === "person")))
+            (party?.kind === "staff" && !party.role) ||
+            (attachmentInfo && party?.kind === "person")
           )
             failWithCode(
               actual,
               "party_kind_mismatch",
               `${param.key} cannot bind ${v.value}`,
-              type === "approval"
-                ? "use a declared staff party with a role"
-                : "use a subject role or declared business",
+              "use a subject role, declared business, or staff with a role",
             );
           resolvedParties.add(param.key);
           if (attachmentInfo)
@@ -1046,7 +1024,6 @@ export function compile(
             )
               ? { role: v.value as SubjectPartyRole }
               : { party: v.value };
-          if (type === "approval") approvers.add(text(v));
         } else if (type === "ref") {
           const values = v.kind === "list" ? v.items : [v];
           if (v.kind === "list" && (t.kind !== "type" || !t.many))
@@ -1092,6 +1069,14 @@ export function compile(
               fail(value, "duplicate reference", "list each object once");
             seen.add(value.value);
           }
+          // A many-reference tunable is a list even when one object is bound,
+          // so report datasets and other value positions never see a bare name.
+          if (t.kind === "type" && t.many && v.kind !== "list")
+            environment.set(param.key, {
+              kind: "list",
+              items: [v],
+              span: v.span,
+            });
         } else if (type === "fee" || type === "split" || type === "policy") {
           if (v.kind !== "block")
             fail(v, `${param.key} needs a block`, `write ${param.key} { ... }`);
@@ -1457,6 +1442,14 @@ export function compile(
                 fail(row, "reference needs a target", "write ref<object>");
               const [root, ...tail] = target.split(".");
               const resolved = environment.get(root!);
+              // An optional field pointing at an unsupplied optional tunable
+              // has nothing to point at, so the instrument drops it.
+              if (
+                !resolved &&
+                f.optional &&
+                decl.parameters.some((parameter) => parameter.key === root)
+              )
+                continue;
               const resolvedTargets =
                 resolved?.kind === "list"
                   ? resolved.items
@@ -1788,10 +1781,18 @@ export function compile(
           const adapterList: UdlActionSubject["adapters"] = [];
           for (const entry of subjectBlock.entries) {
             if (entry.key === "adapter") {
+              // A tunable names the adapter; anything else is the binding itself.
+              const adapterName = (item: Expr): string =>
+                item.kind === "name" &&
+                decl.parameters.some(
+                  (parameter) => parameter.key === item.value,
+                )
+                  ? text(resolve(item))
+                  : text(item);
               const bindingNames =
                 entry.value.kind === "list"
-                  ? entry.value.items.map(text)
-                  : [text(entry.value)];
+                  ? entry.value.items.map(adapterName)
+                  : [adapterName(entry.value)];
               for (const bindingName of bindingNames) {
                 const target = options.adapterRegistry?.[bindingName];
                 if (target) {
@@ -2284,13 +2285,6 @@ export function compile(
                   "choose create, reserve, post, or void from internal_transfer",
                 );
             }
-          } else if (key === "approval") {
-            const approval = data(expr) as UdlAction["approval"];
-            if (approval && (approval.input as unknown) === "material") {
-              approval.input = {};
-              materialApprovals.add(a);
-            }
-            a.approval = approval;
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
         if (attachmentInfo) {
@@ -2328,34 +2322,6 @@ export function compile(
         checkSubjectPaths(a.invoke, row.span);
         currentAction = undefined;
         currentActionName = undefined;
-        for (const requirement of a.requires ?? []) {
-          if (
-            requirement.kind !== "approval" ||
-            !approvers.has(requirement.party)
-          )
-            continue;
-          const action = requirement.action ?? name;
-          const key = `${id}_${action}_decision`;
-          const previous = implicitDecisions.get(key);
-          if (
-            previous &&
-            (previous.party !== requirement.party ||
-              previous.protectedRequest !==
-                (requirement.protectedRequest ?? "self"))
-          )
-            fail(
-              { span: origin },
-              `action ${action} has conflicting approval parties or protected requests`,
-              "use a separate decision action for each party",
-            );
-          implicitDecisions.set(key, {
-            target: id,
-            action,
-            party: requirement.party,
-            protectedRequest: requirement.protectedRequest ?? "self",
-            origin,
-          });
-        }
         for (const requirement of a.subject?.requirements ?? []) {
           const entry =
             asBlock(subjectExpr).entries.find(
@@ -2420,7 +2386,6 @@ export function compile(
             ...environment,
             ["parent", { kind: "name", value: id, span: origin } as Expr],
           ]),
-          approvers,
           enums,
           attachmentInfo
             ? { ...attachmentInfo, exposed: new Map() }
@@ -2525,7 +2490,6 @@ export function compile(
           tunableBlock,
           entry.span,
           new Map(),
-          new Set(),
           new Map(),
           {
             subjectKindId: decl.name,
@@ -2662,7 +2626,6 @@ export function compile(
           decl.body,
           decl.span,
           new Map(),
-          new Set(),
           new Map(),
           undefined,
           templateFamily ? { ...templateFamily } : undefined,
@@ -2878,145 +2841,6 @@ export function compile(
                     : field.target
                 ).some((id) => eliminatedStates.get(id)?.has(state)),
             );
-        }
-      }
-    // Approval tunables instantiate the same library record as an explicit decision.
-    if (implicitDecisions.size) {
-      const content = (
-        options.standardLibrary ?? bundledStandardLibrary
-      ).source("approvals");
-      const parsed = content ? parseProgram(content) : undefined;
-      const template = parsed?.program.decls.find(
-        (decl) => decl.kind === "instrument" && decl.name === "decision",
-      );
-      if (
-        !template ||
-        template.kind !== "instrument" ||
-        parsed?.diagnostics.length
-      )
-        fail(
-          program,
-          "implicit decisions need the approvals header",
-          "provide the standard approvals header",
-        );
-      for (const [id, decision] of implicitDecisions) {
-        if (
-          !document.instruments.find((inst) => inst.id === decision.target)
-            ?.actions[decision.action]
-        )
-          continue;
-        const existing = document.instruments.some((inst) =>
-          Object.values(inst.actions).some(
-            (action) =>
-              action.approval?.action === decision.action &&
-              action.approval.party === decision.party &&
-              inst.fields.some((field) => {
-                if (
-                  field.type !== "ref" ||
-                  field.target !== decision.target ||
-                  `self.${field.name}` !== action.approval?.target
-                )
-                  return false;
-                const [root, name, ...tail] =
-                  decision.protectedRequest.split(".");
-                const input = name && action.approval.input[name];
-                const request =
-                  root === "self"
-                    ? [action.approval.target, name, ...tail]
-                        .filter(Boolean)
-                        .join(".")
-                    : root === "input" && name
-                      ? input && "field" in input
-                        ? [input.field, ...tail].join(".")
-                        : materialApprovals.has(action)
-                          ? [`self.material_${name}`, ...tail].join(".")
-                          : undefined
-                      : undefined;
-                return (
-                  request !== undefined &&
-                  action.approval.protectedRequest === request
-                );
-              }),
-          ),
-        );
-        if (existing) continue;
-        if (document.instruments.some((inst) => inst.id === id))
-          fail(
-            { span: decision.origin },
-            `implicit decision name ${id} is already used`,
-            "rename the conflicting object",
-          );
-        const protectedRequest =
-          decision.protectedRequest === "self"
-            ? "self.target"
-            : decision.protectedRequest.startsWith("self.")
-              ? `self.target.${decision.protectedRequest.slice(5)}`
-              : fail(
-                  { span: decision.origin },
-                  "implicit approval needs a stored protected request",
-                  "declare an explicit decision for an input-based protected request",
-                );
-        addInstrument(
-          template,
-          id,
-          {
-            kind: "block",
-            span: decision.origin,
-            entries: Object.entries({
-              for: decision.target,
-              approved_by: decision.party,
-              action: decision.action,
-              protected_request: protectedRequest,
-            }).map(([key, value]) => ({
-              key,
-              value: {
-                kind:
-                  key === "action" || key === "protected_request"
-                    ? "text"
-                    : "name",
-                value,
-                span: decision.origin,
-              },
-              span: decision.origin,
-            })),
-          },
-          decision.origin,
-          new Map(),
-          new Set(),
-          new Map(),
-          document.instruments.find(
-            (instrument) => instrument.id === decision.target,
-          )?.subject
-            ? {
-                subjectKindId: document.instruments.find(
-                  (instrument) => instrument.id === decision.target,
-                )!.subject!,
-                attachmentName: id,
-                parties: {},
-                renames: new Map(),
-                exposed: new Map(),
-              }
-            : undefined,
-        );
-      }
-    }
-    // Material approval fields are inferred from the selected action's typed input.
-    for (const inst of document.instruments)
-      for (const action of Object.values(inst.actions)) {
-        if (!materialApprovals.has(action) || !action.approval) continue;
-        const targetField = inst.fields.find(
-          (f) => `self.${f.name}` === action.approval!.target,
-        );
-        if (targetField?.type !== "ref") continue;
-        const target = document.instruments.find(
-          (i) => i.id === targetField.target,
-        )?.actions[action.approval.action];
-        if (!target) continue;
-        for (const field of target.input) {
-          const name = `material_${field.name}`;
-          if (!inst.fields.some((f) => f.name === name))
-            inst.fields.push({ ...field, name });
-          action.approval.input[field.name] = { field: `self.${name}` };
         }
       }
     const changed = new Set<string>();

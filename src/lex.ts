@@ -26,7 +26,6 @@ export const KEYWORDS = [
   "by",
   "for",
   "is",
-  "approval",
   "unique",
   "on",
   "count",
