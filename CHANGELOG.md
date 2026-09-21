@@ -1,3 +1,7 @@
+# HSX 4.0.1
+
+The compiler resolves list targets in field blocks and child record export paths, refuses duplicate child export path suffixes naming both candidates, and no longer restricts aggregate limit bounds at compile time; `<= self.<field>` bounds resolve at runtime. No grammar change.
+
 # HSX 4.0.0
 
 HSX adds authored object kinds and attachments with party bindings to owner, actor or operator. Action subject requirements are collected when an attached action runs. The vehicles header is deleted, public instrument create actions are gone, and UDL 3 is rejected. Programs compile to UDL 4; recreate development estates.

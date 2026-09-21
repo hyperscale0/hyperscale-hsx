@@ -696,17 +696,18 @@ export function compile(
         return result;
       };
 
-      const resolveChildExportPath = (
+      const collectChildExportPaths = (
         parentDecl: InstrumentDecl,
         suffix: string,
-      ): string | undefined => {
+      ): string[] => {
         const recs = entries(asBlock(entries(parentDecl.body).get("records")));
+        const matches: string[] = [];
         for (const [recName] of recs) {
-          if (suffix === recName) return recName;
+          if (suffix === recName) matches.push(recName);
         }
         for (const [recName, recBlock] of recs) {
           if (suffix.startsWith(`${recName}_`)) {
-            const rest = resolveChildExportPath(
+            const nested = collectChildExportPaths(
               {
                 kind: "instrument",
                 name: recName,
@@ -716,10 +717,28 @@ export function compile(
               },
               suffix.slice(recName.length + 1),
             );
-            if (rest) return `${recName}.${rest}`;
+            for (const rest of nested) {
+              matches.push(`${recName}.${rest}`);
+            }
           }
         }
-        return undefined;
+        return matches;
+      };
+
+      const resolveChildExportPath = (
+        parentDecl: InstrumentDecl,
+        suffix: string,
+      ): string | undefined => {
+        const matches = collectChildExportPaths(parentDecl, suffix);
+        if (matches.length > 1) {
+          failWithCode(
+            parentDecl,
+            "HSX1001",
+            `ambiguous child export path suffix '${suffix}': multiple candidates (${matches.join(", ")})`,
+            "rename conflicting records to remove duplicate export path suffixes",
+          );
+        }
+        return matches[0];
       };
 
       const getInstrumentFamily = (targetId: string): UdlFamily | undefined => {
