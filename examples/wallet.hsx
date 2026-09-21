@@ -1,0 +1,21 @@
+// Members prepay for workshop visits and the studio reserves each spend before charging it.
+program workshop_credits "Workshop credits"
+use wallet
+
+object membership "Membership" {
+  fields { memberName: text, membershipNumber: text }
+  columns: [memberName, membershipNumber]
+  attach balance = wallet.balance {
+    holder: owner
+    expose activate as open_balance
+    expose topup as add_credit
+    expose withdraw as withdraw_credit
+    expose close as close_balance
+  }
+  attach visit = wallet.spend {
+    wallet: balance, payee: operator
+    expose reserve as reserve_visit
+    expose pay as charge_visit
+    expose cancel as cancel_visit
+  }
+}

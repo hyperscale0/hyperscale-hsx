@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { readExamples } from "./bundle-examples.ts";
 import { headerManifest } from "../src/headers.ts";
 const root = new URL("../", import.meta.url);
 const manifest = headerManifest({
@@ -28,9 +29,31 @@ for (const header of manifest.headers)
 await mkdir(new URL("docs/", root), { recursive: true });
 const inventory = rows.join("\n") + "\n";
 await writeFile(new URL("docs/headers.md", root), inventory);
+const examples = readExamples();
+const examplesReference = [
+  "# Sample programs",
+  "",
+  "Each file is a complete authored program. Instrument creation stays internal; exposed actions operate on its agreements.",
+  "",
+  "| Program | Headers | Business |",
+  "| --- | --- | --- |",
+  ...examples.map(
+    (example) =>
+      `| [${example.title}](../examples/${example.id}.hsx) | ${example.headers.join(", ")} | ${example.summary} |`,
+  ),
+  "",
+].join("\n");
+await writeFile(new URL("docs/examples.md", root), examplesReference);
 const reference = await readFile(new URL("docs/README.md", root), "utf8");
 await writeFile(
   new URL("llms.txt", root),
-  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Example](examples/library.hsx)\n- [Serviced financing](examples/serviced.hsx)\n",
+  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Samples](docs/examples.md)\n",
 );
-await writeFile(new URL("llms-full.txt", root), reference + "\n" + inventory);
+await writeFile(
+  new URL("llms-full.txt", root),
+  reference +
+    "\n" +
+    inventory +
+    "\n" +
+    examplesReference.replaceAll("](../examples/", "](examples/"),
+);

@@ -1,0 +1,26 @@
+// A device retailer collects the purchase price and attaches cover with a claim review process.
+program device_insurance "Device insurance"
+use insurance
+use money
+party inspector: staff role claims
+
+object device "Insured device" {
+  fields { model: text, serialNumber: text, purchaseDate: date }
+  columns: [model, serialNumber, purchaseDate]
+  attach purchase = money.transfer {
+    payer: owner, payee: operator
+    expose pay as pay_for_device
+  }
+  // Bind device_insurer to an ADL adapter before activating cover.
+  attach protection = insurance.cover {
+    holder: owner, adapter: "device_insurer", covers: purchase
+    expose activate as activate_cover
+    expose cancel as cancel_cover
+  }
+  attach claim = insurance.claim {
+    cover: protection, inspector: inspector
+    expose approve as approve_claim
+    expose deny as deny_claim
+    expose pay as pay_claim
+  }
+}

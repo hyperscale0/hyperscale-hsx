@@ -18,7 +18,8 @@ instrument circle(contribution: money, members: integer(1, 366), starts: date, m
 }
 
 instrument membership(circle: ref<savings.circle>, member: party) {
-  fields { circle: ref<circle>, member: account of member, position: integer(1, 60), preceding: integer = subtract(self.position, 1), receivesAt: date = at(self.circle.dates, self.position), contribution: money = self.circle.contribution, total: money = self.circle.pot, dates: list(date, 60) }
+  summary: "A member contributes on the circle calendar and receives the pot in the assigned position."
+  fields { circle: ref<circle>, member: account of member, position: integer(1, 60), preceding: integer = subtract(self.position, 1), receivesAt: date = at(self.circle.dates, self.position), contribution: money = self.circle.contribution, total: money = self.circle.pot }
   lifecycle { states: [joined, active, paid, withdrawn], initial: joined }
   action create { requires self.position <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.position]; requires unique "circle_member" on [self.circle, self.member] }
   action activate {

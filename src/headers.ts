@@ -21,10 +21,11 @@ export const HEADER_NAMES = [
 /** The compiler frontend owns header metadata used by docs and catalogue consumers. */
 export function headerManifest(
   library: StandardLibrary = bundledStandardLibrary,
+  names: readonly string[] = HEADER_NAMES,
 ) {
   return {
     version: 4,
-    headers: HEADER_NAMES.map((name) => {
+    headers: names.map((name) => {
       const source = library.source(name);
       if (!source) throw new Error(`Missing standard header ${name}`);
       const parsed = parseProgram(source);
@@ -102,6 +103,23 @@ export function headerManifest(
             return {
               name: decl.name,
               qualifiedName: `${name}.${decl.name}`,
+              signature: source
+                .slice(decl.span.start, decl.body.span.start)
+                .replace(/^instrument\s+/, "")
+                .trim(),
+              states: (() => {
+                const lifecycle = decl.body.entries.find(
+                  (entry) => entry.key === "lifecycle",
+                )?.value;
+                const states =
+                  lifecycle?.kind === "block"
+                    ? lifecycle.entries.find((entry) => entry.key === "states")
+                        ?.value
+                    : undefined;
+                return states?.kind === "list"
+                  ? states.items.map(spelling)
+                  : [];
+              })(),
               summary:
                 summary?.kind === "text"
                   ? summary.value

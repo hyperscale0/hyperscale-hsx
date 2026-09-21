@@ -1,4 +1,5 @@
-program cars "Cars"
+// A minimal financed car sale connects escrow to a three-instalment plan and lending limits.
+program cars "Financed car sales"
 use escrow
 use financing
 object car "Cars" {

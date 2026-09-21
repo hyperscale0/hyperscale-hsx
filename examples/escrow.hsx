@@ -1,0 +1,22 @@
+// Buyers fund a used device purchase, then accept delivery or raise a dispute before release.
+program used_device_sales "Used device sales"
+use escrow
+
+object device "Device" {
+  fields {
+    model: text
+    condition: text
+    serialNumber: text
+    price: money
+  }
+  columns: [model, condition, price]
+  attach sale = escrow.hold {
+    payer: actor, payee: owner
+    expose fund as pay_for_device
+    expose deliver as confirm_delivery
+    expose accept as accept_device
+    expose dispute as report_problem
+    expose verify_return as verify_return
+    expose refund as refund_buyer
+  }
+}

@@ -1,0 +1,17 @@
+// A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings.
+program tutoring_studio "Tutoring studio"
+use money
+
+object lesson "Lesson" {
+  fields {
+    student: text
+    tutor: text
+    startsAt: date
+  }
+  columns: [student, tutor, startsAt]
+  attach payment = money.transfer {
+    payer: actor, payee: operator, amount: 150 SAR
+    expose pay as pay_for_lesson
+    expose cancel as cancel_payment
+  }
+}

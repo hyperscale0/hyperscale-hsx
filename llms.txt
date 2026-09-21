@@ -2,5 +2,4 @@
 
 - [Language](docs/README.md)
 - [Headers](docs/headers.md)
-- [Example](examples/library.hsx)
-- [Serviced financing](examples/serviced.hsx)
+- [Samples](docs/examples.md)

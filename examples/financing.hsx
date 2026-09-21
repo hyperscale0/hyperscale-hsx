@@ -1,0 +1,24 @@
+// A tuition lender funds a student's fees over three interest-free instalments with borrowing limits.
+program tuition_instalments "Tuition instalments"
+use financing
+
+object enrolment "Enrolment" {
+  fields { student: text, course: text, price: money }
+  columns: [student, course, price]
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: 12000 SAR
+    expose approve as approve_student
+  }
+  attach budget = financing.portfolio_limit {
+    limit: 500000 SAR
+    expose approve as approve_budget
+  }
+  attach tuition = financing.installments {
+    borrower: owner, capital: operator
+    months: 3, profit: 0%, disburse_to: borrower
+    limits: allowance, portfolio: budget
+    expose sign as sign_tuition_plan
+    expose disburse as fund_tuition
+    expose payoff as repay_early
+  }
+}

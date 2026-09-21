@@ -34,3 +34,48 @@ textarea:focus-visible {
   outline: 3px solid #247c69;
   outline-offset: 3px;
 }
+
+#tokens,
+#explanation {
+  padding: 1rem;
+  background: white;
+  border: 1px solid #718080;
+  font: 14px/1.5 monospace;
+}
+#tokens span {
+  cursor: help;
+}
+.hsx-keyword,
+.hsx-operator {
+  color: #2d4bf2;
+}
+.hsx-header,
+.hsx-instrument,
+.hsx-action {
+  color: #183e39;
+  font-weight: bold;
+}
+.hsx-party,
+.hsx-role,
+.hsx-field,
+.hsx-parameter {
+  color: #7a3500;
+}
+.hsx-type,
+.hsx-state {
+  color: #60368c;
+}
+.hsx-money,
+.hsx-number,
+.hsx-percent,
+.hsx-duration,
+.hsx-date {
+  color: #12604c;
+}
+.hsx-string {
+  color: #784124;
+}
+.hsx-comment {
+  color: #56656b;
+  font-style: italic;
+}

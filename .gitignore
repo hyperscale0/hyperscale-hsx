@@ -1,4 +1,5 @@
 /src/std-bundle.ts
+/src/examples-bundle.ts
 /playground/bundle.js
 node_modules/
 dist/

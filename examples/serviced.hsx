@@ -1,3 +1,4 @@
+// A car finance company services loans with late charges, payment reminders and early repayment.
 program car_financing "Car financing"
 use escrow
 use financing

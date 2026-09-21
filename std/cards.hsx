@@ -1,6 +1,7 @@
 header cards
 
 instrument cardholder(holder: party) {
+  summary: "An account holder whose card access can be activated, suspended or closed."
   fields { holder: account of holder }
   lifecycle { states: [pending, active, suspended, closed], initial: pending }
   action create {}
@@ -11,6 +12,7 @@ instrument cardholder(holder: party) {
 }
 
 instrument card(holder: ref<cards.cardholder>, spend_limit: money) {
+  summary: "A card with a per-spend ceiling that can be activated, frozen or cancelled."
   fields { holder: ref<holder>, spendLimit: money = spend_limit }
   lifecycle { states: [issued, active, frozen, cancelled], initial: issued }
   action create { requires self.holder in [active] }
@@ -21,6 +23,7 @@ instrument card(holder: ref<cards.cardholder>, spend_limit: money) {
 }
 
 instrument authorization(card: ref<cards.card>, merchant: party, issuer: party = programOperator) {
+  summary: "Reserve a card payment for the merchant, then capture it or release the reservation."
   fields { card: ref<card>, merchant: account of merchant, amount: money, expiresAt: date, reservation: text? }
   lifecycle { states: [pending, approved, captured, declined, reversed, expired], initial: pending }
   action create {
@@ -40,6 +43,7 @@ instrument authorization(card: ref<cards.card>, merchant: party, issuer: party =
 }
 
 instrument transaction(authorization: ref<cards.authorization>) {
+  summary: "Record a captured card payment and return its amount when refunded."
   fields { authorization: ref<authorization>, amount: money = self.authorization.amount }
   lifecycle { states: [posted, refunded], initial: posted }
   action create { requires self.authorization in [captured]; requires unique "captured_authorization" on [self.authorization] }
@@ -50,6 +54,7 @@ instrument transaction(authorization: ref<cards.authorization>) {
 }
 
 instrument dispute(transaction: ref<cards.transaction>, issuer: party = programOperator, within: duration = 90d) {
+  summary: "Review a disputed card payment before its deadline and refund it when the dispute is won."
   fields { transaction: ref<transaction>, evidence: text, expiresAt: date = after(self.createdAt, within) }
   lifecycle { states: [filed, reviewing, won, lost], initial: filed }
   action create { requires self.transaction in [posted]; requires unique "disputed_transaction" on [self.transaction] }

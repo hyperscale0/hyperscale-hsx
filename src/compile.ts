@@ -932,7 +932,8 @@ export function compile(
             (binding.kind === "name" && binding.value === expr.value))
         )
           return expr;
-        if (attachmentInfo) {
+        // A resolved party parameter takes precedence over a same-named attachment.
+        if (attachmentInfo && !resolvedParties.has(expr.value)) {
           const [local, ...tail] = expr.value.split(".");
           const target = `${attachmentInfo.subjectKindId}_${local}`;
           if (attachmentSubjects.has(target))

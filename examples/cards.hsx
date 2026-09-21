@@ -1,0 +1,30 @@
+// A company issues expense cards to employees and reserves each supplier payment before capture.
+program team_expense_cards "Team expense cards"
+use cards
+party supplier: business
+
+object employee "Employee card" {
+  fields { employeeName: text, department: text }
+  columns: [employeeName, department]
+  attach holder = cards.cardholder {
+    holder: owner
+    expose activate as activate_employee
+    expose suspend as suspend_employee
+  }
+  attach card = cards.card {
+    holder: holder, spend_limit: 5000 SAR
+    expose activate as activate_card
+    expose freeze as freeze_card
+    expose unfreeze as unfreeze_card
+  }
+  attach payment = cards.authorization {
+    card: card, merchant: supplier
+    expose approve as approve_payment
+    expose capture as capture_payment
+    expose reverse as reverse_payment
+  }
+  attach receipt = cards.transaction {
+    authorization: payment
+    expose refund as refund_payment
+  }
+}

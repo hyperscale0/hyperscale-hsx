@@ -1,0 +1,25 @@
+// An equipment lender keeps an ageing report over its financed purchases and recorded repayments.
+program equipment_loan_reports "Equipment loan reports"
+use reporting
+use financing
+
+object purchase "Equipment loan" {
+  fields { businessName: text, equipment: text, price: money }
+  columns: [businessName, equipment, price]
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: 200000 SAR
+    expose approve as approve_business
+  }
+  attach budget = financing.portfolio_limit {
+    limit: 5000000 SAR
+    expose approve as approve_budget
+  }
+  attach loan = financing.installments {
+    borrower: owner, capital: operator
+    months: 12, profit: 6%, disburse_to: borrower
+    limits: allowance, portfolio: budget
+    expose sign as sign_purchase_loan
+    expose disburse as fund_purchase
+  }
+  attach reports = reporting.portfolio { on: loan }
+}

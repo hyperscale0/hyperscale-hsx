@@ -13,6 +13,8 @@ const sourceEntries = {
   exports: {
     ".": "./src/index.ts",
     "./cost": "./src/cost.ts",
+    "./language": "./src/language.ts",
+    "./examples": "./src/examples.ts",
     ...dataExports,
   },
 };
@@ -26,6 +28,14 @@ const distEntries = {
     "./cost": {
       types: "./dist/src/cost.d.ts",
       default: "./dist/src/cost.js",
+    },
+    "./examples": {
+      types: "./dist/src/examples.d.ts",
+      default: "./dist/src/examples.js",
+    },
+    "./language": {
+      types: "./dist/src/language.d.ts",
+      default: "./dist/src/language.js",
     },
     ...dataExports,
   },

@@ -1,0 +1,19 @@
+// Six members contribute to a shared pot and receive it in their agreed calendar order.
+program neighbourhood_savings "Savings circle"
+use savings
+
+object group "Savings group" {
+  fields { groupName: text, purpose: text }
+  columns: [groupName, purpose]
+  attach circle = savings.circle {
+    contribution: 500 SAR, members: 6, starts: 2027-01-01
+    expose disband as disband_circle
+    expose close as close_circle
+  }
+  attach membership = savings.membership {
+    circle: circle, member: actor
+    expose activate as confirm_membership
+    expose withdraw as leave_circle
+  }
+  // Contributions and each member's payout follow the declared calendar.
+}

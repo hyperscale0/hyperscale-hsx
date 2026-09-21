@@ -1,3 +1,24 @@
+# HSX 4.2.0
+
+Adds the browser-safe `language` export with semantic highlights and hover
+explanations for complete and unfinished HSX. Headers own instrument summaries,
+verbatim signatures, parameter bounds, lifecycle states and action actors.
+The playground uses this API for its token view and explanations. Drift tests
+cover keyword help, TextMate keyword matching and authored instrument summaries.
+Six instruments in cards and savings now author their missing summaries.
+The TextMate string escape pattern now matches a single escaped character.
+Package, compiler and VS Code versions are aligned at 4.2.0.
+
+Adds twelve business programs, one for each standard header, beside the minimal
+financed sale and the serviced car finance example. The browser-safe `examples`
+export contains source and metadata generated from the authored files. One test
+compiles every example, another checks bundle drift, and the language service
+covers every sample token and offset. The generated sample index lists all files.
+
+Resolved party parameters take precedence over same-named attachments when
+lowering account owners. Savings memberships use the circle calendar without
+collecting a second, conflicting dates field.
+
 # HSX 4.1.1
 
 `examples/serviced.hsx` is a second worked programme: a financed sale with a late charge, payment reminders, an early payoff rebate and a write-off. The car financing spec compiles it from the file. No grammar or standard library change.

@@ -48,11 +48,19 @@ export const KEYWORDS = [
   "columns",
 ] as const;
 export interface Token {
-  kind: "name" | "number" | "string" | "date" | "punct" | "eof";
+  kind: "name" | "number" | "string" | "date" | "punct" | "comment" | "eof";
   text: string;
   span: Span;
 }
-export function lex(source: string): {
+export function lex(source: string) {
+  return scan(source, false);
+}
+
+/** The editor keeps comments and unfinished strings; compiler tokens stay unchanged. */
+export function scan(
+  source: string,
+  editor = true,
+): {
   tokens: Token[];
   diagnostics: Diagnostic[];
 } {
@@ -65,6 +73,12 @@ export function lex(source: string): {
     const whitespace = /^\s+|^\/\/[^\n]*/.exec(tail);
     if (whitespace) {
       index += whitespace[0].length;
+      if (editor && whitespace[0].startsWith("//"))
+        tokens.push({
+          kind: "comment",
+          text: whitespace[0],
+          span: { start, end: index },
+        });
       continue;
     }
     const date =
@@ -95,7 +109,16 @@ export function lex(source: string): {
           fix: "close the string and use JSON escapes",
           span: { start, end: start + 1 },
         });
-        index++;
+        if (editor) {
+          const unfinished =
+            /^"(?:[^"\\\n]|\\[^\n]?)*(?:"|(?=\n)|$)/.exec(tail)?.[0] ?? '"';
+          index += unfinished.length;
+          tokens.push({
+            kind: "string",
+            text: unfinished,
+            span: { start, end: index },
+          });
+        } else index++;
         continue;
       }
       kind = "string";

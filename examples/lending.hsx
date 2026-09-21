@@ -1,0 +1,35 @@
+// Investors fund a small business loan from their wallets and share its recorded repayments.
+program community_business_lending "Community business lending"
+use lending
+use financing
+use wallet
+
+object business "Business funding" {
+  fields { businessName: text, purpose: text, price: money }
+  columns: [businessName, purpose, price]
+  attach allowance = financing.limits { borrower: owner, per_borrower: 100000 SAR }
+  attach budget = financing.portfolio_limit { limit: 2000000 SAR }
+  attach loan = financing.installments {
+    borrower: owner, capital: operator
+    months: 12, profit: 6%, disburse_to: borrower
+    limits: allowance, portfolio: budget
+    expose sign as sign_loan
+    expose disburse as release_loan
+  }
+  attach investor_balance = wallet.balance {
+    holder: actor
+    expose activate as open_wallet
+    expose topup as add_funds
+  }
+  attach funding = lending.round {
+    borrower: owner, plan: loan
+    expose close as close_funding
+  }
+  attach investment = lending.commitment {
+    round: funding, wallet: investor_balance, investor: actor
+    expose withdraw as withdraw_investment
+  }
+  attach returns = lending.distribution {
+    round: funding, receipt: loan.settlement
+  }
+}
