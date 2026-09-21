@@ -17,7 +17,6 @@ export const HEADER_NAMES = [
   "cards",
   "savings",
   "reporting",
-  "vehicles",
 ] as const;
 
 /** The compiler frontend owns header metadata used by docs and catalogue consumers. */
@@ -25,7 +24,7 @@ export function headerManifest(
   library: StandardLibrary = bundledStandardLibrary,
 ) {
   return {
-    version: 3,
+    version: 4,
     headers: HEADER_NAMES.map((name) => {
       const source = library.source(name);
       if (!source) throw new Error(`Missing standard header ${name}`);
@@ -112,7 +111,7 @@ export function headerManifest(
                 requiredImport: `use ${name}`,
                 instancePlaceholder: "${instance}",
                 source:
-                  "${instance} = " +
+                  "attach ${instance} = " +
                   `${name}.${decl.name} { ` +
                   bindings
                     .map((t) => t.name + ": ${" + t.name + "}")

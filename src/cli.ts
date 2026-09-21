@@ -38,7 +38,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return 0;
   }
   if (command === "--version") {
-    io.out(`${HSX_VERSION} (UDL 3)`);
+    io.out(`${HSX_VERSION} (UDL 4)`);
     return 0;
   }
   if (

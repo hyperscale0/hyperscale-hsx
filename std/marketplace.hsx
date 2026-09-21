@@ -1,6 +1,6 @@
 header marketplace
 
-instrument listing(seller: party, vehicle_facts: enum(optional, required) = optional) {
+instrument listing(seller: party) {
   revisioned: true
   summary: "A seller's offer and its asking price."
   fields { seller: account of seller, title: text, price: money }
@@ -8,8 +8,6 @@ instrument listing(seller: party, vehicle_facts: enum(optional, required) = opti
   action create { actor: { party: seller } }
   action publish {
     from: draft, to: active, actor: { party: seller }
-    when vehicle_facts is required { requires count of { instrument: all(vehicles.vehicle), reference: "listing", anchor: self.id, states: [draft], limit: 1 } == 1 }
-    invoke: [{ selection: { instrument: all(vehicles.vehicle), reference: "listing", anchor: self.id, states: [draft], limit: 1 }, action: publish, input: {} }]
   }
   action withdraw { from: active, to: withdrawn, actor: { party: seller }, requires count of { instrument: all(marketplace.reservation), reference: "listing", anchor: self.id, states: [active], limit: 366 } == 0 }
   action sell { from: active, to: sold, actor: { party: seller }, requires count of { instrument: all(marketplace.reservation), reference: "listing", anchor: self.id, states: [active], limit: 366 } == 0 }
@@ -76,13 +74,12 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
   action credit {
     from: active, to: converted, actor: { parent: converters }, deadline: { at: self.expiresAt }
     input { funds: ref<funds>, contribution: money }
-    requires input.funds == self.funds; requires input.funds in [pending, funded]; requires input.funds.order.listing == self.listing; requires input.funds.payer == self.buyer; requires input.funds.price == self.price
+    requires input.funds == self.funds; requires input.funds in [pending, funded]; requires input.funds.payer == self.buyer; requires input.funds.price == self.price
     requires input.contribution <= self.price
     calculate: [{ target: credit, op: minimum, values: [{ field: self.held.balance }, { field: input.contribution }] }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.credit }] }]
     set: { dispositionAt: { field: self.now } }
     moves self.credit from self.held to input.funds.held
     moves self.refund from self.held to self.buyer
-    invoke: [{ reference: input.funds.order, action: commit, input: {} }]
   }
   action cancel {
     from: active, to: cancelled, actor: { party: buyer }, input { reason: text }

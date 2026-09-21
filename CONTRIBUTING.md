@@ -3,12 +3,15 @@
 Read [the language](docs/README.md) and [header inventory](docs/headers.md).
 The published package does not import private platform code. The frontend parses typed
 programs and headers; `compile.ts` binds references and lowers generic arithmetic
-and moves. Business behavior belongs in the twelve `std` headers.
+and moves. Business behavior belongs in `std` headers. Programs declare object
+kinds with authored metadata and attach library instruments with parties bound
+to `owner`, `actor`, or `operator`. Action subject requirements become mandatory
+when the action runs; object creation may omit every metadata field.
 
 Run `bun run check` for generation, types, builds and package tests.
-The platform repository checks its company programs with `bun toolchain/companies/hsx-check.ts`.
 Change a rule with one example that distinguishes admitted and refused programs.
-The package has no byte-fixture corpus or UDL 2 migration path.
+Keep the object-discovery fixture aligned with its authored source. Earlier
+UDL formats have no migration reader. Instrument creation stays internal.
 
 Report security defects through [SECURITY.md](SECURITY.md).
 Accepted contributions require [the CLA](CLA.md).

@@ -1,17 +1,17 @@
 header approvals
 
-instrument decision(for: ref, approved_by: party, action: text = "approve") {
+instrument decision(for: ref, approved_by: approval, action: text = "approve", protected_request: text = "self.target") {
   summary: "One authenticated decision bound to an immutable target and expiry."
   fields { target: ref<for>, expiresAt: date }
   lifecycle { states: [pending, approved, declined, expired], initial: pending }
   action create {}
   action approve {
     from: pending, to: approved, actor: { party: approved_by }, deadline: { at: self.expiresAt }
-    approval: { target: self.target, action: action, party: approved_by, expires: self.expiresAt, input: "material", decision: "approved" }
+    approval: { protectedRequest: protected_request, target: self.target, action: action, party: approved_by, expires: self.expiresAt, input: "material", decision: "approved" }
   }
   action decline {
     from: pending, to: declined, actor: { party: approved_by }, deadline: { at: self.expiresAt }
-    approval: { target: self.target, action: action, party: approved_by, expires: self.expiresAt, input: "material", decision: "declined" }
+    approval: { protectedRequest: protected_request, target: self.target, action: action, party: approved_by, expires: self.expiresAt, input: "material", decision: "declined" }
   }
   action expire { from: pending, to: expired, actor: clock, due: { at: self.expiresAt } }
 }

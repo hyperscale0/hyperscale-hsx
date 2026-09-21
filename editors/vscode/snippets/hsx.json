@@ -4,9 +4,13 @@
     "body": [
       "program ${1:name} \"${2:Title}\"",
       "use money",
-      "party payer: person",
-      "party payee: business",
-      "transfer = money.transfer { payer: payer, payee: payee, amount: ${3:10} SAR }"
+      "object ${3:item} \"${4:Items}\" {",
+      "  fields { note: text }",
+      "  attach payment = money.transfer {",
+      "    payer: actor, payee: owner, amount: ${5:10} SAR",
+      "    expose pay as pay",
+      "  }",
+      "}"
     ]
   }
 }

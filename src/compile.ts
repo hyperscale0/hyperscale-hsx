@@ -1,25 +1,43 @@
+import { hash as sha256 } from "fast-sha256";
 import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
   validateUdl,
+  resolveField,
+  sameObjectField,
+  subjectPartyRoles,
+  RESERVED_OBJECT_NAMES,
+  type UdlObjectAttachment,
+  type AttachmentPartyBinding,
+  type SubjectPartyRole,
+  udlObjectFieldSchema,
   type UdlAction,
+  type UdlActionSubject,
+  type UdlAdapterSubjectSnapshot,
   type UdlCalculation,
   type UdlDocument,
+  type UdlFamily,
   type UdlField,
   type UdlInstrument,
+  type UdlObjectField,
+  type UdlSubjectRequirement,
   type UdlValue,
 } from "@hyperscale0/udl";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
 import {
   lineColAt,
+  type AssignmentDecl,
   type BlockExpr,
   type Diagnostic,
+  type Entry,
   type Expr,
   type InstrumentDecl,
   type ObjectDecl,
   type Span,
 } from "./ast.ts";
 import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
+
+import type { ProviderAdapter } from "@hyperscale0/adl";
 
 export interface CompileDiagnostic extends Diagnostic {
   line: number;
@@ -31,8 +49,13 @@ export interface CompileOriginMapEntry {
   path: string;
   span: Span & { line: number; column: number };
 }
+export interface AdapterBindingTarget {
+  adapter: ProviderAdapter;
+  operation: string;
+}
 export interface CompileOptions {
   standardLibrary?: StandardLibrary;
+  adapterRegistry?: Readonly<Record<string, AdapterBindingTarget>>;
 }
 export interface CompileResult {
   verdict: "valid" | "invalid";
@@ -48,9 +71,154 @@ class CompileFailure extends Error {
     super(diagnostic.message);
   }
 }
-function fail(expr: { span: Span }, message: string, fix: string): never {
-  throw new CompileFailure({ code: "HSX1001", message, fix, span: expr.span });
+function fail(
+  expr: { span: Span; source?: string },
+  message: string,
+  fix: string,
+): never {
+  return failWithCode(expr, "HSX1001", message, fix);
 }
+function failWithCode(
+  expr: { span: Span; source?: string },
+  code: string,
+  message: string,
+  fix: string,
+): never {
+  throw new CompileFailure({
+    code,
+    message,
+    fix,
+    span: expr.span,
+    ...(expr.source ? { source: expr.source } : {}),
+  });
+}
+function lowerFieldShape(
+  row: Entry,
+  resolveExpr: (e: Expr) => Expr = (e) => e,
+): Record<string, unknown> {
+  let rawValue = row.value.kind === "default" ? row.value.type : row.value;
+  let isSensitive = false;
+  if (rawValue.kind === "call" && rawValue.name === "sensitive") {
+    isSensitive = true;
+    rawValue = rawValue.args[0]!;
+  }
+  const t = rawValue;
+  if (t.kind === "block") {
+    const b = entries(t);
+    if (b.has("family") || b.has("target") || b.has("instrument")) {
+      const tgt = b.get("instrument") ?? b.get("target");
+      let target: string | string[] | undefined;
+      if (tgt) {
+        const resolved = resolveExpr(tgt);
+        if (resolved.kind === "list") {
+          const items = resolved.items.map((i) => text(resolveExpr(i)));
+          target = items.length === 1 ? items[0] : items;
+        } else {
+          target = text(resolved);
+        }
+      }
+      return {
+        name: row.key,
+        type: "ref",
+        targetKind: "instrument",
+        ...(target !== undefined ? { target } : {}),
+        ...(isSensitive ? { sensitive: true } : {}),
+      };
+    }
+  }
+  const type = t.kind === "type" || t.kind === "call" ? t.name : text(t);
+  const f: Record<string, unknown> = {
+    name: row.key,
+    type,
+    ...(t.kind === "type" && t.optional ? { optional: true } : {}),
+    ...(isSensitive ? { sensitive: true } : {}),
+  };
+  if (type === "enum" && t.kind === "call") {
+    f.values = t.args.map(text);
+  }
+  if (type === "text" && t.kind === "call") {
+    if (t.args.length < 2 || t.args.length > 3) {
+      fail(
+        t,
+        "bounded text needs length bounds and an optional pattern",
+        "write text(1, 80)",
+      );
+    }
+    f.minLength = literal(resolveExpr(t.args[0]!));
+    f.maxLength = literal(resolveExpr(t.args[1]!));
+    if (t.args[2]) f.pattern = literal(resolveExpr(t.args[2]));
+  }
+  if (["integer", "money"].includes(type) && t.kind === "call") {
+    if (t.args.length !== 2) {
+      fail(
+        t,
+        "bounded fields need a minimum and maximum",
+        "write integer(1, 12) or money(0 SAR, 100 SAR)",
+      );
+    }
+    f.minimum = literal(resolveExpr(t.args[0]!));
+    f.maximum = literal(resolveExpr(t.args[1]!));
+  }
+  if (type === "list" && t.kind === "call") {
+    const item = t.args[0]!;
+    f.item = item.kind === "type" ? item.name : text(item);
+    if (item.kind === "type" && item.name === "ref") {
+      f.target = item.target;
+      f.targetKind = "object";
+    }
+    f.maxItems = t.args[1] ? literal(resolveExpr(t.args[1])) : 366;
+  }
+  if (type === "list" && t.kind === "type") {
+    f.item = t.target;
+    f.maxItems = 366;
+  }
+  if (type === "ref") {
+    const target =
+      t.kind === "type" ? t.target : (f.target as string | undefined);
+    if (!target && t.kind !== "block") {
+      fail(row, "reference needs a target", "write ref<object>");
+    }
+    f.targetKind = f.targetKind ?? "object";
+    if (target) f.target = target;
+  }
+  return f;
+}
+function lowerObjectField(
+  row: Entry,
+  resolveExpr: (e: Expr) => Expr = (e) => e,
+): UdlObjectField {
+  const f = lowerFieldShape(row, resolveExpr);
+  const constant =
+    row.value.kind === "default" ? resolveExpr(row.value.value) : undefined;
+  if (constant && !(constant.kind === "name" && constant.value === "runtime")) {
+    f.value =
+      f.type === "enum" && constant.kind === "name"
+        ? constant.value
+        : literal(constant);
+  }
+  const result = udlObjectFieldSchema.safeParse(f);
+  if (!result.success)
+    fail(
+      row,
+      result.error.message,
+      "use a UDL object field type and its constraints",
+    );
+  return result.data;
+}
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => (item === undefined ? "null" : canonicalJson(item))).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record)
+    .filter((k) => record[k] !== undefined)
+    .sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`).join(",")}}`;
+}
+
 const emptyBlock: BlockExpr = {
   kind: "block",
   entries: [],
@@ -69,9 +237,14 @@ function entries(block: BlockExpr): Map<string, Expr> {
     const previous = map.get(row.key);
     if (previous) {
       if (
-        !["requires", "moves", "invariants", "invoke", "calculate"].includes(
-          row.key,
-        )
+        ![
+          "requires",
+          "moves",
+          "invariants",
+          "invoke",
+          "calculate",
+          "expose",
+        ].includes(row.key)
       )
         fail(row, `duplicate ${row.key}`, "keep one value for this name");
       const items = (expr: Expr) =>
@@ -212,12 +385,13 @@ export function compile(
   options: CompileOptions = {},
 ): CompileResult {
   const parsed = parseProgram(source);
+  const sources = new Map([["program", source]]);
   const diagnostic = (
     d: Diagnostic,
     stage: CompileDiagnostic["stage"],
   ): CompileDiagnostic => ({
     ...d,
-    ...lineColAt(source, d.span.start),
+    ...lineColAt(sources.get(d.source ?? "program") ?? source, d.span.start),
     severity: "error",
     stage,
   });
@@ -241,6 +415,12 @@ export function compile(
         "write currency SAR or omit currency",
       );
     const templates = new Map<string, InstrumentDecl>();
+    const declarationSources = new Map<InstrumentDecl, string>();
+    const declarationExportPaths = new Map<InstrumentDecl, string>();
+    const requirementOrigins = new Map<
+      UdlSubjectRequirement,
+      { source: string; span: Span; message: string }
+    >();
     const used = new Set<string>();
     for (const use of program.decls.filter((d) => d.kind === "use")) {
       if (used.has(use.name))
@@ -255,6 +435,7 @@ export function compile(
       ).source(use.name);
       if (!content)
         fail(use, `unknown header ${use.name}`, "choose a published header");
+      sources.set(use.name, content);
       const header = parseProgram(content);
       if (
         header.diagnostics.length ||
@@ -266,12 +447,39 @@ export function compile(
           `header ${use.name} is malformed`,
           "repair the header source before compiling",
         );
+      const registerTemplates = (
+        parentDecl: InstrumentDecl,
+        prefix: string,
+        exportPath: string,
+      ) => {
+        templates.set(prefix, parentDecl);
+        declarationSources.set(parentDecl, use.name);
+        declarationExportPaths.set(parentDecl, exportPath);
+        const recs = entries(asBlock(entries(parentDecl.body).get("records")));
+        for (const [recName, recBlock] of recs) {
+          const recDecl: InstrumentDecl = {
+            kind: "instrument",
+            name: recName,
+            parameters: [],
+            body: asBlock(recBlock),
+            span: parentDecl.span,
+          };
+          registerTemplates(
+            recDecl,
+            `${prefix}.${recName}`,
+            `${exportPath}.${recName}`,
+          );
+        }
+      };
       for (const decl of header.program.decls)
-        if (decl.kind === "instrument")
-          templates.set(`${use.name}.${decl.name}`, decl);
+        if (decl.kind === "instrument") {
+          registerTemplates(decl, `${use.name}.${decl.name}`, decl.name);
+        }
     }
+    for (const decl of program.decls)
+      if (decl.kind === "instrument") templates.set(decl.name, decl);
     const document: UdlDocument = {
-      udl: 3,
+      udl: 4,
       version: 1,
       product: program.name,
       title: program.title,
@@ -282,9 +490,12 @@ export function compile(
         programFines: { kind: "business", role: "fine_payable" },
         programCosts: { kind: "business", role: "cost_recovery" },
       },
+      objects: [],
       instruments: [],
     };
     const objects = new Map<string, ObjectDecl>();
+    const assignments = new Map<string, AssignmentDecl>();
+    const attachmentSubjects = new Map<string, string>();
     const names = new Set<string>();
     for (const decl of program.decls) {
       if (decl.kind === "expose" || decl.kind === "hide" || decl.kind === "use")
@@ -296,8 +507,31 @@ export function compile(
           "give this declaration a distinct name",
         );
       names.add(decl.name);
-      if (decl.kind === "object") objects.set(decl.name, decl);
+      if (decl.kind === "object") {
+        objects.set(decl.name, decl);
+        for (const entry of decl.body.entries) {
+          const match = /^attach\s+(\w+)\s*=\s*(.+)$/.exec(entry.key);
+          if (!match) continue;
+          const name = `${decl.name}_${match[1]}`;
+          assignments.set(name, {
+            kind: "assignment",
+            name,
+            target: match[2]!,
+            body: asBlock(entry.value),
+            span: entry.span,
+          });
+          attachmentSubjects.set(name, decl.name);
+        }
+      }
+      if (decl.kind === "assignment") assignments.set(decl.name, decl);
       if (decl.kind === "party") {
+        if (subjectPartyRoles.includes(decl.name as SubjectPartyRole))
+          failWithCode(
+            decl,
+            "party_name_reserved",
+            `${decl.name} is a reserved subject role`,
+            "choose a party name other than owner, actor or operator",
+          );
         if (!["person", "business", "staff"].includes(decl.partyKind))
           fail(
             decl,
@@ -314,8 +548,81 @@ export function compile(
     const materialApprovals = new Set<UdlAction>();
     const implicitDecisions = new Map<
       string,
-      { target: string; action: string; party: string; origin: Span }
+      {
+        target: string;
+        action: string;
+        party: string;
+        protectedRequest: string;
+        origin: Span;
+      }
     >();
+    const resolveFamily = (
+      rawPath: string,
+      expr: { span: Span; source?: string },
+      required = true,
+    ): UdlFamily | undefined => {
+      const parts = rawPath.split(".");
+      if (parts.length < 2) {
+        if (!required) return undefined;
+        failWithCode(
+          expr,
+          "HSX1001",
+          `invalid family ${rawPath}`,
+          "use module.instrument or module.instrument.record",
+        );
+      }
+      const moduleName = parts[0]!;
+      const exportPath = parts.slice(1).join(".");
+      const targetTemplate = templates.get(rawPath);
+      if (!targetTemplate) {
+        if (!required) return undefined;
+        failWithCode(
+          expr,
+          "HSX1001",
+          `unknown family declaration ${rawPath}`,
+          "choose a declared standard instrument",
+        );
+      }
+      const topTemplate = templates.get(`${moduleName}.${parts[1]!}`);
+      if (!topTemplate) {
+        if (!required) return undefined;
+        failWithCode(
+          expr,
+          "HSX1001",
+          `unknown family declaration ${moduleName}.${parts[1]!}`,
+          "choose a declared standard instrument",
+        );
+      }
+      const topBody = entries(topTemplate.body);
+      let revision: number | undefined;
+      if (topBody.has("familyRevision")) {
+        const val = literal(topBody.get("familyRevision")!);
+        if (typeof val === "number") revision = val;
+      }
+      let currentBody = topTemplate.body;
+      for (const recName of parts.slice(2)) {
+        const recs = entries(asBlock(entries(currentBody).get("records")));
+        const child = recs.get(recName);
+        if (child) {
+          currentBody = asBlock(child);
+          const cBody = entries(currentBody);
+          if (cBody.has("familyRevision")) {
+            const val = literal(cBody.get("familyRevision")!);
+            if (typeof val === "number") revision = val;
+          }
+        }
+      }
+      if (revision === undefined) {
+        if (!required) return undefined;
+        failWithCode(
+          expr,
+          "HSX1001",
+          `declaration ${rawPath} has no familyRevision declared`,
+          "declare familyRevision on the standard instrument",
+        );
+      }
+      return { module: moduleName, exportPath, revision };
+    };
     const addInstrument = (
       decl: InstrumentDecl,
       id: string,
@@ -324,7 +631,169 @@ export function compile(
       inherited = new Map<string, Expr>(),
       inheritedApprovers = new Set<string>(),
       inheritedEnums = new Map<string, string[]>(),
+      attachmentInfo?: {
+        subjectKindId: string;
+        attachmentName: string;
+        renames: Map<string, string>;
+        exposed: Map<string, string>;
+        parties: Record<string, AttachmentPartyBinding>;
+      },
+      familyDeclaration?: {
+        module: string;
+        exportPath: string;
+        revision?: number | undefined;
+      },
     ) => {
+      const resolveFamilyInstruments = (
+        family: UdlFamily,
+        currentInstId?: string,
+        expr?: { span: Span; source?: string },
+      ): string[] => {
+        const found = new Set<string>();
+        if (currentInstId && familyDeclaration) {
+          if (
+            family.module === familyDeclaration.module &&
+            family.exportPath.startsWith(`${familyDeclaration.exportPath}.`)
+          ) {
+            const sub = family.exportPath
+              .slice(familyDeclaration.exportPath.length + 1)
+              .replaceAll(".", "_");
+            found.add(`${currentInstId}_${sub}`);
+          }
+        }
+        const topDeclName = family.exportPath.split(".")[0]!;
+        const subRecordPath = family.exportPath.includes(".")
+          ? family.exportPath.slice(topDeclName.length + 1).replaceAll(".", "_")
+          : undefined;
+        for (const asgn of assignments.values()) {
+          if (asgn.target === `${family.module}.${topDeclName}`) {
+            if (subRecordPath) {
+              found.add(`${asgn.name}_${subRecordPath}`);
+            } else {
+              found.add(asgn.name);
+            }
+          }
+        }
+        for (const inst of document.instruments) {
+          if (
+            inst.family &&
+            inst.family.module === family.module &&
+            inst.family.exportPath === family.exportPath &&
+            inst.family.revision === family.revision
+          ) {
+            found.add(inst.id);
+          }
+        }
+        const result = [...found];
+        if (result.length === 0 && expr) {
+          failWithCode(
+            expr,
+            "HSX1001",
+            `no instruments found for family ${family.module}.${family.exportPath}`,
+            "declare an attachment matching this family",
+          );
+        }
+        return result;
+      };
+
+      const resolveChildExportPath = (
+        parentDecl: InstrumentDecl,
+        suffix: string,
+      ): string | undefined => {
+        const recs = entries(asBlock(entries(parentDecl.body).get("records")));
+        for (const [recName] of recs) {
+          if (suffix === recName) return recName;
+        }
+        for (const [recName, recBlock] of recs) {
+          if (suffix.startsWith(`${recName}_`)) {
+            const rest = resolveChildExportPath(
+              {
+                kind: "instrument",
+                name: recName,
+                parameters: [],
+                body: asBlock(recBlock),
+                span: parentDecl.span,
+              },
+              suffix.slice(recName.length + 1),
+            );
+            if (rest) return `${recName}.${rest}`;
+          }
+        }
+        return undefined;
+      };
+
+      const getInstrumentFamily = (targetId: string): UdlFamily | undefined => {
+        const existing = document.instruments.find((i) => i.id === targetId);
+        if (existing?.family) return existing.family;
+
+        if (targetId.startsWith(`${id}_`) && familyDeclaration) {
+          const sub = resolveChildExportPath(
+            decl,
+            targetId.slice(id.length + 1),
+          );
+          if (sub) {
+            const fullExport = `${familyDeclaration.exportPath}.${sub}`;
+            try {
+              return resolveFamily(
+                `${familyDeclaration.module}.${fullExport}`,
+                { span: origin },
+                false,
+              );
+            } catch {}
+          }
+        }
+
+        for (const [asgnName, asgn] of assignments) {
+          if (targetId === asgnName || targetId.startsWith(`${asgnName}_`)) {
+            const tmpl = templates.get(asgn.target);
+            if (!tmpl) continue;
+            const mod = declarationSources.get(tmpl);
+            if (!mod || mod === "program") continue;
+            if (targetId === asgnName) {
+              try {
+                return resolveFamily(asgn.target, asgn, false);
+              } catch {}
+            } else {
+              const sub = resolveChildExportPath(
+                tmpl,
+                targetId.slice(asgnName.length + 1),
+              );
+              if (sub) {
+                const fullTarget = `${asgn.target}.${sub}`;
+                try {
+                  return resolveFamily(fullTarget, asgn, false);
+                } catch {}
+              }
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const checkTargetFamily = (
+        targetIds: string | string[],
+        expectedFamily: UdlFamily,
+        expr: { span: Span; source?: string },
+      ): void => {
+        const ids = Array.isArray(targetIds) ? targetIds : [targetIds];
+        for (const tid of ids) {
+          const fam = getInstrumentFamily(tid);
+          if (
+            !fam ||
+            fam.module !== expectedFamily.module ||
+            fam.exportPath !== expectedFamily.exportPath ||
+            fam.revision !== expectedFamily.revision
+          ) {
+            failWithCode(
+              expr,
+              "HSX1001",
+              `target instrument ${tid} family does not match expected family ${expectedFamily.module}.${expectedFamily.exportPath} (revision ${expectedFamily.revision})`,
+              "ensure target instrument matches the declared family",
+            );
+          }
+        }
+      };
+
       const enums = new Map(inheritedEnums);
       for (const parameter of decl.parameters) {
         const type =
@@ -335,18 +804,44 @@ export function compile(
           enums.set(parameter.key, type.args.map(text));
       }
       const approvers = new Set(inheritedApprovers);
-      const supplied = entries(arguments_);
+      const supplied = new Map<string, Expr>();
+      for (const entry of arguments_.entries) {
+        if (supplied.has(entry.key))
+          fail(
+            entry,
+            `duplicate tunable ${entry.key}`,
+            "supply each parameter once",
+          );
+        supplied.set(entry.key, entry.value);
+      }
       const environment = new Map<string, Expr>(inherited);
       for (const param of decl.parameters) {
         const type =
           param.value.kind === "default" ? param.value.type : param.value;
         const fallback =
           param.value.kind === "default" ? param.value.value : undefined;
-        const actual = supplied.get(param.key) ?? fallback;
+        const typeName =
+          type.kind === "type" || type.kind === "call" ? type.name : text(type);
+        const partyParameter =
+          attachmentInfo && (typeName === "party" || typeName === "approval");
+        const byName: Expr | undefined =
+          partyParameter &&
+          (subjectPartyRoles.includes(param.key as SubjectPartyRole) ||
+            document.parties[param.key])
+            ? { kind: "name", value: param.key, span: origin }
+            : undefined;
+        const actual =
+          supplied.get(param.key) ??
+          byName ??
+          (fallback && {
+            ...fallback,
+            source: declarationSources.get(decl) ?? "program",
+          });
         if (!actual) {
           if (type.kind === "type" && type.optional) continue;
-          fail(
+          failWithCode(
             { span: origin },
+            partyParameter ? "subject_party_unbound" : "HSX1001",
             `${id} needs ${param.key}`,
             `add ${param.key}: value inside ${id}`,
           );
@@ -360,7 +855,16 @@ export function compile(
             `unknown tunable ${key}`,
             `choose ${decl.parameters.map((p) => p.key).join(", ")}`,
           );
-      const resolve = (expr: Expr, seen = new Set<string>()): Expr => {
+      const isParty = (name: string) =>
+        !!document.parties[name] ||
+        (!!attachmentInfo &&
+          subjectPartyRoles.includes(name as SubjectPartyRole));
+      const resolvedParties = new Set<string>();
+      const resolve = (
+        expr: Expr,
+        seen = new Set<string>(),
+        partyBinding = false,
+      ): Expr => {
         if (
           expr.kind === "call" &&
           ["object", "all", "party"].includes(expr.name)
@@ -375,22 +879,33 @@ export function compile(
           const matches =
             expr.name === "party"
               ? Object.entries(document.parties)
-                  .filter(([, party]) => party.kind === type)
-                  .map(([name]) => name)
-              : [...objects.values()]
                   .filter(
-                    (object) =>
-                      object.object === type ||
-                      type.startsWith(`${object.object}.`),
+                    ([name, party]) =>
+                      party.kind === type && (!partyBinding || names.has(name)),
+                  )
+                  .map(([name]) => name)
+              : [...assignments.values()]
+                  .filter(
+                    (assignment) =>
+                      expr.name === "all" ||
+                      !attachmentSubjects.has(assignment.name) ||
+                      attachmentSubjects.get(assignment.name) ===
+                        attachmentInfo?.subjectKindId,
+                  )
+                  .filter(
+                    (assignment) =>
+                      assignment.target === type ||
+                      type.startsWith(`${assignment.target}.`),
                   )
                   .map(
-                    (object) =>
-                      object.name +
-                      type.slice(object.object.length).replaceAll(".", "_"),
+                    (assignment) =>
+                      assignment.name +
+                      type.slice(assignment.target.length).replaceAll(".", "_"),
                   );
           if (expr.name !== "all" && matches.length !== 1)
-            fail(
-              { span: origin },
+            failWithCode(
+              expr,
+              partyBinding ? "subject_party_unbound" : "HSX1001",
               `${id} needs ${expr.name === "all" ? "at least one" : "exactly one"} ${type}`,
               "declare the required object or supply this tunable explicitly",
             );
@@ -404,25 +919,46 @@ export function compile(
             : items[0]!;
         }
         if (expr.kind !== "name") return expr;
+        const binding = environment.get(expr.value);
+        if (
+          attachmentInfo &&
+          subjectPartyRoles.includes(expr.value as SubjectPartyRole) &&
+          (!binding ||
+            (binding.kind === "name" && binding.value === expr.value))
+        )
+          return expr;
+        if (attachmentInfo) {
+          const [local, ...tail] = expr.value.split(".");
+          const target = `${attachmentInfo.subjectKindId}_${local}`;
+          if (attachmentSubjects.has(target))
+            return { ...expr, value: [target, ...tail].join("_") };
+        }
         if (expr.value.startsWith("party.")) {
-          const binding = environment.get(expr.value.slice(6));
-          if (binding?.kind === "name" && document.parties[binding.value])
-            return { ...expr, value: `party.${binding.value}` };
+          const [, party, ...members] = expr.value.split(".");
+          const binding = environment.get(party!);
+          if (binding?.kind === "name" && isParty(binding.value))
+            return {
+              ...expr,
+              value: ["party", binding.value, ...members].join("."),
+            };
         }
         const [root, ...tail] = expr.value.split(".");
         const bound = environment.get(root!);
         if (!bound || (bound.kind === "name" && bound.value === root))
           return expr;
         if (seen.has(root!))
-          return fail(
+          return failWithCode(
             expr,
+            partyBinding ? "subject_party_unbound" : "HSX1001",
             `cyclic tunable ${root}`,
             "replace the cycle with a literal or declared reference",
           );
         let resolved =
-          supplied.has(root!) || inherited.has(root!) || enums.has(root!)
+          resolvedParties.has(root!) ||
+          (!partyBinding &&
+            (supplied.has(root!) || inherited.has(root!) || enums.has(root!)))
             ? bound
-            : resolve(bound, new Set([...seen, root!]));
+            : resolve(bound, new Set([...seen, root!]), partyBinding);
         for (const key of tail) {
           if (resolved.kind !== "block") return expr;
           const child = entries(resolved).get(key);
@@ -432,7 +968,7 @@ export function compile(
               `missing tunable ${expr.value}`,
               `declare ${key} in ${root}`,
             );
-          resolved = resolve(child, new Set([...seen, root!]));
+          resolved = resolve(child, new Set([...seen, root!]), partyBinding);
         }
         return resolved;
       };
@@ -443,7 +979,13 @@ export function compile(
           param.value.kind === "default" ? param.value.type : param.value;
         const type = t.kind === "type" || t.kind === "call" ? t.name : text(t);
         const v =
-          supplied.has(param.key) || type === "enum" ? actual : resolve(actual);
+          (supplied.has(param.key) && !attachmentInfo) || type === "enum"
+            ? actual
+            : resolve(
+                actual,
+                new Set(),
+                !!attachmentInfo && (type === "party" || type === "approval"),
+              );
         environment.set(param.key, v);
         if (type === "enum" && t.kind === "call") {
           if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
@@ -456,12 +998,35 @@ export function compile(
           if (v.kind !== "list")
             fail(v, `${param.key} needs a list`, "write [value, value]");
         } else if (type === "party" || type === "approval") {
-          if (v.kind !== "name" || !document.parties[v.value])
-            fail(
-              v,
+          if (v.kind !== "name" || !isParty(v.value))
+            failWithCode(
+              actual,
+              attachmentInfo ? "subject_party_unbound" : "HSX1001",
               `${param.key} needs a declared party`,
               "declare a party and use its name here",
             );
+          const party = document.parties[v.value];
+          if (
+            (type === "approval" && (party?.kind !== "staff" || !party.role)) ||
+            (type === "party" &&
+              (party?.kind === "staff" ||
+                (attachmentInfo && party?.kind === "person")))
+          )
+            failWithCode(
+              actual,
+              "party_kind_mismatch",
+              `${param.key} cannot bind ${v.value}`,
+              type === "approval"
+                ? "use a declared staff party with a role"
+                : "use a subject role or declared business",
+            );
+          resolvedParties.add(param.key);
+          if (attachmentInfo)
+            attachmentInfo.parties[param.key] = subjectPartyRoles.includes(
+              v.value as SubjectPartyRole,
+            )
+              ? { role: v.value as SubjectPartyRole }
+              : { party: v.value };
           if (type === "approval") approvers.add(text(v));
         } else if (type === "ref") {
           const values = v.kind === "list" ? v.items : [v];
@@ -487,14 +1052,17 @@ export function compile(
               );
             const [root, ...tail] = value.value.split(".");
             const obj = objects.get(root!);
+            const assignment = assignments.get(root!);
+            const targetType = obj ? obj.name : assignment?.target;
             if (
               (!obj &&
+                !assignment &&
                 !document.instruments.some(
                   (inst) => inst.id === value.value,
                 )) ||
               (t.kind === "type" &&
                 t.target &&
-                [obj?.object, ...tail].join(".") !== t.target)
+                [targetType, ...tail].join(".") !== t.target)
             )
               fail(
                 value,
@@ -590,6 +1158,7 @@ export function compile(
       for (const key of body.keys())
         if (
           ![
+            "familyRevision",
             "fields",
             "lifecycle",
             "records",
@@ -606,6 +1175,24 @@ export function compile(
             `unknown instrument clause ${key}`,
             "use fields, lifecycle, actions, invariants, or records",
           );
+      if (body.has("familyRevision")) {
+        const revExpr = body.get("familyRevision")!;
+        const revVal = literal(revExpr);
+        if (
+          typeof revVal !== "number" ||
+          !Number.isInteger(revVal) ||
+          revVal <= 0
+        ) {
+          fail(
+            revExpr,
+            "familyRevision must be a positive integer",
+            "use a positive integer revision",
+          );
+        }
+        if (familyDeclaration) {
+          familyDeclaration.revision = revVal;
+        }
+      }
       const records = entries(asBlock(body.get("records")));
       if (!inherited.size)
         environment.set("parent", { kind: "name", value: id, span: origin });
@@ -618,11 +1205,63 @@ export function compile(
           });
       const fields: UdlField[] = [];
       const calculations: UdlCalculation[] = [];
+      let currentAction: UdlAction | undefined;
+      let currentActionName: string | undefined;
       const path = (expr: Expr): string => {
         const value = resolve(expr);
         const name = text(value);
-        if (document.parties[name]) return `party.${name}`;
-        return /^(self|input|party)\./.test(name) ? name : `self.${name}`;
+        if (isParty(name)) return `party.${name}`;
+        if (name.startsWith("subject.")) {
+          const subField = name.split(".")[1]!;
+          if (currentAction) {
+            const req = currentAction.subject?.requirements.find(
+              (r) => r.field.name === subField,
+            );
+            if (!req) {
+              failWithCode(
+                expr,
+                "subject_field_unknown",
+                `subject.${subField} names no declared subject requirement in action ${currentActionName}`,
+                `declare ${subField} in subject { ... }`,
+              );
+            }
+          } else {
+            const declaredInAction = decl.body.entries.some((e) => {
+              if (!e.key.startsWith("action ")) return false;
+              const subBlock = entries(asBlock(e.value)).get("subject");
+              if (!subBlock) return false;
+              return asBlock(subBlock).entries.some((se) => {
+                if (se.key === subField) return true;
+                if (se.key === "adapter") {
+                  const names =
+                    se.value.kind === "list"
+                      ? se.value.items.map(text)
+                      : [text(se.value)];
+                  return names.some((n) => {
+                    const reg = options.adapterRegistry?.[n];
+                    if (!reg) return false;
+                    const op = reg.adapter.operationMap[reg.operation];
+                    return op?.subjectRequirements?.some(
+                      (sr) => sr.name === subField,
+                    );
+                  });
+                }
+                return false;
+              });
+            });
+            if (!declaredInAction) {
+              failWithCode(
+                expr,
+                "subject_field_unknown",
+                `subject.${subField} names no declared subject requirement in instrument ${id}`,
+                `declare ${subField} in an action subject { ... }`,
+              );
+            }
+          }
+        }
+        return /^(self|input|party|subject)\./.test(name)
+          ? name
+          : `self.${name}`;
       };
       const val = (expr: Expr): UdlValue => {
         const v = resolve(expr);
@@ -639,8 +1278,57 @@ export function compile(
           return id;
         const value = resolve(expr);
         if (value.kind === "block") {
+          const rawEntries = entries(value);
+          if (
+            (rawEntries.has("family") && !rawEntries.has("kind")) ||
+            ((rawEntries.has("states") ||
+              rawEntries.has("reference") ||
+              rawEntries.has("anchor")) &&
+              rawEntries.has("instrument"))
+          ) {
+            let famTuple: UdlFamily | undefined;
+            if (rawEntries.has("family")) {
+              const famExpr = rawEntries.get("family")!;
+              const famStr =
+                famExpr.kind === "name" ? famExpr.value : text(famExpr);
+              famTuple = resolveFamily(famStr, famExpr);
+            }
+
+            let instrumentVal: unknown;
+            if (rawEntries.has("instrument")) {
+              instrumentVal = data(rawEntries.get("instrument")!);
+              if (famTuple) {
+                checkTargetFamily(
+                  instrumentVal as string | string[],
+                  famTuple,
+                  rawEntries.get("instrument")!,
+                );
+              }
+            } else if (famTuple) {
+              const matched = resolveFamilyInstruments(
+                famTuple,
+                id,
+                rawEntries.get("family")!,
+              );
+              instrumentVal = matched.length === 1 ? matched[0] : matched;
+            }
+
+            const result: Record<string, unknown> = {};
+            if (famTuple) {
+              result.family = famTuple;
+            }
+            if (instrumentVal !== undefined) {
+              result.instrument = instrumentVal;
+            }
+            for (const [k, v] of rawEntries) {
+              if (k === "family" || k === "instrument") continue;
+              result[k] = data(v);
+            }
+            return result;
+          }
+
           const result = Object.fromEntries(
-            [...entries(value)].map(([key, value]) => [key, data(value)]),
+            [...rawEntries].map(([key, value]) => [key, data(value)]),
           );
           const selection = result.selection as
             | { instrument?: unknown }
@@ -692,66 +1380,86 @@ export function compile(
           const t = row.value.kind === "default" ? row.value.type : row.value;
           const constant =
             row.value.kind === "default" ? resolve(row.value.value) : undefined;
-          const type =
-            t.kind === "type" || t.kind === "call" ? t.name : text(t);
-          const f: Record<string, unknown> = {
-            name: row.key,
-            type,
-            ...(t.kind === "type" && t.optional ? { optional: true } : {}),
-          };
-          if (type === "enum" && t.kind === "call") f.values = t.args.map(text);
-          if (type === "text" && t.kind === "call") {
-            if (t.args.length < 2 || t.args.length > 3)
-              fail(
-                t,
-                "bounded text needs length bounds and an optional pattern",
-                "write text(1, 80)",
-              );
-            f.minLength = literal(resolve(t.args[0]!));
-            f.maxLength = literal(resolve(t.args[1]!));
-            if (t.args[2]) f.pattern = literal(resolve(t.args[2]));
-          }
-          if (["integer", "money"].includes(type) && t.kind === "call") {
-            if (t.args.length !== 2)
-              fail(
-                t,
-                "bounded fields need a minimum and maximum",
-                "write integer(1, 12) or money(0 SAR, 100 SAR)",
-              );
-            f.minimum = literal(resolve(t.args[0]!));
-            f.maximum = literal(resolve(t.args[1]!));
-          }
+          const f = lowerFieldShape(row, resolve);
+          const type = f.type;
           if (type === "list" && t.kind === "call") {
-            f.item = text(t.args[0]!);
-            f.maxItems = t.args[1] ? literal(resolve(t.args[1])) : 366;
-          }
-          if (type === "list" && t.kind === "type") {
-            f.item = t.target;
-            f.maxItems = 366;
+            const item = t.args[0]!;
+            if (item.kind === "type" && item.name === "ref" && item.target) {
+              f.target = text(
+                resolve({ kind: "name", value: item.target, span: item.span }),
+              ).replaceAll(".", "_");
+              f.targetKind = objects.has(String(f.target))
+                ? "object"
+                : "instrument";
+            }
           }
           if (type === "ref") {
-            const target = t.kind === "type" ? t.target : undefined;
-            if (!target)
-              fail(row, "reference needs a target", "write ref<object>");
-            const [root, ...tail] = target.split(".");
-            const resolved = environment.get(root!);
-            const resolvedTargets =
-              resolved?.kind === "list"
-                ? resolved.items
-                : resolved
-                  ? [resolved]
-                  : [];
-            const targets = resolvedTargets.map((value) =>
-              [text(resolve(value)).replaceAll(".", "_"), ...tail].join("_"),
-            );
-            f.target =
-              target === "self"
-                ? id
-                : targets.length === 1
-                  ? targets[0]
-                  : targets.length
-                    ? targets
-                    : target;
+            if (t.kind === "block") {
+              const b = entries(t);
+              const famNode = b.get("targetFamily") ?? b.get("family");
+              let targetFamTuple: UdlFamily | undefined;
+              if (famNode) {
+                const famStr =
+                  famNode.kind === "name" ? famNode.value : text(famNode);
+                targetFamTuple = resolveFamily(famStr, famNode);
+                f.targetFamily = targetFamTuple;
+              }
+              if (b.has("target") || b.has("instrument")) {
+                const tgtExpr = (b.get("target") ?? b.get("instrument"))!;
+                const resolvedTgt = resolve(tgtExpr);
+                let tgtVal: string | string[];
+                if (resolvedTgt.kind === "list") {
+                  const items = resolvedTgt.items.map((it) =>
+                    text(resolve(it)).replaceAll(".", "_"),
+                  );
+                  tgtVal = items.length === 1 ? items[0]! : items;
+                } else {
+                  tgtVal = text(resolvedTgt).replaceAll(".", "_");
+                }
+                f.target = tgtVal;
+                if (targetFamTuple) {
+                  checkTargetFamily(tgtVal, targetFamTuple, tgtExpr);
+                }
+              } else if (targetFamTuple) {
+                const matched = resolveFamilyInstruments(
+                  targetFamTuple,
+                  id,
+                  famNode!,
+                );
+                f.target = matched.length === 1 ? matched[0] : matched;
+              }
+              f.targetKind =
+                typeof f.target === "string" && objects.has(f.target)
+                  ? "object"
+                  : "instrument";
+            } else {
+              const target = t.kind === "type" ? t.target : undefined;
+              if (!target)
+                fail(row, "reference needs a target", "write ref<object>");
+              const [root, ...tail] = target.split(".");
+              const resolved = environment.get(root!);
+              const resolvedTargets =
+                resolved?.kind === "list"
+                  ? resolved.items
+                  : resolved
+                    ? [resolved]
+                    : [];
+              const targets = resolvedTargets.map((value) =>
+                [text(resolve(value)).replaceAll(".", "_"), ...tail].join("_"),
+              );
+              f.target =
+                target === "self"
+                  ? id
+                  : targets.length === 1
+                    ? targets[0]
+                    : targets.length
+                      ? targets
+                      : target;
+              f.targetKind =
+                typeof f.target === "string" && objects.has(f.target)
+                  ? "object"
+                  : "instrument";
+            }
           } else if (type === "account") {
             if (t.kind === "call") {
               if (t.args.length < 1 || t.args.length > 4)
@@ -764,7 +1472,13 @@ export function compile(
               f.book = t.args[1] ? text(t.args[1]) : "cash";
               if (t.args[2]) {
                 const mode = text(t.args[2]);
-                if (["contra", "external"].includes(mode)) f[mode] = true;
+                if (mode === "external")
+                  fail(
+                    t,
+                    "external account mode was removed",
+                    "use a reservation and instruction-bound evidence",
+                  );
+                if (mode === "contra") f.contra = true;
                 else f.key = mode;
               }
               if (t.args[3]) f.key = text(t.args[3]);
@@ -889,6 +1603,7 @@ export function compile(
       lifecycle.transitions = {};
       const inst: UdlInstrument = {
         id,
+        ...(attachmentInfo ? { subject: attachmentInfo.subjectKindId } : {}),
         title: title(id),
         summary: body.has("summary")
           ? String(data(body.get("summary")!))
@@ -921,9 +1636,9 @@ export function compile(
               // appear after the instrument that asks about its fields.
               const bound = resolve(binding!);
               const [root, ...children] = text(bound).split(".");
-              const object = objects.get(root!);
-              let target = object
-                ? templates.get(object.object)?.body
+              const assignment = assignments.get(root!);
+              let target = assignment
+                ? templates.get(assignment.target)?.body
                 : program.decls
                     .filter(
                       (decl): decl is InstrumentDecl =>
@@ -971,6 +1686,221 @@ export function compile(
           }),
         });
         const slots = entries(selected(asBlock(row.value)));
+        let actionSubject: UdlActionSubject | undefined;
+        let subjectExpr = slots.get("subject");
+        const boundaryBindings = new Set<string>();
+        const authoredMoves = slots.get("moves");
+        for (const move of authoredMoves?.kind === "list"
+          ? authoredMoves.items
+          : authoredMoves
+            ? [authoredMoves]
+            : []) {
+          const parts = entries(asBlock(move));
+          const boundary = parts.get("boundary");
+          if (!boundary) continue;
+          if (
+            (parts.has("operation")
+              ? String(data(parts.get("operation")!))
+              : "internal_transfer.create") !== "internal_transfer.reserve" ||
+            parts.has("shares") ||
+            parts.has("fee")
+          )
+            fail(
+              move,
+              "boundary dispatch requires a reservation",
+              "reserve the exact amount before dispatch",
+            );
+          const adapterExpr = entries(asBlock(boundary)).get("adapter");
+          if (!adapterExpr)
+            fail(
+              boundary,
+              "boundary needs an adapter",
+              "name a bound ADL adapter",
+            );
+          const binding = text(resolve(adapterExpr!));
+          const target =
+            options.adapterRegistry &&
+            Object.hasOwn(options.adapterRegistry, binding)
+              ? options.adapterRegistry[binding]
+              : undefined;
+          if (
+            !target ||
+            !Object.hasOwn(target.adapter.operationMap, target.operation)
+          )
+            fail(
+              boundary,
+              `unknown boundary adapter ${binding}`,
+              "bind the named ADL adapter before compilation",
+            );
+          boundaryBindings.add(binding);
+        }
+        if (boundaryBindings.size) {
+          const block = asBlock(subjectExpr);
+          const declared = new Set(
+            block.entries
+              .filter((entry) => entry.key === "adapter")
+              .flatMap((entry) =>
+                entry.value.kind === "list"
+                  ? entry.value.items.map(text)
+                  : [text(entry.value)],
+              ),
+          );
+          subjectExpr = {
+            ...block,
+            entries: [
+              ...block.entries,
+              ...[...boundaryBindings]
+                .filter((binding) => !declared.has(binding))
+                .map((binding) => ({
+                  key: "adapter",
+                  value: {
+                    kind: "name" as const,
+                    value: binding,
+                    span: row.span,
+                  },
+                  span: row.span,
+                })),
+            ],
+          };
+        }
+        if (subjectExpr) {
+          const subjectBlock = asBlock(subjectExpr);
+          const directRequirements: UdlSubjectRequirement[] = [];
+          const adapterList: UdlActionSubject["adapters"] = [];
+          for (const entry of subjectBlock.entries) {
+            if (entry.key === "adapter") {
+              const bindingNames =
+                entry.value.kind === "list"
+                  ? entry.value.items.map(text)
+                  : [text(entry.value)];
+              for (const bindingName of bindingNames) {
+                const target = options.adapterRegistry?.[bindingName];
+                if (target) {
+                  const { adapter, operation } = target;
+                  const opBinding = adapter.operationMap[operation];
+                  if (
+                    opBinding &&
+                    opBinding.subjectRequirements !== undefined
+                  ) {
+                    const validatedRequirements: UdlObjectField[] = [];
+                    for (const req of opBinding.subjectRequirements) {
+                      const result = udlObjectFieldSchema.safeParse(req);
+                      if (!result.success || result.data.optional) {
+                        fail(
+                          entry,
+                          `adapter requirement ${req.name} is invalid or optional: ${result.success ? "requirements cannot be optional" : result.error.message}`,
+                          "ensure adapter subject requirements conform to UDL schema",
+                        );
+                      }
+                      validatedRequirements.push(result.data);
+                    }
+                    const declaration = {
+                      provider: adapter.provider,
+                      capability: adapter.capability,
+                      operation,
+                      requirements: validatedRequirements,
+                    };
+                    const digest = sha256(
+                      new TextEncoder().encode(canonicalJson(declaration)),
+                    );
+                    const snapshot: UdlAdapterSubjectSnapshot = {
+                      ...declaration,
+                      declarationDigest: Array.from(digest, (byte) =>
+                        byte.toString(16).padStart(2, "0"),
+                      ).join(""),
+                    };
+                    const adapterRenames: Record<string, string> = {};
+                    if (attachmentInfo?.renames) {
+                      for (const req of snapshot.requirements) {
+                        if (attachmentInfo.renames.has(req.name)) {
+                          adapterRenames[req.name] = attachmentInfo.renames.get(
+                            req.name,
+                          )!;
+                        }
+                      }
+                    }
+                    adapterList.push({
+                      binding: bindingName,
+                      snapshot,
+                      ...(Object.keys(adapterRenames).length > 0
+                        ? { renames: adapterRenames }
+                        : {}),
+                    });
+                    for (const reqField of snapshot.requirements) {
+                      const objectField = attachmentInfo?.renames.get(
+                        reqField.name,
+                      );
+                      const targetName = objectField ?? reqField.name;
+                      const existing = directRequirements.find(
+                        (r) => (r.objectField ?? r.field.name) === targetName,
+                      );
+                      if (existing) {
+                        if (!sameObjectField(existing.field, reqField)) {
+                          failWithCode(
+                            entry,
+                            "subject_field_conflict",
+                            `conflicting requirement ${reqField.name} in action ${name}`,
+                            "rename or unify the requirement",
+                          );
+                        }
+                      } else {
+                        directRequirements.push({
+                          field: { ...reqField },
+                          ...(objectField ? { objectField } : {}),
+                        });
+                      }
+                    }
+                  } else {
+                    adapterList.push({
+                      binding: bindingName,
+                      snapshot: null,
+                    });
+                  }
+                } else {
+                  adapterList.push({
+                    binding: bindingName,
+                    snapshot: null,
+                  });
+                }
+              }
+            } else {
+              const fieldDef = lowerObjectField(entry, resolve);
+              if (fieldDef.optional) {
+                fail(
+                  entry,
+                  `subject requirement ${entry.key} cannot be optional`,
+                  "remove ? from requirement",
+                );
+              }
+              const objectField = attachmentInfo?.renames.get(entry.key);
+              const targetName = objectField ?? entry.key;
+              const existing = directRequirements.find(
+                (r) => (r.objectField ?? r.field.name) === targetName,
+              );
+              if (existing) {
+                if (!sameObjectField(existing.field, fieldDef)) {
+                  failWithCode(
+                    entry,
+                    "subject_field_conflict",
+                    `conflicting requirement ${entry.key} in action ${name}`,
+                    "rename or unify the requirement",
+                  );
+                }
+              } else {
+                directRequirements.push({
+                  field: fieldDef,
+                  ...(objectField ? { objectField } : {}),
+                });
+              }
+            }
+          }
+          if (directRequirements.length > 0 || adapterList.length > 0) {
+            actionSubject = {
+              requirements: directRequirements,
+              adapters: adapterList,
+            };
+          }
+        }
         const a: UdlAction = {
           summary: slots.has("summary")
             ? String(data(slots.get("summary")!))
@@ -981,7 +1911,20 @@ export function compile(
           input: lowerFields(asBlock(slots.get("input"))),
           requires: [],
           moves: [],
+          ...(actionSubject ? { subject: actionSubject } : {}),
         };
+        for (const binding of boundaryBindings)
+          if (
+            !a.subject?.adapters.find((entry) => entry.binding === binding)
+              ?.snapshot
+          )
+            fail(
+              row,
+              `boundary adapter ${binding} has no declared requirements`,
+              "declare the adapter subject requirements, including an explicit empty list",
+            );
+        currentAction = a;
+        currentActionName = name;
         if (name !== "create") {
           const from = slots.get("from");
           const to = slots.get("to");
@@ -999,7 +1942,8 @@ export function compile(
           };
         }
         for (const [key, expr] of slots) {
-          if (["from", "to", "input", "summary"].includes(key)) continue;
+          if (["from", "to", "input", "summary", "subject"].includes(key))
+            continue;
           if (key === "moves") {
             const moves = expr.kind === "list" ? expr.items : [expr];
             for (const [index, move] of moves.entries()) {
@@ -1033,6 +1977,25 @@ export function compile(
                 const amount = parts.get("amount"),
                   from = parts.get("from"),
                   to = parts.get("to");
+                if (amount) {
+                  const resolvedAmount = resolve(amount);
+                  if (
+                    resolvedAmount.kind === "name" &&
+                    resolvedAmount.value.startsWith("subject.")
+                  ) {
+                    const subField = resolvedAmount.value.split(".")[1]!;
+                    const req = a.subject?.requirements.find(
+                      (r) => r.field.name === subField,
+                    );
+                    if (req && req.field.type !== "money") {
+                      fail(
+                        amount,
+                        `move amount subject.${subField} must have type money`,
+                        "use a money field",
+                      );
+                    }
+                  }
+                }
                 if (parts.has("shares")) {
                   if (
                     !amount ||
@@ -1064,7 +2027,7 @@ export function compile(
                     });
                     if (
                       recipient.kind !== "name" ||
-                      !document.parties[recipient.value] ||
+                      !isParty(recipient.value) ||
                       rate.kind !== "percent"
                     )
                       fail(
@@ -1139,6 +2102,19 @@ export function compile(
                           ...transfer,
                           operation: op,
                           capture: String(data(parts.get("capture")!)),
+                          ...(parts.has("boundary")
+                            ? {
+                                boundary: {
+                                  adapter: text(
+                                    resolve(
+                                      entries(
+                                        asBlock(parts.get("boundary")),
+                                      ).get("adapter")!,
+                                    ),
+                                  ),
+                                },
+                              }
+                            : {}),
                         }
                       : { ...transfer, operation: op },
                   );
@@ -1298,7 +2274,41 @@ export function compile(
             a.approval = approval;
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
+        if (attachmentInfo) {
+          if (attachmentInfo.exposed.has(name)) {
+            a.publicAction = attachmentInfo.exposed.get(name)!;
+          } else {
+            delete a.publicAction;
+          }
+        }
         if (automatic(a.actor)) delete a.publicAction;
+        const checkSubjectPaths = (obj: unknown, span: Span) => {
+          if (typeof obj === "string") {
+            if (obj.startsWith("subject.")) {
+              const subField = obj.split(".")[1]!;
+              const req = a.subject?.requirements.find(
+                (r) => r.field.name === subField,
+              );
+              if (!req) {
+                failWithCode(
+                  { span },
+                  "subject_field_unknown",
+                  `subject.${subField} names no declared subject requirement in action ${name}`,
+                  `declare ${subField} in subject { ... }`,
+                );
+              }
+            }
+          } else if (Array.isArray(obj)) {
+            for (const item of obj) checkSubjectPaths(item, span);
+          } else if (obj !== null && typeof obj === "object") {
+            for (const val of Object.values(obj)) checkSubjectPaths(val, span);
+          }
+        };
+        checkSubjectPaths(a.requires, row.span);
+        checkSubjectPaths(a.set, row.span);
+        checkSubjectPaths(a.invoke, row.span);
+        currentAction = undefined;
+        currentActionName = undefined;
         for (const requirement of a.requires ?? []) {
           if (
             requirement.kind !== "approval" ||
@@ -1308,17 +2318,37 @@ export function compile(
           const action = requirement.action ?? name;
           const key = `${id}_${action}_decision`;
           const previous = implicitDecisions.get(key);
-          if (previous && previous.party !== requirement.party)
+          if (
+            previous &&
+            (previous.party !== requirement.party ||
+              previous.protectedRequest !==
+                (requirement.protectedRequest ?? "self"))
+          )
             fail(
               { span: origin },
-              `action ${action} has multiple approval parties`,
+              `action ${action} has conflicting approval parties or protected requests`,
               "use a separate decision action for each party",
             );
           implicitDecisions.set(key, {
             target: id,
             action,
             party: requirement.party,
+            protectedRequest: requirement.protectedRequest ?? "self",
             origin,
+          });
+        }
+        for (const requirement of a.subject?.requirements ?? []) {
+          const entry =
+            asBlock(subjectExpr).entries.find(
+              (entry) => entry.key === requirement.field.name,
+            ) ??
+            asBlock(subjectExpr).entries.find(
+              (entry) => entry.key === "adapter",
+            );
+          requirementOrigins.set(requirement, {
+            source: declarationSources.get(decl) ?? "program",
+            span: entry?.span ?? row.span,
+            message: `${id}.${name}.subject.${requirement.field.name}`,
           });
         }
         inst.actions[name] = a;
@@ -1333,6 +2363,13 @@ export function compile(
         path: `$.instruments[${document.instruments.length}]`,
         span: { ...origin, ...lineColAt(source, origin.start) },
       });
+      if (familyDeclaration && familyDeclaration.revision !== undefined) {
+        inst.family = {
+          module: familyDeclaration.module,
+          exportPath: familyDeclaration.exportPath,
+          revision: familyDeclaration.revision,
+        };
+      }
       document.instruments.push(inst);
       for (const [key, definition] of records) {
         const child: InstrumentDecl = {
@@ -1342,6 +2379,19 @@ export function compile(
           body: asBlock(definition),
           span: origin,
         };
+        declarationSources.set(
+          child,
+          declarationSources.get(decl) ?? "program",
+        );
+        const childFamily = familyDeclaration
+          ? {
+              module: familyDeclaration.module,
+              exportPath: `${familyDeclaration.exportPath}.${key}`,
+              ...(familyDeclaration.revision !== undefined
+                ? { revision: familyDeclaration.revision }
+                : {}),
+            }
+          : undefined;
         addInstrument(
           child,
           `${id}_${key}`,
@@ -1353,8 +2403,220 @@ export function compile(
           ]),
           approvers,
           enums,
+          attachmentInfo
+            ? { ...attachmentInfo, exposed: new Map() }
+            : undefined,
+          childFamily,
         );
       }
+    };
+    const compileObject = (decl: ObjectDecl) => {
+      const body = entries(decl.body);
+      for (const key of body.keys()) {
+        if (
+          key !== "fields" &&
+          key !== "columns" &&
+          !key.startsWith("attach ")
+        ) {
+          fail(
+            decl,
+            `unknown object clause ${key}`,
+            "use fields, columns, or attach",
+          );
+        }
+      }
+
+      // 1. Lower authored fields
+      const authoredFields: UdlObjectField[] = [];
+      const authoredNames: string[] = [];
+      const fieldsBlock = asBlock(body.get("fields"));
+      for (const row of fieldsBlock.entries) {
+        if (RESERVED_OBJECT_NAMES.some((name) => name === row.key)) {
+          fail(
+            row,
+            `${row.key} is a reserved object name`,
+            "rename this field",
+          );
+        }
+        const fieldDef = lowerObjectField(row);
+        authoredFields.push(fieldDef);
+        authoredNames.push(row.key);
+      }
+
+      // 2. Process attachments
+      const attachments: UdlObjectAttachment[] = [];
+      for (const entry of decl.body.entries) {
+        if (!entry.key.startsWith("attach ")) continue;
+        const match = /^attach\s+([A-Za-z0-9_]+)\s*=\s*(.+)$/.exec(entry.key);
+        if (!match) {
+          fail(
+            entry,
+            "invalid attach syntax",
+            "write attach name = template { ... }",
+          );
+        }
+        const attachmentName = match[1]!;
+        const targetTemplate = match[2]!;
+        const template = templates.get(targetTemplate);
+        if (!template) {
+          fail(
+            entry,
+            `unknown instrument ${targetTemplate}`,
+            `add use ${targetTemplate.split(".")[0]} and choose a declared instrument`,
+          );
+        }
+        const instId = `${decl.name}_${attachmentName}`;
+
+        const attachmentBlock = asBlock(entry.value);
+        const renames = new Map<string, string>();
+        const renameEntries = new Map<string, Entry>();
+        const exposed = new Map<string, string>();
+        const tunableEntries: Entry[] = [];
+
+        for (const row of attachmentBlock.entries) {
+          if (row.key === "rename") {
+            for (const r of asBlock(row.value).entries) {
+              renames.set(r.key, text(r.value));
+              renameEntries.set(r.key, r);
+            }
+          } else if (row.key === "expose") {
+            if (row.value.kind === "call") {
+              const actionName = row.value.name;
+              const publicName = text(row.value.args[0]!);
+              exposed.set(actionName, publicName);
+            }
+          } else {
+            tunableEntries.push(row);
+          }
+        }
+
+        const parties: Record<string, AttachmentPartyBinding> = {};
+        attachments.push({ name: attachmentName, instrument: instId, parties });
+
+        const tunableBlock: BlockExpr = {
+          kind: "block",
+          entries: tunableEntries,
+          span: entry.value.span,
+        };
+
+        const templateFamily = resolveFamily(targetTemplate, entry, false);
+        addInstrument(
+          template,
+          instId,
+          tunableBlock,
+          entry.span,
+          new Map(),
+          new Set(),
+          new Map(),
+          {
+            subjectKindId: decl.name,
+            attachmentName,
+            renames,
+            exposed,
+            parties,
+          },
+          templateFamily ? { ...templateFamily } : undefined,
+        );
+
+        const attachedInst = document.instruments.find((i) => i.id === instId);
+        if (attachedInst?.actions.create) {
+          const owned = new Set(
+            attachedInst.calculate.map((node) => node.target),
+          );
+          for (const action of Object.values(attachedInst.actions)) {
+            for (const node of action.calculate ?? []) owned.add(node.target);
+            for (const move of action.moves)
+              if ("capture" in move && move.capture) owned.add(move.capture);
+          }
+          const create = attachedInst.actions.create;
+          for (const field of attachedInst.fields) {
+            if (
+              field.type === "account" ||
+              (field.type === "ref" && field.targetKind === "instrument") ||
+              (field.type === "list" &&
+                field.item === "ref" &&
+                field.targetKind === "instrument") ||
+              field.optional ||
+              "value" in field ||
+              owned.has(field.name)
+            )
+              continue;
+            create.subject ??= { requirements: [], adapters: [] };
+            const existing = create.subject.requirements.find(
+              (item) => item.field.name === field.name,
+            );
+            if (existing) {
+              if (canonicalJson(existing.field) !== canonicalJson(field))
+                failWithCode(
+                  entry,
+                  "subject_field_conflict",
+                  `${instId}.create.subject.${field.name} conflicts with its instrument field`,
+                  "use the instrument field's type and constraints",
+                );
+              continue;
+            }
+            const objectField = renames.get(field.name);
+            const requirement = {
+              field,
+              ...(objectField ? { objectField } : {}),
+            };
+            create.subject.requirements.push(requirement);
+            requirementOrigins.set(requirement, {
+              source: declarationSources.get(template) ?? "program",
+              span: entry.span,
+              message: `${instId}.create.fields.${field.name}`,
+            });
+          }
+        }
+        for (const [oldName] of renames) {
+          const found =
+            attachedInst &&
+            Object.values(attachedInst.actions).some((action) =>
+              action.subject?.requirements.some(
+                (requirement) => requirement.field.name === oldName,
+              ),
+            );
+          if (!found) {
+            const renameEntry = renameEntries.get(oldName) ?? entry;
+            failWithCode(
+              renameEntry,
+              "subject_field_unknown",
+              `rename source '${oldName}' is not a declared subject requirement of ${targetTemplate}`,
+              "rename a declared subject requirement",
+            );
+          }
+        }
+      }
+
+      // 4. Validate columns
+      const columnsExpr = body.get("columns");
+      let columns: string[] = [];
+      if (columnsExpr) {
+        if (columnsExpr.kind !== "list") {
+          fail(
+            columnsExpr,
+            "columns needs a list of field names",
+            "write columns: [name, ...]",
+          );
+        }
+        columns = columnsExpr.items.map(text);
+        if (columns.length > 8) {
+          fail(
+            columnsExpr,
+            "at most 8 columns allowed",
+            "choose up to 8 columns",
+          );
+        }
+      }
+
+      document.objects.push({
+        id: decl.name,
+        title: decl.title,
+        authoredFields: authoredNames,
+        attachments,
+        fields: authoredFields,
+        columns,
+      });
     };
     for (const decl of program.decls) {
       if (decl.kind === "instrument") {
@@ -1366,15 +2628,172 @@ export function compile(
           );
         addInstrument(decl, decl.name, emptyBlock, decl.span);
       }
-      if (decl.kind === "object") {
-        const template = templates.get(decl.object);
+      if (decl.kind === "assignment") {
+        const template = templates.get(decl.target);
         if (!template)
           fail(
             decl,
-            `unknown object ${decl.object}`,
-            `add use ${decl.object.split(".")[0]} and choose a declared object`,
+            `unknown instrument ${decl.target}`,
+            `add use ${decl.target.split(".")[0]} and choose a declared instrument`,
           );
-        addInstrument(template, decl.name, decl.body, decl.span);
+        const templateFamily = resolveFamily(decl.target, decl, false);
+        addInstrument(
+          template,
+          decl.name,
+          decl.body,
+          decl.span,
+          new Map(),
+          new Set(),
+          new Map(),
+          undefined,
+          templateFamily ? { ...templateFamily } : undefined,
+        );
+      }
+      if (decl.kind === "object") {
+        compileObject(decl);
+      }
+    }
+    // Propagate mandatory invoked action requirements
+    let changedInvocations = true;
+    let invocationIterations = 0;
+    while (changedInvocations && invocationIterations < 32) {
+      changedInvocations = false;
+      invocationIterations++;
+      for (const inst of document.instruments) {
+        for (const action of Object.values(inst.actions)) {
+          for (const call of action.invoke ?? []) {
+            if (call.guard) continue;
+            let targetIds: string[] = [];
+            if ("instrument" in call) {
+              targetIds = [call.instrument];
+            } else if ("selection" in call) {
+              targetIds = Array.isArray(call.selection.instrument)
+                ? call.selection.instrument
+                : [call.selection.instrument];
+            } else if ("reference" in call) {
+              const refField = resolveField(
+                document,
+                inst,
+                call.reference,
+                action.input,
+                action,
+              );
+              if (
+                refField?.type === "ref" &&
+                refField.targetKind === "instrument"
+              ) {
+                targetIds = Array.isArray(refField.target)
+                  ? refField.target
+                  : [refField.target];
+              }
+            }
+            for (const targetId of targetIds) {
+              const targetInst = document.instruments.find(
+                (i) => i.id === targetId,
+              );
+              if (!targetInst) continue;
+              if (
+                inst.subject &&
+                targetInst.subject &&
+                inst.subject === targetInst.subject
+              ) {
+                const targetAction = targetInst.actions[call.action];
+                if (!targetAction?.subject) continue;
+                if (!action.subject) {
+                  action.subject = { requirements: [], adapters: [] };
+                }
+                for (const adapter of targetAction.subject.adapters) {
+                  if (
+                    !action.subject.adapters.some(
+                      (existing) => existing.binding === adapter.binding,
+                    )
+                  ) {
+                    action.subject.adapters.push(adapter);
+                    changedInvocations = true;
+                  }
+                }
+                for (const targetReq of targetAction.subject.requirements) {
+                  const targetObjFieldName =
+                    targetReq.objectField ?? targetReq.field.name;
+                  const existing = action.subject.requirements.find(
+                    (cr) =>
+                      (cr.objectField ?? cr.field.name) === targetObjFieldName,
+                  );
+                  if (!existing) {
+                    const inherited = {
+                      field: { ...targetReq.field, name: targetObjFieldName },
+                    };
+                    action.subject.requirements.push(inherited);
+                    requirementOrigins.set(
+                      inherited,
+                      requirementOrigins.get(targetReq)!,
+                    );
+                    changedInvocations = true;
+                  } else if (
+                    !sameObjectField(existing.field, targetReq.field)
+                  ) {
+                    const first = requirementOrigins.get(existing)!;
+                    const second = requirementOrigins.get(targetReq)!;
+                    throw new CompileFailure({
+                      code: "subject_field_conflict",
+                      message: `${first.message} conflicts with ${second.message}: incompatible requirement '${targetObjFieldName}'`,
+                      fix: "ensure compatible requirement definitions across invoked actions",
+                      span: first.span,
+                      source: first.source,
+                      related: [first, second],
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const kind of document.objects) {
+      const origins = new Map(
+        kind.fields.map((field) => [
+          field.name,
+          `authored field ${kind.id}.${field.name}`,
+        ]),
+      );
+      for (const instrument of document.instruments.filter(
+        (item) => item.subject === kind.id,
+      )) {
+        for (const name of instrument.actionOrder) {
+          for (const requirement of instrument.actions[name]!.subject
+            ?.requirements ?? []) {
+            const field = {
+              ...requirement.field,
+              name: requirement.objectField ?? requirement.field.name,
+            };
+            const previous = kind.fields.find(
+              (item) => item.name === field.name,
+            );
+            const origin = `${instrument.id}.${name}.subject.${requirement.field.name}`;
+            if (previous && !sameObjectField(previous, field)) {
+              failWithCode(
+                objects.get(kind.id)!,
+                "subject_field_conflict",
+                `${origin} conflicts with ${origins.get(field.name)}: incompatible types or constraints`,
+                "rename fields with different meanings",
+              );
+            }
+            if (!previous) {
+              kind.fields.push(field);
+              origins.set(field.name, origin);
+            }
+          }
+        }
+      }
+      for (const column of kind.columns) {
+        if (!kind.fields.some((field) => field.name === column))
+          failWithCode(
+            objects.get(kind.id)!,
+            "subject_field_unknown",
+            `column ${column} is unknown on ${kind.id}`,
+            "name an authored field or attached requirement",
+          );
       }
     }
     const eliminatedStates = new Map<string, Set<string>>();
@@ -1472,12 +2891,33 @@ export function compile(
             (action) =>
               action.approval?.action === decision.action &&
               action.approval.party === decision.party &&
-              inst.fields.some(
-                (field) =>
-                  field.type === "ref" &&
-                  field.target === decision.target &&
-                  `self.${field.name}` === action.approval?.target,
-              ),
+              inst.fields.some((field) => {
+                if (
+                  field.type !== "ref" ||
+                  field.target !== decision.target ||
+                  `self.${field.name}` !== action.approval?.target
+                )
+                  return false;
+                const [root, name, ...tail] =
+                  decision.protectedRequest.split(".");
+                const input = name && action.approval.input[name];
+                const request =
+                  root === "self"
+                    ? [action.approval.target, name, ...tail]
+                        .filter(Boolean)
+                        .join(".")
+                    : root === "input" && name
+                      ? input && "field" in input
+                        ? [input.field, ...tail].join(".")
+                        : materialApprovals.has(action)
+                          ? [`self.material_${name}`, ...tail].join(".")
+                          : undefined
+                      : undefined;
+                return (
+                  request !== undefined &&
+                  action.approval.protectedRequest === request
+                );
+              }),
           ),
         );
         if (existing) continue;
@@ -1487,6 +2927,16 @@ export function compile(
             `implicit decision name ${id} is already used`,
             "rename the conflicting object",
           );
+        const protectedRequest =
+          decision.protectedRequest === "self"
+            ? "self.target"
+            : decision.protectedRequest.startsWith("self.")
+              ? `self.target.${decision.protectedRequest.slice(5)}`
+              : fail(
+                  { span: decision.origin },
+                  "implicit approval needs a stored protected request",
+                  "declare an explicit decision for an input-based protected request",
+                );
         addInstrument(
           template,
           id,
@@ -1497,10 +2947,14 @@ export function compile(
               for: decision.target,
               approved_by: decision.party,
               action: decision.action,
+              protected_request: protectedRequest,
             }).map(([key, value]) => ({
               key,
               value: {
-                kind: key === "action" ? "text" : "name",
+                kind:
+                  key === "action" || key === "protected_request"
+                    ? "text"
+                    : "name",
                 value,
                 span: decision.origin,
               },
@@ -1508,6 +2962,22 @@ export function compile(
             })),
           },
           decision.origin,
+          new Map(),
+          new Set(),
+          new Map(),
+          document.instruments.find(
+            (instrument) => instrument.id === decision.target,
+          )?.subject
+            ? {
+                subjectKindId: document.instruments.find(
+                  (instrument) => instrument.id === decision.target,
+                )!.subject!,
+                attachmentName: id,
+                parties: {},
+                renames: new Map(),
+                exposed: new Map(),
+              }
+            : undefined,
         );
       }
     }
@@ -1578,7 +3048,7 @@ export function compile(
             .find((o) => i.path.startsWith(o.path));
           return diagnostic(
             {
-              code: "HSX1601",
+              code: i.code.startsWith("UDL") ? "HSX1601" : i.code,
               message: `${i.path}: ${i.message}`,
               fix: i.fix,
               span: origin?.span ?? program.span,

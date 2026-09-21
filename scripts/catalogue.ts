@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { compile } from "../src/compile.ts";
 import { serializeUdl } from "@hyperscale0/udl";
 
-/** The executable inventory exercises every public header object. */
+/** Compile the object attachment example for the package self-check. */
 export async function compileCatalogue() {
   const source = await readFile(
     new URL("../examples/library.hsx", import.meta.url),

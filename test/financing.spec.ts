@@ -1,41 +1,29 @@
 import { expect, test } from "bun:test";
-import { compile } from "../src/compile.ts";
+import { readFileSync } from "node:fs";
+import { compile as compileHsx } from "../src/compile.ts";
 import { validateUdl } from "@hyperscale0/udl";
 import { buildUdlCostManifest } from "../src/cost.ts";
 
-// A dealer financing programme in the shape of Darb Cars, kept inside the
-// package so the exported tests do not depend on the platform tree.
-const source = `program dealer "Dealer"
-
-use marketplace
-use vehicles
-use escrow
-use financing
-use collections
-
-party buyer: person
-party seller: business
-party underwriter: staff role credit_underwriter
-party agency: business role collections_agency
-
-listing = marketplace.listing { seller: seller, vehicle_facts: required }
-vehicle = vehicles.vehicle { listing: listing, seller: seller }
-order = marketplace.order { listing: listing, buyer: buyer }
-sale = escrow.hold { payer: buyer, payee: seller, for: order, accept_within: 48h }
-limits = financing.limits { per_borrower: 60000 SAR, portfolio: 1500000 SAR, borrower: buyer, active_plans: 1 }
-plan_3 = financing.installments { months: 3, profit: 2.5%, down_payment: 20%, funds: sale, approval: underwriter }
-late = financing.late_charge { on: [plan_3], grace: 3d, fine: 50 SAR, cap: 25 SAR, approval: underwriter }
-referral = collections.case { on: [plan_3], agency: agency, overdue: 3d }
-`;
+const source = readFileSync(
+  new URL("../examples/library.hsx", import.meta.url),
+  "utf8",
+);
+// Read the owned std source; L21 regenerates the committed bundle.
+const compile = (source: string) =>
+  compileHsx(source, {
+    standardLibrary: {
+      source: (name) =>
+        readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
+    },
+  });
 test("financing range accepts the full schedule domain and costs nested children", () => {
-  for (const months of [1, 3, 6, 16, 17, 365, 366]) {
-    const result = compile(source.replace("months: 3", `months: ${months}`));
-    if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
-    // Mutation: omit the nested refresh_loss_date action from recursive cost.
+  for (const m of [1, 3, 6, 16, 17, 365, 366]) {
+    const res = compile(source.replace("months: 3", `months: ${m}`));
+    const doc = res.artifacts?.document;
+    if (!doc) throw new Error(JSON.stringify(res.diagnostics));
     expect(
-      buildUdlCostManifest(result.artifacts.document).actions["plan_3.create"]!
-        .invocations,
-    ).toBe(months * 2);
+      buildUdlCostManifest(doc).actions["car_plan.create"]!.invocations,
+    ).toBe(m * 2);
   }
 });
 test("financing refuses schedules outside the std bound", () => {
@@ -45,59 +33,84 @@ test("financing refuses schedules outside the std bound", () => {
     ).toBe("invalid");
 });
 test("all financing enum policy combinations compile", () => {
-  for (const disburse of ["funds", "borrower"])
-    for (const recognition of ["on_payment", "by_schedule", "at_disbursement"])
-      for (const order of [
+  for (const d of ["funds", "borrower"])
+    for (const p of ["on_payment", "by_schedule", "at_disbursement"])
+      for (const a of [
         "fines_profit_principal",
         "principal_profit",
         "pro_rata",
       ])
-        for (const overdue of ["allowed", "blocked"])
-          for (const fines of ["carry", "require_waiver"]) {
-            const result = compile(
-              source.replace(
-                "months: 3",
-                `months: 3, disburse_to: ${disburse}, profit_earned: ${recognition}, apply: ${order}, allow_overdue: ${overdue}, assessed_fines: ${fines}`,
-              ),
-            );
-            if (!result.artifacts)
-              throw new Error(
-                JSON.stringify({
-                  disburse,
-                  recognition,
-                  order,
-                  overdue,
-                  fines,
-                  diagnostics: result.diagnostics,
-                }),
-              );
-          }
+        for (const o of ["allowed", "blocked"])
+          for (const f of ["carry", "require_waiver"])
+            expect(
+              compile(
+                source.replace(
+                  "months: 3",
+                  `months: 3, disburse_to: ${d}, profit_earned: ${p}, apply: ${a}, allow_overdue: ${o}, assessed_fines: ${f}`,
+                ),
+              ).verdict,
+            ).toBe("valid");
 });
 
-test("the bounded waterfall fits its explicit ceiling while ordinary actions retain 4096", () => {
-  // Mutation: omit the static recursive expansion limit check.
-  const result = compile(source.replace("months: 3", "months: 366"));
+test("late-charge waterfall needs the bounded ceiling while ordinary actions retain 4096", () => {
+  const witness = source
+    .replace("months: 3", "months: 366")
+    .replace(
+      /\}\s*$/,
+      `\n attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, approval: underwriter, borrower: actor }\n}`,
+    );
+  const result = compile(witness);
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
   const document = result.artifacts.document;
-  const costs = buildUdlCostManifest(document).actions;
-  for (const [id, name] of [
-    ["plan_3_payment", "pay"],
-    ["referral", "recover"],
-  ]) {
-    const cost = costs[`${id}.${name}`]!.invocations + 1;
-    expect(cost).toBeGreaterThan(4096);
-    expect(cost).toBeLessThanOrEqual(8192);
-    const ordinary = structuredClone(document);
-    delete ordinary.instruments.find((item) => item.id === id)!.actions[name!]!
-      .expansionLimit;
-    const verdict = validateUdl(ordinary);
-    expect(verdict.ok).toBe(false);
-    if (!verdict.ok)
-      expect(
-        verdict.issues.some(
-          (issue) =>
-            issue.message === `invocation ${id}.${name} exceeds 4096 actions`,
-        ),
-      ).toBe(true);
-  }
+  const cost =
+    buildUdlCostManifest(document).actions["car_plan_payment.pay"]!
+      .invocations + 1;
+  expect(cost).toBeGreaterThan(4096);
+  expect(cost).toBeLessThanOrEqual(8192);
+  delete document.instruments.find((item) => item.id === "car_plan_payment")!
+    .actions.pay!.expansionLimit;
+  const ordinary = validateUdl(document);
+  expect(ordinary.ok).toBe(false);
+  if (!ordinary.ok)
+    expect(ordinary.issues.map((i) => i.message)).toContain(
+      "invocation car_plan_payment.pay exceeds 4096 actions",
+    );
+});
+
+test("source-backed compilation accepts all five changed std modules", () => {
+  const p =
+    'program p "All"\nuse money\nuse escrow\nuse financing\nuse insurance\nuse travel\nuse lending\nuse wallet\nparty underwriter: staff role credit_underwriter\nparty insurer: business\nparty supplier: business\nparty inspector: staff role claim_inspector\nparty investor: business\nobject item "Item" {\n  attach pay = money.transfer { payer: actor, payee: owner, amount: 750 SAR }\n  attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }\n  attach cov = insurance.cover { holder: actor, insurer: insurer, approval: inspector, covers: book }\n  attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, approval: inspector, cover: cov }\n  attach clm = insurance.claim { cover: cov, approved_by: inspector }\n  attach sale = escrow.hold { payer: actor, payee: owner }\n  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR, portfolio: 1500000 SAR }\n  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, approval: underwriter, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits }\n  attach inv_wallet = wallet.balance { holder: investor }\n  attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }\n  attach commit = lending.commitment { round: round, wallet: inv_wallet, investor: investor }\n  attach dist = lending.distribution { round: round, receipt: plan.settlement, fee: 0%, tax: 0% }\n}';
+  const res = compile(p);
+  expect(res.verdict).toBe("valid");
+  const doc = res.artifacts!.document;
+  const partner = /bank|carrier|distributor/i;
+  const names = doc.instruments.flatMap((inst) =>
+    inst.fields.flatMap((f) => [
+      f.name,
+      ...("target" in f && typeof f.target === "string" ? [f.target] : []),
+    ]),
+  );
+  expect(names.filter((name) => partner.test(name))).toEqual([]);
+  const plan = doc.instruments.find((i) => i.id === "item_plan");
+  if (!plan) throw new Error("Missing item_plan instrument");
+  expect(
+    plan.fields
+      .filter((f) => f.type === "account")
+      .map((f) => f.name)
+      .sort(),
+  ).toEqual([
+    "allocatedPayable",
+    "borrower",
+    "capital",
+    "loss",
+    "profitIncome",
+  ]);
+  const hasDiffInit = (id: string, act: string) =>
+    doc.instruments
+      .find((i) => i.id === id)!
+      .actions[act]!.requires.some(
+        (r) => r.kind === "approval" && r.differentFromInitiator,
+      );
+  expect(hasDiffInit("item_cov", "activate")).toBe(true);
+  expect(hasDiffInit("item_book", "confirm")).toBe(true);
 });

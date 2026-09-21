@@ -1,3 +1,7 @@
+# HSX 4.0.0
+
+HSX adds authored object kinds and attachments with party bindings to owner, actor or operator. Action subject requirements are collected when an attached action runs. The vehicles header is deleted, public instrument create actions are gone, and UDL 3 is rejected. Programs compile to UDL 4; recreate development estates.
+
 # HSX 3.3.0
 
 The standard library adds financing (range primitive, installment waterfall, late charges, collections, vehicles, marketplace and escrow), reporting.portfolio, collections.reminder with clock actions, and money.payout distinct-member approval. Cost estimation covers the nested children of the financing range. The compiler targets UDL 3.2.0.

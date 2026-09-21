@@ -2,17 +2,21 @@ import { compile } from "../src/index.ts";
 const source = document.querySelector<HTMLTextAreaElement>("#source")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 const output = document.querySelector<HTMLElement>("#output")!;
-source.value = `program tip_jar "Tip jar"
+source.value = `program tips "Tips"
 use money
-party listener: person
-party host: business
-tip = money.transfer { payer: listener, payee: host, amount: 10 SAR }
+object tip "Tips" {
+  fields { message: text }
+  attach payment = money.transfer {
+    payer: actor, payee: owner, amount: 10 SAR
+    expose pay as give
+  }
+}
 `;
 function render() {
   const result = compile(source.value);
   status.textContent =
     result.verdict === "valid"
-      ? "Valid UDL 3"
+      ? "Valid UDL 4"
       : "Correct the diagnostics below";
   output.textContent = result.artifacts
     ? JSON.stringify(result.artifacts.document, null, 2)

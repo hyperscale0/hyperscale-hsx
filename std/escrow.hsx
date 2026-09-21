@@ -1,27 +1,26 @@
 header escrow
 
-instrument hold(payer: party, payee: party, for: ref<marketplace.order>, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
+instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
   revisioned: true
-  summary: "Hold an order's price through delivery, acceptance and verified return."
-  fields { payer: account of payer, payee: account of payee, order: ref<for>, price: money, held: account of self, deliveredAt: date?, buyerTopUp: money? }
+  summary: "Hold the subject price through delivery, acceptance and verified return."
+  fields {
+    payer: account of payer, payee: account of payee
+    held: account of self, deliveredAt: date?
+    price: money = subject.price
+  }
   lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
   action create {
-    requires self.payer == self.order.buyer; requires self.payee == self.order.listing.seller; requires self.price == self.order.price
+    subject { price: money }
+    actor: { party: payer }
   }
   action fund {
     from: pending, to: funded, actor: { party: payer }
-    requires self.order in [quoted, placed]
-    invoke: [{ reference: self.order, action: commit, input: {} }, { selection: { instrument: all(marketplace.reservation), reference: "listing", anchor: self.order.listing, states: [active], limit: 1, where: { buyer: { field: self.payer } } }, action: credit, input: { funds: { field: self.id }, contribution: { field: self.price } } }, { reference: self.id, action: fund_remainder, input: {} }]
-  }
-  action fund_remainder {
-    from: funded, to: funded, actor: { parent: current() }
-    calculate: [{ target: buyerTopUp, op: subtract, base: { field: self.price }, subtract: [{ field: self.held.balance }] }]
-    moves self.buyerTopUp from payer to self.held
+    subject { price: money }
+    moves subject.price from payer to self.held
   }
   action confirm {
     from: pending, to: funded
     requires self.held.balance == self.price
-    invoke: [{ reference: self.order, action: commit, input: {} }]
   }
   action deliver {
     from: funded, to: delivered, actor: { party: payee }
@@ -29,7 +28,7 @@ instrument hold(payer: party, payee: party, for: ref<marketplace.order>, accept_
   }
   action accept {
     from: delivered, to: released, actor: { party: payer }
-    input { acceptanceReference: text, titleReference: text, coverReference: text }
+    input { acceptanceReference: text }
     deadline: { at: self.deliveredAt, offset: accept_within }
     moves self.price from self.held to payee fee fee
   }
@@ -41,7 +40,10 @@ instrument hold(payer: party, payee: party, for: ref<marketplace.order>, accept_
     from: delivered, to: disputed, actor: { party: payer }
     deadline: { at: self.deliveredAt, offset: accept_within }
   }
-  action verify_return { from: disputed, to: return_verified, input { returnReference: text } }
+  action verify_return {
+    from: disputed, to: return_verified
+    input { returnEvidence: text }
+  }
   action refund {
     from: dispute.refund_after, to: refunded
     moves self.price from self.held to payer

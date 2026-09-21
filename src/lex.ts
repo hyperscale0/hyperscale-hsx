@@ -42,6 +42,11 @@ export const KEYWORDS = [
   "capture",
   "fee",
   "shares",
+  "object",
+  "attach",
+  "subject",
+  "rename",
+  "columns",
 ] as const;
 export interface Token {
   kind: "name" | "number" | "string" | "date" | "punct" | "eof";

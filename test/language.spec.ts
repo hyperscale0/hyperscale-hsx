@@ -1,6 +1,7 @@
+import { validateUdl } from "@hyperscale0/udl";
+import { genericAdapter } from "../../adl/src/boundary-fixture.ts";
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
-import { compileCatalogue } from "../scripts/catalogue.ts";
 
 const transfer = `program shop "Shop"
 use money
@@ -64,10 +65,6 @@ test("clock and parent actions carry no public name and cannot be exposed", () =
   const exposed = compile(pool + "expose pool.fail as close\n");
   expect(exposed.verdict).toBe("invalid");
   expect(exposed.diagnostics[0]?.message).toContain("runs on the clock");
-});
-
-test("the executable inventory closes every header's typed references", async () => {
-  await compileCatalogue();
 });
 
 test("expression clauses preserve ordered UDL and refuse a missing move endpoint", () => {
@@ -157,8 +154,8 @@ instrument consumer(target: ref) {
   for (const kind of ["linked", "plain"])
     for (const reversed of [false, true]) {
       const declarations = [
-        `object = shape.${kind} {}`,
-        "consumer = shape.consumer { target: object }",
+        `item = shape.${kind} {}`,
+        "consumer = shape.consumer { target: item }",
       ];
       if (reversed) declarations.reverse();
       const result = compile(
@@ -172,4 +169,188 @@ instrument consumer(target: ref) {
           .actions.create!.moves.length,
       ).toBe(kind === "linked" ? 1 : 0);
     }
+});
+
+const protectedApproval = `program requests "Requests"
+party underwriter: staff role underwrite
+instrument request {
+ fields {}
+ lifecycle { states: [open], initial: open }
+ action create {}
+}
+instrument decision {
+ fields { request: ref<request>, expires: date }
+ lifecycle { states: [open], initial: open }
+ action create {
+  requires approval by underwriter protectedRequest self.request differentFromInitiator true
+  approval: { target: self.request, protectedRequest: self.request, party: underwriter,
+    action: create, expires: self.expires, input: {}, decision: approved }
+ }
+}`;
+
+const approvalActions = [
+  protectedApproval,
+  protectedApproval.replace(
+    "requires approval by underwriter protectedRequest self.request differentFromInitiator true",
+    "requires: [{ kind: approval, party: underwriter, protectedRequest: self.request, differentFromInitiator: true, decision: approved }]",
+  ),
+].map((source) => {
+  const result = compile(source);
+  if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
+  return result.artifacts.document.instruments[1]!.actions.create!;
+});
+
+test("Authored separation survives compact and generic HSX lowering", () => {
+  for (const action of approvalActions)
+    expect(action.requires[0]).toMatchObject({ differentFromInitiator: true });
+});
+
+test("Protected request survives compact and generic HSX lowering", () => {
+  for (const action of approvalActions) {
+    expect(action.requires[0]).toMatchObject({
+      protectedRequest: "self.request",
+    });
+    expect(action.approval).toMatchObject({ protectedRequest: "self.request" });
+  }
+});
+
+test("payout reserves before instruction-bound confirmation posts", () => {
+  const result = compile(
+    `program payout_test "Payout"
+use money
+party payer: person
+party payee: business
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "fixture" }
+`,
+    {
+      adapterRegistry: {
+        fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+      },
+    },
+  );
+  const actions = result.artifacts?.document.instruments[0]?.actions;
+  expect([
+    actions?.instruct?.moves[0],
+    actions?.instruct?.subject?.adapters[0]?.snapshot?.provider,
+    actions?.confirm?.requires[0],
+    actions?.confirm?.moves[0]?.operation,
+    actions?.reject?.requires[0],
+    actions?.reject?.moves[0]?.operation,
+  ]).toEqual([
+    {
+      key: "move1",
+      operation: "internal_transfer.reserve",
+      amount: { field: "self.amount" },
+      from: "party.payer",
+      to: "party.payee",
+      capture: "receipt",
+      boundary: { adapter: "fixture" },
+    },
+    "conformance_boundary",
+    {
+      kind: "evidence",
+      subject: "self.id",
+      family: "boundary",
+      check: "outcome",
+      result: "confirmed",
+      maxAge: 86400000,
+      instruction: "self.receipt",
+    },
+    "internal_transfer.post",
+    {
+      kind: "evidence",
+      subject: "self.id",
+      family: "boundary",
+      check: "outcome",
+      result: "rejected",
+      maxAge: 86400000,
+      instruction: "self.receipt",
+    },
+    "internal_transfer.void",
+  ]);
+});
+
+test("removed external account mode refuses instead of becoming a key", () => {
+  const result = compile(`program external_test "External"
+party payer: person
+instrument record {
+ fields { destination: account(payer, cash, external) }
+ lifecycle { states: [open], initial: open }
+ action create {}
+}`);
+  expect(result.diagnostics.map((d) => d.message)).toContain(
+    "external account mode was removed",
+  );
+});
+
+const boundaryEvidence = `program boundary_evidence "Boundary evidence"
+instrument record {
+ fields { receipt: text, amount: money }
+ lifecycle { states: [open], initial: open }
+ action create {
+  requires evidence self.id family boundary check outcome result confirmed maxAge 1000 instruction self.receipt
+ }
+}`;
+
+test("instruction evidence refuses nonterminal authorization", () => {
+  const result = compile(
+    boundaryEvidence.replace("result confirmed", "result acknowledged"),
+  );
+  expect(result.diagnostics.map((d) => d.message)).toContain(
+    "$.instruments[0].actions.create.requires: instruction evidence requires a terminal outcome",
+  );
+});
+
+test("instruction evidence requires a text identity path", () => {
+  const result = compile(
+    boundaryEvidence.replace(
+      "instruction self.receipt",
+      "instruction self.amount",
+    ),
+  );
+  expect(result.verdict).toBe("invalid");
+  expect(
+    result.diagnostics.some((d) => d.message.includes("self.amount")),
+  ).toBe(true);
+});
+
+test("boundary dispatch refuses an unknown adapter binding", () => {
+  const result = compile(
+    `program payout_test "Payout"
+use money
+party payer: person
+party payee: business
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "missing" }
+`,
+    {
+      adapterRegistry: Object.create({
+        missing: { adapter: genericAdapter, operation: "boundary.observe" },
+      }),
+    },
+  );
+  expect(result.diagnostics.map((d) => d.message)).toContain(
+    "unknown boundary adapter missing",
+  );
+});
+
+test("direct UDL refuses a boundary without its retained adapter snapshot", () => {
+  const result = compile(
+    `program payout_test "Payout"
+use money
+party payer: person
+party payee: business
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "fixture" }
+`,
+    {
+      adapterRegistry: {
+        fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+      },
+    },
+  );
+  const document = result.artifacts!.document;
+  delete document.instruments[0]!.actions.instruct!.subject;
+  const validation = validateUdl(document);
+  expect(
+    validation.ok ? [] : validation.issues.map((issue) => issue.message),
+  ).toContain("boundary reservation requires a retained adapter binding");
 });

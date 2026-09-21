@@ -1,23 +1,40 @@
-# HSX 3
+# HSX 4
 
-A program declares parties and objects from headers. Currency defaults to SAR.
-A party binds its account and optional role at admission. A program never carries
-account ids, reference filters, credentials or bank beneficiary ids.
+A program declares business objects and financial instruments. Objects contain
+optional metadata. Attachments expose named actions against an object.
 
 ```hsx
-program shop "Shop"
-use marketplace
+program cars "Cars"
 use escrow
-party buyer: person
-party seller: business
-listing = marketplace.listing { seller: seller }
-order = marketplace.order { listing: listing, buyer: buyer }
-sale = escrow.hold {
-  payer: buyer, payee: seller, for: order, accept_within: 48h
-  fee { seller: 1% cap 750 SAR, tax: 15% }
-  dispute { refund_after: return_verified }
+object car "Cars" {
+ fields { make: text, model: text, year: integer }
+ columns: [make, model, year]
+ attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
 }
 ```
+
+Every attached party parameter binds to `owner`, `actor`, or `operator`.
+`owner` is the object's resolved customer or business, `actor` is the authenticated
+caller, and `operator` is the program operator. A parameter with one of these
+names binds by name. Other party parameters require an explicit binding.
+Unbound parameters report `subject_party_unbound`. These bindings are frozen in
+UDL `objects[].attachments[].parties`; no caller supplies party IDs at creation.
+
+Object `fields` are authored metadata. `columns` names up to eight normalized
+fields. An action's `subject { price: money }` declares its metadata requirement;
+`subject { adapter: verification }` inherits a selected ADL declaration. The
+compiler freezes the adapter identity, digest and requirements. An unavailable
+declaration leaves a null snapshot and an unavailable action.
+
+An attachment can use `rename { price: salePrice }` to separate requirements with
+different meanings. Matching names must match types and constraints. The compiler
+reports `subject_field_conflict` with both origins, or `subject_field_unknown` for
+unknown rename sources, columns or subject expressions. Action admission reports
+`subject_requirement_missing` or `subject_adapter_unbound` before dispatch.
+
+Creation accepts `{}`. Every normalized field, including adapter requirements,
+is optional at creation. Only a named action requires its subject metadata.
+Use `attach` inside the object block to configure its financial instruments.
 
 The header defines the available policies. The company chooses percentages, amounts, durations,
 parties and typed references. `funds: sale` links the stored records through the
@@ -38,11 +55,11 @@ Tax binds `programTax`. Fees default to `programOperator`. Fine, recovery and
 residual destinations are party tunables. Unused `programFines` and `programCosts`
 bindings are omitted.
 
-Every action is public with a generated camelCase name: `createSale`,
-`acceptSale`. `expose sale.accept as acceptDelivery` renames it;
-`hide sale.refund` removes it from the public API. Visibility grants no authority.
-Parent and clock actions still require their executor principal. Exposure paths
-can name children: `hide plan.payment.refund`.
+Attached actions are private unless the attachment exposes them with
+`expose fund as sell`. Exposure grants no authority. Clock and parent actions
+remain executor-owned. Instruments have no standalone create route: an
+attachment exposes its create action by name (`expose create as finance`) or
+keeps it internal. Callers create objects and run their attached actions.
 
 Accounts use cash or claim books. A move stays in one book. `account of buyer`
 aliases the default cash account; `account of self` provisions an owned account.
@@ -166,13 +183,6 @@ requires a valid hours interval. `at_most` and `greater_than` are also supported
 A refusal names the tunable. Empty `all(type)` selections lower to zero aggregates
 or no invocations, so a plan does not require a late-charge object.
 
-The permutation spec builds a dependency-closed program per object. It takes each
-enum value and the minimum, default or example value, and a large numeric value.
-It uses the full product through 512 cases and pair coverage above that. Invalid
-bound combinations must refuse with a named diagnostic. Valid cases must produce
-valid UDL and retain public names on every caller action. This proves compilation,
-not executed balances or bank settlement.
-
 Build with `hsx build company.hsx --out company.udl.json`; check with
 `hsx check company.hsx`; print instruction counts with `hsx cost company.hsx`.
 Print the compiler-owned object manifest with `hsx headers --json`.
@@ -181,5 +191,13 @@ The compiler API is `compile(source)`. A valid result contains `artifacts.docume
 promise of provider execution cost.
 
 The [header inventory](headers.md) is generated from the declarations. The
-[executable inventory](../examples/library.hsx) exercises every public object.
+[object example](../examples/library.hsx) shows authenticated role bindings.
 The [playground](../playground/index.html) compiles locally in the browser.
+
+## Financing attachments
+
+Financing retains its authored borrower and portfolio limits. Bind every party
+parameter to a subject role and link the existing escrow and limits attachments.
+No limit is inferred from object metadata.
+
+See the complete [financing object example](../examples/library.hsx).

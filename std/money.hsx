@@ -130,23 +130,24 @@ instrument deposit(payer: party, payee: party, amount: money, expires: date, app
   action cancel { from: pending, to: cancelled }
 }
 
-instrument payout(payer: party, payee: party, amount: money = runtime, reconcile_within: duration = 3d) {
-  summary: "A bank-linked transfer with confirmation bound to its captured identity."
-  fields { amount: money = amount, bank: account(payee, cash, external, "bank"), receipt: text?, expectedAt: date = after(self.createdAt, reconcile_within) }
-  lifecycle { states: [pending, instructed, settled, exception, reversed], initial: pending }
+instrument payout(payer: party, payee: party, adapter: text, max_age: duration, amount: money = runtime) {
+  summary: "Reserve funds until matching terminal boundary evidence permits posting."
+  fields { amount: money = amount, receipt: text? }
+  lifecycle { states: [pending, instructed, settled, rejected], initial: pending }
   action create {}
-  action instruct { from: pending, to: instructed, actor: { party: payer }, humanApproval: "distinct_member", moves self.amount from payer to self.bank capture "receipt" }
+  action instruct {
+    from: pending, to: instructed, actor: { party: payer }, humanApproval: "distinct_member"
+    moves reserve self.amount from payer to payee capture "receipt" boundary adapter
+  }
   action confirm {
-    from: [instructed, exception], to: settled
-    requires self.receipt.status == "settled"
+    from: instructed, to: settled
+    requires evidence self.id family boundary check outcome result confirmed maxAge max_age instruction self.receipt
+    moves post self.receipt
   }
-  action expire {
-    from: instructed, to: exception, actor: clock, due: { at: self.expectedAt }
-    requires self.receipt.status != "settled"
-  }
-  action reverse {
-    from: [instructed, exception], to: reversed
-    requires self.receipt.status == "reversed"
+  action reject {
+    from: instructed, to: rejected
+    requires evidence self.id family boundary check outcome result rejected maxAge max_age instruction self.receipt
+    moves void self.receipt
   }
 }
 
@@ -157,39 +158,4 @@ instrument metered(payer: party, payee: party, unit_price: money, units: integer
   action create { requires unique "usage_event" on [self.usageIdentity] }
   action bill { from: recorded, to: billed, moves self.amount from payer to payee fee fee }
   action cancel { from: recorded, to: cancelled }
-}
-
-instrument batch(payer: party, payee: party, closes: date, approval: approval, reconcile_within: duration = 3d) {
-  summary: "A frozen positive net of credit and debit entries, paid once."
-  fields { closesAt: date = closes, credits: money, debits: money, amount: money = subtract(self.credits, self.debits), bank: account(payee, cash, external, "bank"), receipt: text?, instructedAt: date?, expectedAt: date? }
-  lifecycle { states: [open, closed, approved, instructed, exception, paid, reversed], initial: open }
-  action create {}
-  action close {
-    from: open, to: closed, actor: clock, due: { at: self.closesAt }
-    requires sum "amount" of { instrument: credit, reference: "batch", anchor: self.id, states: [recorded], limit: 366 } == self.credits
-    requires sum "amount" of { instrument: debit, reference: "batch", anchor: self.id, states: [recorded], limit: 366 } == self.debits
-    requires self.amount > "0"
-  }
-  action approve { from: closed, to: approved, requires approval by approval }
-  action pay {
-    from: approved, to: instructed
-    set: { instructedAt: { field: self.now } }
-    calculate: [{ target: "expectedAt", op: "shift", date: { field: self.now }, milliseconds: { literal: reconcile_within }, direction: "after" }]
-    moves self.amount from payer to self.bank capture "receipt"
-  }
-  action confirm { from: [instructed, exception], to: paid, requires self.receipt.status == "settled" }
-  action expire { from: instructed, to: exception, actor: clock, due: { at: self.expectedAt }, requires self.receipt.status != "settled" }
-  action reverse { from: [instructed, exception], to: reversed, requires self.receipt.status == "reversed" }
-  records {
-    credit: {
-      fields { batch: ref<parent>, identity: text, amount: money }
-      lifecycle { states: [recorded], initial: recorded }
-      action create { requires self.batch in [open]; requires unique "batch_credit" on [self.identity] }
-    }
-    debit: {
-      fields { batch: ref<parent>, identity: text, amount: money }
-      lifecycle { states: [recorded], initial: recorded }
-      action create { requires self.batch in [open]; requires unique "batch_debit" on [self.identity] }
-    }
-  }
 }

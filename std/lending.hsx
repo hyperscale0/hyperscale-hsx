@@ -1,15 +1,14 @@
 header lending
 
-instrument round(borrower: party, capital: party, plan: ref<financing.installments> = object(financing.installments), months: integer(1, 366) = 3, profit: percent = 3%, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
+instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
   summary: "A threshold funding round; failed rounds return each original wallet contribution."
   fields {
-    borrower: account of borrower, capital: account(capital, cash, "capital"), plan: ref<plan>, price: money, closesAt: date
-    months: integer = months, profit: money = rate(self.price, profit)
+    borrower: account of borrower, plan: ref<plan>, price: money = self.plan.principal, closesAt: date
     minimumTicket: money = minimum_ticket, maximumTicket: money = rate(self.price, investor_cap)
     held: account of self
   }
   lifecycle { states: [open, funded, failed], initial: open }
-  action create { requires unique "funding_plan" on [self.plan]; requires self.months == self.plan.months; requires self.profit == self.plan.profit; requires self.price == self.plan.principal; requires self.borrower == self.plan.funds.payer }
+  action create { requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.funds.payer }
   action close {
     from: open, to: funded
     requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
@@ -58,13 +57,13 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     held: account of self, losses: account(self, claim), residualLoss: account(residual_to, claim, "loss")
   }
   lifecycle { states: [pending, cash_ready, loss_ready, distributed], initial: pending }
-  action create { requires self.round in [funded]; requires self.source.plan == self.round.plan; requires unique "settlement_consumption" on [self.source.plan, self.source.identity] }
+  action create { requires self.round in [funded]; requires self.source in [recorded]; requires self.source.plan == self.round.plan; requires unique "settlement_consumption" on [self.source.plan, self.source.identity] }
   action prepare_cash {
     from: pending, to: cash_ready
-    requires self.mode == "cash"; requires self.source.kind == "cash"
+    requires self.mode == "cash"; requires self.source.kind == "cash"; requires self.source in [recorded]
     calculate: [
       { target: "principal", op: "sum", values: [{ field: self.source.principal }] }
-      { target: "profit", op: "sum", values: [{ field: self.source.profit }] }
+      { target: "profit", op: "sum", values: [{ field: self.source.retainedProfit }] }
       { target: "charge", op: "rate", base: { field: self.profit }, bps: { literal: fee }, rounding: "floor" }
       { target: "vat", op: "rate", base: { field: self.charge }, bps: { literal: tax }, rounding: "floor" }
       { target: "grossTotal", op: "sum", values: [{ field: self.principal }, { field: self.profit }] }
@@ -73,7 +72,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   }
   action prepare_loss {
     from: pending, to: loss_ready
-    requires self.mode == "loss"; requires self.source.kind == "loss"
+    requires self.mode == "loss"; requires self.source.kind == "loss"; requires self.source in [recorded]
     calculate: [{ target: "net", op: "sum", values: [{ field: self.source.loss }] }]
   }
   action distribute_cash {

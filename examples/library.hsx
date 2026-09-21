@@ -1,66 +1,14 @@
-program library "Standard library"
-use money
-use marketplace
-use vehicles
+program cars "Cars"
 use escrow
-use wallet
 use financing
-use lending
-use insurance
-use approvals
-use collections
-use travel
-use cards
-use savings
-use reporting
-party buyer: person
-party seller: business
-party officer: staff role credit_underwriter
-party carrier: business role insurance_carrier
-party merchant: business
-
-transfer = money.transfer { payer: buyer, payee: seller, amount: 100 SAR }
-hold = money.hold { payer: buyer, payee: seller, amount: 100 SAR }
-split = money.split { payer: buyer, amount: 100 SAR, shares { seller: 70%, merchant: 30% } }
-schedule = money.schedule { payer: buyer, payee: seller, amount: 100 SAR, count: 3 }
-pool = money.pool { payer: buyer, payee: seller, target: 100 SAR, closes: 2030-01-01 }
-swap = money.swap { first: buyer, second: seller, first_amount: 100 SAR, second_amount: 50 SAR, expires: 2030-01-01 }
-deposit = money.deposit { payer: buyer, payee: seller, amount: 100 SAR, expires: 2030-01-01, approval: officer }
-payout = money.payout { payer: seller, payee: buyer, amount: 100 SAR, reconcile_within: 3d }
-metered = money.metered { payer: buyer, payee: seller, unit_price: 10 SAR, units: 2 }
-batch = money.batch { payer: buyer, payee: seller, closes: 2030-01-01, approval: officer }
-listing = marketplace.listing { seller: seller, vehicle_facts: required }
-order = marketplace.order { listing: listing, buyer: buyer }
-sale = escrow.hold { payer: buyer, payee: seller, for: order, fee { seller: 1% cap 750 SAR, tax: 15% }, dispute { refund_after: return_verified } }
-purse = wallet.balance { holder: buyer, spend_limit: 1000 SAR }
-spend = wallet.spend { wallet: purse, payee: seller }
-limits = financing.limits { per_borrower: 10000 SAR, portfolio: 100000 SAR, borrower: buyer }
-plan = financing.installments { months: 3, profit: 3%, funds: sale, approval: officer }
-plan_schedule = financing.installments { months: 6, profit: 3%, funds: sale, approval: officer, disburse_to: borrower, profit_earned: by_schedule, apply: principal_profit, payoff_rebate: 50% }
-plan_upfront = financing.installments { months: 3, profit: 3%, funds: sale, approval: officer, disburse_to: funds, profit_earned: at_disbursement, apply: pro_rata, payoff_rebate: 0% }
-late = financing.late_charge { on: [plan, plan_schedule, plan_upfront], approval: officer, fines_to: seller, costs_to: seller }
-line = financing.credit_line { borrower: buyer, lender: seller, limit: 1000 SAR, expires: 2030-01-01 }
-advance = financing.advance { line: line, amount: 100 SAR }
-round = lending.round { borrower: buyer, capital: seller, plan: plan }
-ticket = lending.commitment { round: round, wallet: purse }
-distribution = lending.distribution { round: round, receipt: plan.settlement, residual_to: seller }
-cover = insurance.cover { holder: buyer, insurer: carrier, covers: sale, commission: 10% }
-claim = insurance.claim { cover: cover, approved_by: carrier }
-decision = approvals.decision { for: transfer, approved_by: officer, action: "pay" }
-case = collections.case { on: [plan, plan_schedule, plan_upfront], agency: seller, fee: 20% }
-contact = collections.contact { case: case, agency: seller }
-reminder = collections.reminder { on: plan }
-package = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2030-01-01 }
-booking = travel.booking { package: package, buyer: buyer, supplier: seller, cover: travel_cover }
-cardholder = cards.cardholder { holder: buyer }
-card = cards.card { holder: cardholder, spend_limit: 100 SAR }
-authorization = cards.authorization { card: card, merchant: merchant, approval: officer }
-transaction = cards.transaction { authorization: authorization }
-dispute = cards.dispute { transaction: transaction, approved_by: officer }
-circle = savings.circle { contribution: 100 SAR, members: 3, starts: 2030-01-01 }
-membership = savings.membership { circle: circle, member: buyer }
-travel_cover = insurance.cover { holder: buyer, insurer: carrier, commission: 10%, covers: booking }
-
-reports = reporting.portfolio { on: [plan, plan_schedule, plan_upfront] }
-vehicle = vehicles.vehicle { listing: listing, seller: seller }
-reservation = marketplace.reservation { listing: listing, funds: sale, plans: [plan, plan_schedule, plan_upfront], converters: [sale, plan, plan_schedule, plan_upfront], buyer: buyer, seller: seller }
+party underwriter: staff role credit_underwriter
+object car "Cars" {
+ fields { make: text, model: text, year: integer }
+ attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
+ attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR, portfolio: 1500000 SAR }
+ attach plan = financing.installments {
+  borrower: actor, capital: operator, share: 25%, approval: underwriter
+  months: 3, profit: 2.5%, funds: sale, limits: limits
+  expose create as finance
+ }
+}

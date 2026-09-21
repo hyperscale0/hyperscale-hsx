@@ -10,11 +10,11 @@ instrument package(price: money, supplier_cost: money, departure: date) {
   action close { from: published, to: closed, actor: clock, due: { at: self.departure } }
 }
 
-instrument booking(package: ref<travel.package>, buyer: party, supplier: approval, cover: ref<insurance.cover>, deposit: percent = 30%, balance_before: duration = 14d, confirm_within: duration = 24h, tax: percent = 15%, early_before: duration = 30d, middle_before: duration = 15d, middle_penalty: percent = 10%, late_penalty: percent = 30%) {
+instrument booking(package: ref<travel.package>, buyer: party, supplier: party, approval: approval = programOperator, cover: ref<insurance.cover>, deposit: percent = 30%, balance_before: duration = 14d, confirm_within: duration = 24h, tax: percent = 15%, early_before: duration = 30d, middle_before: duration = 15d, middle_penalty: percent = 10%, late_penalty: percent = 30%) {
   constraints { early_before: greater_than(middle_before) }
-  summary: "A deposited booking with three cancellation bands and supplier confirmation."
+  summary: "A deposited booking with three cancellation bands and confirmation."
   fields {
-    package: ref<package>, bookingReference: text, buyer: account of buyer, supplier: account of supplier
+    package: ref<package>, buyer: account of buyer, supplier: account of supplier
     price: money = self.package.price, supplierCost: money = self.package.supplierCost
     deposit: money = rate(self.price, deposit), balance: money = subtract(self.price, self.deposit)
     margin: money = subtract(self.price, self.supplierCost)
@@ -32,7 +32,6 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: approva
   lifecycle { states: [created, deposit_paid, paid, completed, cancelled, refunded], initial: created }
   action create {
     requires self.package in [published]
-    requires unique "booking_reference" on [self.bookingReference]
   }
   action deposit {
     from: created, to: deposit_paid, actor: { party: buyer }, deadline: { at: self.balanceAt }
@@ -45,9 +44,9 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: approva
     moves self.balance from buyer to self.held
   }
   action confirm {
-    from: paid, to: completed, actor: { party: supplier }
+    from: paid, to: completed
     due: { at: self.package.departure }, deadline: { at: self.confirmBy }
-    requires approval by supplier
+    requires approval by approval protectedRequest self differentFromInitiator true
     moves self.supplierCost from self.held to supplier
     moves self.tax from self.held to programTax
     moves self.operatorNet from self.held to programOperator

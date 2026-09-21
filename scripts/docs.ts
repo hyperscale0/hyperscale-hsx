@@ -8,10 +8,11 @@ const manifest = headerManifest({
 const rows = [
   "# Header inventory",
   "",
-  "Each company selects library policies through typed tunables.",
+  "Attach library instruments inside authored object kinds. Each program selects policies through typed tunables.",
+  "Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build; staff declarations name approval authority. The authoringTemplate source is an attach fragment for an object block. Expose the chosen business action; instrument creation stays internal.",
   "`ref<T>[]` accepts one reference or up to 16 references as one policy. `approval` accepts a party and generates the required decision records.",
   "",
-  "| Object | Tunables |",
+  "| Instrument | Tunables |",
   "| --- | --- |",
 ];
 for (const header of manifest.headers)
@@ -30,6 +31,6 @@ await writeFile(new URL("docs/headers.md", root), inventory);
 const reference = await readFile(new URL("docs/README.md", root), "utf8");
 await writeFile(
   new URL("llms.txt", root),
-  "# HSX 3\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Example](examples/library.hsx)\n",
+  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Example](examples/library.hsx)\n",
 );
 await writeFile(new URL("llms-full.txt", root), reference + "\n" + inventory);

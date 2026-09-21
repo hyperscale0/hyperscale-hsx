@@ -1,4 +1,4 @@
-# HSX 3
+# HSX 4
 
 Read the [language reference](docs/README.md).
 

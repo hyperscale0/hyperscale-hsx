@@ -3,6 +3,8 @@ export interface Span {
   end: number;
 }
 export interface Diagnostic {
+  source?: string;
+  related?: readonly { source: string; span: Span; message: string }[];
   code: string;
   message: string;
   fix: string;
@@ -47,15 +49,23 @@ export interface InstrumentDecl {
   body: Extract<Expr, { kind: "block" }>;
   span: Span;
 }
+export interface AssignmentDecl {
+  kind: "assignment";
+  name: string;
+  target: string;
+  body: Extract<Expr, { kind: "block" }>;
+  span: Span;
+}
 export interface ObjectDecl {
   kind: "object";
   name: string;
-  object: string;
+  title: string;
   body: Extract<Expr, { kind: "block" }>;
   span: Span;
 }
 export type Decl =
   | InstrumentDecl
+  | AssignmentDecl
   | ObjectDecl
   | {
       kind: "party";

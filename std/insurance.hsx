@@ -1,11 +1,11 @@
 header insurance
 
-instrument cover(holder: party, insurer: party, commission: percent = 0%, covers: ref, premium: money = runtime) {
+instrument cover(holder: party, insurer: party, approval: approval = programOperator, commission: percent = 0%, covers: ref, premium: money = runtime) {
   summary: "Recurring cover with separate premium slices and commission clawback."
   fields { covers: ref<covers>, holder: account of holder, insurer: account of insurer, expiresAt: date }
   lifecycle { states: [pending, active, cancelled, expired], initial: pending }
   action create {}
-  action activate { from: pending, to: active, actor: { party: insurer } }
+  action activate { from: pending, to: active, requires approval by approval protectedRequest self differentFromInitiator true }
   action cancel {
     from: active, to: cancelled
     invoke: [{ selection: { instrument: slice, reference: "cover", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }]
@@ -17,7 +17,6 @@ instrument cover(holder: party, insurer: party, commission: percent = 0%, covers
       fields {
         cover: ref<parent>, covers: ref<covers>, premium: money = premium, startsAt: date, endsAt: date
         commission: money = rate(self.premium, commission)
-        carrierNet: money = subtract(self.premium, self.commission)
       }
       lifecycle { states: [pending, paid, active, expired, refunded], initial: pending }
       action create {
@@ -43,12 +42,12 @@ instrument cover(holder: party, insurer: party, commission: percent = 0%, covers
 }
 
 instrument claim(cover: ref<insurance.cover>, approved_by: approval) {
-  summary: "A carrier decision reserves one claim payment before settlement."
+  summary: "A claim decision reserves one claim payment before settlement."
   fields { cover: ref<cover>, amount: money, expiresAt: date, evidence: text, reservation: text? }
   lifecycle { states: [submitted, approved, paid, denied, expired], initial: submitted }
   action create { requires self.cover in [active] }
   action approve {
-    from: submitted, to: approved, actor: { party: approved_by }
+    from: submitted, to: approved
     requires approval by approved_by
     deadline: { at: self.expiresAt }
     moves reserve self.amount from self.cover.insurer to self.cover.holder capture "reservation"

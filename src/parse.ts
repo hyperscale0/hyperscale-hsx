@@ -172,14 +172,30 @@ class Parser {
         });
         continue;
       }
+      if (this.eat("object")) {
+        const name = this.identifier();
+        const title =
+          this.peek().kind === "string"
+            ? (JSON.parse(this.take().text) as string)
+            : name;
+        const body = this.block();
+        program.decls.push({
+          kind: "object",
+          name,
+          title,
+          body,
+          span: this.span(start),
+        });
+        continue;
+      }
       const name = this.identifier();
       this.expect("=");
       const object = this.path();
       const body = this.block();
       program.decls.push({
-        kind: "object",
+        kind: "assignment",
         name,
-        object,
+        target: object,
         body,
         span: this.span(start),
       });
@@ -194,7 +210,66 @@ class Parser {
       if (this.peek().kind === "eof")
         this.fail(`unclosed block, expected ${end}`, `add ${end}`);
       const start = this.peek().span.start;
+      if (this.eat("attach")) {
+        const name = this.identifier();
+        this.expect("=");
+        const target = this.path();
+        const body = this.block();
+        entries.push({
+          key: `attach ${name} = ${target}`,
+          value: body,
+          span: this.span(start),
+        });
+        this.separators();
+        continue;
+      }
+      if (this.eat("rename")) {
+        const body = this.block();
+        entries.push({
+          key: "rename",
+          value: body,
+          span: this.span(start),
+        });
+        this.separators();
+        continue;
+      }
+      if (this.eat("expose")) {
+        const action = this.identifier();
+        let publicName = action;
+        if (this.eat("as")) {
+          publicName = this.identifier();
+        }
+        entries.push({
+          key: "expose",
+          value: {
+            kind: "call",
+            name: action,
+            args: [{ kind: "name", value: publicName, span: this.span(start) }],
+            span: this.span(start),
+          },
+          span: this.span(start),
+        });
+        this.separators();
+        continue;
+      }
       let key = this.path();
+      if (key === "columns" && !this.at(":")) {
+        let value: Expr;
+        if (this.at("[")) {
+          value = this.atom();
+        } else if (this.at("{")) {
+          value = this.block();
+        } else {
+          value = { kind: "list", items: [], span: this.span(start) };
+        }
+        entries.push({
+          key: "columns",
+          value,
+          span: this.span(start),
+        });
+        this.separators();
+        continue;
+      }
       if (key === "action" && !this.at(":")) key += " " + this.identifier();
       if (key === "when") {
         const tunable = this.identifier();
@@ -242,7 +317,8 @@ class Parser {
   private operand(): BlockExpr {
     const value = this.atom();
     return this.record({
-      [value.kind === "name" && /^(self|input|party)\./.test(value.value)
+      [value.kind === "name" &&
+      /^(self|input|party|subject)\./.test(value.value)
         ? "field"
         : "literal"]: value,
     });
@@ -264,6 +340,8 @@ class Parser {
       };
       if (this.eat("for")) values.action = this.atom();
       if (this.eat("is")) values.decision = this.atom();
+      for (const key of ["protectedRequest", "differentFromInitiator"])
+        if (this.eat(key)) values[key] = this.atom();
       return this.record(values);
     }
     if (this.eat("unique")) {
@@ -316,6 +394,7 @@ class Parser {
         this.expect(key);
         values[key] = this.atom();
       }
+      if (this.eat("instruction")) values.instruction = this.atom();
       return this.record(values);
     }
     const left = this.operand();
@@ -361,6 +440,8 @@ class Parser {
     }
     for (const key of ["fee", "capture", "key"])
       if (this.eat(key)) values[key] = this.atom();
+    if (this.eat("boundary"))
+      values.boundary = this.record({ adapter: this.atom() });
     return this.record(values);
   }
   private block(): BlockExpr {
