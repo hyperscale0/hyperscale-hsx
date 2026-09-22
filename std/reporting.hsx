@@ -118,6 +118,12 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
               required: true
             },
             {
+              name: "earnedProfit",
+              field: "profitEarned.balance",
+              type: { kind: "money", currency: "SAR" },
+              required: true
+            },
+            {
               name: "scheduledPrincipal",
               field: "principal",
               type: { kind: "money", currency: "SAR" },
@@ -139,7 +145,8 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             { id: "observed", op: "parameter", name: "observationAt" },
             { id: "scheduledOutstanding", op: "sum", left: "principal", right: "profit" },
-            { id: "unpaid", op: "less", left: "zeroMoney", right: "scheduledOutstanding" },
+            { id: "totalOutstanding", op: "sum", left: "scheduledOutstanding", right: "earnedProfit" },
+            { id: "unpaid", op: "less", left: "zeroMoney", right: "totalOutstanding" },
             { id: "elapsed", op: "daysBetween", left: "due", right: "observed" },
             { id: "nonnegativeDays", op: "maximum", left: "elapsed", right: "zeroDays" },
             { id: "daysPastDue", op: "choose", condition: "unpaid", yes: "nonnegativeDays", no: "zeroDays" }
@@ -465,6 +472,12 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
               required: true
             },
             {
+              name: "earnedProfit",
+              field: "profitEarned.balance",
+              type: { kind: "money", currency: "SAR" },
+              required: true
+            },
+            {
               name: "scheduledPrincipal",
               field: "principal",
               type: { kind: "money", currency: "SAR" },
@@ -486,7 +499,8 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             { id: "observed", op: "parameter", name: "observationAt" },
             { id: "scheduledOutstanding", op: "sum", left: "principal", right: "profit" },
-            { id: "unpaid", op: "less", left: "zeroMoney", right: "scheduledOutstanding" },
+            { id: "totalOutstanding", op: "sum", left: "scheduledOutstanding", right: "earnedProfit" },
+            { id: "unpaid", op: "less", left: "zeroMoney", right: "totalOutstanding" },
             { id: "elapsed", op: "daysBetween", left: "due", right: "observed" },
             { id: "nonnegativeDays", op: "maximum", left: "elapsed", right: "zeroDays" },
             { id: "daysPastDue", op: "choose", condition: "unpaid", yes: "nonnegativeDays", no: "zeroDays" }
@@ -745,6 +759,12 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
               required: true
             },
             {
+              name: "earnedProfit",
+              field: "profitEarned.balance",
+              type: { kind: "money", currency: "SAR" },
+              required: true
+            },
+            {
               name: "scheduledPrincipal",
               field: "principal",
               type: { kind: "money", currency: "SAR" },
@@ -766,7 +786,8 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             { id: "observed", op: "parameter", name: "observationAt" },
             { id: "scheduledOutstanding", op: "sum", left: "principal", right: "profit" },
-            { id: "unpaid", op: "less", left: "zeroMoney", right: "scheduledOutstanding" },
+            { id: "totalOutstanding", op: "sum", left: "scheduledOutstanding", right: "earnedProfit" },
+            { id: "unpaid", op: "less", left: "zeroMoney", right: "totalOutstanding" },
             { id: "elapsed", op: "daysBetween", left: "due", right: "observed" },
             { id: "nonnegativeDays", op: "maximum", left: "elapsed", right: "zeroDays" },
             { id: "daysPastDue", op: "choose", condition: "unpaid", yes: "nonnegativeDays", no: "zeroDays" }
@@ -1114,6 +1135,12 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
               required: true
             },
             {
+              name: "earnedProfit",
+              field: "profitEarned.balance",
+              type: { kind: "money", currency: "SAR" },
+              required: true
+            },
+            {
               name: "scheduledPrincipal",
               field: "principal",
               type: { kind: "money", currency: "SAR" },
@@ -1135,7 +1162,8 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             { id: "observed", op: "parameter", name: "observationAt" },
             { id: "scheduledOutstanding", op: "sum", left: "principal", right: "profit" },
-            { id: "unpaid", op: "less", left: "zeroMoney", right: "scheduledOutstanding" },
+            { id: "totalOutstanding", op: "sum", left: "scheduledOutstanding", right: "earnedProfit" },
+            { id: "unpaid", op: "less", left: "zeroMoney", right: "totalOutstanding" },
             { id: "elapsed", op: "daysBetween", left: "due", right: "observed" },
             { id: "nonnegativeDays", op: "maximum", left: "elapsed", right: "zeroDays" },
             { id: "daysPastDue", op: "choose", condition: "unpaid", yes: "nonnegativeDays", no: "zeroDays" }

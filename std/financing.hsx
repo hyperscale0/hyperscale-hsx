@@ -525,7 +525,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
       }
       lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
       action create { calculate: [{ target: overdueAt, op: shift, date: { field: self.assessment.overdueAt }, milliseconds: { literal: 0 }, direction: after }], requires unique "recovery_assessment" on [self.assessment]; requires self.plan == self.assessment.plan }
-      action assess {
+      action assess { allowZero: true,
         from: proposed, to: assessed, actor: clock, due: { at: self.assessment.overdueAt }
         requires self.assessment.slice.principalReceivable.balance > "0"
         moves self.amount from self.debt to self.receivable

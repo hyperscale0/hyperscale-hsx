@@ -1,3 +1,15 @@
+# HSX 5.1.0
+
+Child records of an attached instrument compile as their own attachments
+(`<attachment>_<record>` with a `parent`), so a guarded child action is
+discoverable and admissible from the object it belongs to (UDL 4.3.0).
+
+Standard library review: card authorizations require an active holder,
+a lending commitment records its investor account and caps tickets per
+investor rather than per wallet, pool contributions are bounded at 366
+paid records, portfolio ageing counts earned profit as outstanding, and
+a late charge assesses a zero amount without refusing. Docs corrected.
+
 # HSX 5.0.1
 
 Per-action subject evidence compiles: `fields { price: money = subject.price }`

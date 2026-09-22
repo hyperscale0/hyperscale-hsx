@@ -28,11 +28,13 @@ instrument authorization(card: ref<cards.card>, merchant: party, issuer: party =
   lifecycle { states: [pending, approved, captured, declined, reversed, expired], initial: pending }
   action create {
     requires self.card in [active]
+    requires self.card.holder in [active]
     requires self.amount <= self.card.spendLimit
   }
   action approve {
     from: pending, to: approved, actor: { party: issuer }, deadline: { at: self.expiresAt }
     requires self.card in [active]
+    requires self.card.holder in [active]
     moves reserve self.amount from self.card.holder.holder to merchant capture "reservation"
   }
   action capture { from: approved, to: captured, actor: { party: merchant }, deadline: { at: self.expiresAt }, moves post self.reservation }

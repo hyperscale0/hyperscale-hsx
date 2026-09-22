@@ -97,6 +97,7 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
     contribution: {
       fields { pool: ref<parent>, payer: account of payer, amount: money, remaining: money? }
       lifecycle { states: [pending, paid, refunded], initial: pending }
+      invariants count of { instrument: current(), reference: "pool", anchor: self.pool, states: [paid], limit: 366 } <= 366
       action create { requires self.pool in [open] }
       action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], calculate: [{ target: remaining, op: subtract, base: { field: self.pool.target }, subtract: [{ field: self.pool.held.balance }] }], requires self.amount <= self.remaining, moves self.amount from self.payer to self.pool.held }
       action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer }

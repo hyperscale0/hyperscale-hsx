@@ -643,6 +643,8 @@ export function compile(
         renames: Map<string, string>;
         exposed: Map<string, string>;
         parties: Record<string, AttachmentPartyBinding>;
+        attachments: UdlObjectAttachment[];
+        child?: boolean;
       },
       familyDeclaration?: {
         module: string;
@@ -2549,7 +2551,7 @@ export function compile(
             }
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
-        if (attachmentInfo) {
+        if (attachmentInfo && !attachmentInfo.child) {
           if (attachmentInfo.exposed.has(name)) {
             a.publicAction = attachmentInfo.exposed.get(name)!;
           } else {
@@ -2619,6 +2621,21 @@ export function compile(
       }
       document.instruments.push(inst);
       for (const [key, definition] of records) {
+        const childAttachment = attachmentInfo
+          ? {
+              ...attachmentInfo,
+              attachmentName: `${attachmentInfo.attachmentName}_${key}`,
+              child: true,
+              exposed: new Map<string, string>(),
+            }
+          : undefined;
+        if (childAttachment)
+          childAttachment.attachments.push({
+            name: childAttachment.attachmentName,
+            parent: attachmentInfo!.attachmentName,
+            instrument: `${id}_${key}`,
+            parties: childAttachment.parties,
+          });
         const child: InstrumentDecl = {
           kind: "instrument",
           name: key,
@@ -2649,9 +2666,7 @@ export function compile(
             ["parent", { kind: "name", value: id, span: origin } as Expr],
           ]),
           enums,
-          attachmentInfo
-            ? { ...attachmentInfo, exposed: new Map() }
-            : undefined,
+          childAttachment,
           childFamily,
         );
       }
@@ -2746,6 +2761,7 @@ export function compile(
         };
 
         const templateFamily = resolveFamily(targetTemplate, entry, false);
+        const firstAttachedInstrument = document.instruments.length;
         try {
           addInstrument(
             template,
@@ -2760,6 +2776,7 @@ export function compile(
               renames,
               exposed,
               parties,
+              attachments,
             },
             templateFamily ? { ...templateFamily } : undefined,
           );
@@ -2769,17 +2786,24 @@ export function compile(
           continue;
         }
         const attachedInst = document.instruments.find((i) => i.id === instId);
-        if (attachedInst?.actions.create) {
+        for (const createdInst of document.instruments
+          .slice(firstAttachedInstrument)
+          .filter(
+            (instrument) =>
+              instrument.id === instId ||
+              instrument.actions.create?.publicAction,
+          )) {
+          if (!createdInst.actions.create) continue;
           const owned = new Set(
-            attachedInst.calculate.map((node) => node.target),
+            createdInst.calculate.map((node) => node.target),
           );
-          for (const action of Object.values(attachedInst.actions)) {
+          for (const action of Object.values(createdInst.actions)) {
             for (const node of action.calculate ?? []) owned.add(node.target);
             for (const move of action.moves)
               if ("capture" in move && move.capture) owned.add(move.capture);
           }
-          const create = attachedInst.actions.create;
-          for (const field of attachedInst.fields) {
+          const create = createdInst.actions.create;
+          for (const field of createdInst.fields) {
             if (
               field.type === "account" ||
               (field.type === "ref" && field.targetKind === "instrument") ||
@@ -2788,7 +2812,8 @@ export function compile(
                 field.targetKind === "instrument") ||
               field.optional ||
               "value" in field ||
-              owned.has(field.name)
+              owned.has(field.name) ||
+              create.input.some((input) => input.name === field.name)
             )
               continue;
             create.subject ??= { requirements: [], adapters: [] };
@@ -2800,7 +2825,7 @@ export function compile(
                 failWithCode(
                   entry,
                   "subject_field_conflict",
-                  `${instId}.create.subject.${field.name} conflicts with its instrument field`,
+                  `${createdInst.id}.create.subject.${field.name} conflicts with its instrument field`,
                   "use the instrument field's type and constraints",
                 );
               continue;
@@ -2814,7 +2839,7 @@ export function compile(
             requirementOrigins.set(requirement, {
               source: declarationSources.get(template) ?? "program",
               span: entry.span,
-              message: `${instId}.create.fields.${field.name}`,
+              message: `${createdInst.id}.create.fields.${field.name}`,
             });
           }
         }
@@ -2913,16 +2938,15 @@ export function compile(
           .sort((a, b) => a.span.start - b.span.start)
           .map((d) => diagnostic(d, "check")),
       };
-    // Propagate mandatory invoked action requirements
+    // Propagate invoked requirements with the conditions on each invocation path.
     let changedInvocations = true;
     let invocationIterations = 0;
     while (changedInvocations && invocationIterations < 32) {
       changedInvocations = false;
       invocationIterations++;
       for (const inst of document.instruments) {
-        for (const action of Object.values(inst.actions)) {
+        for (const [actionName, action] of Object.entries(inst.actions)) {
           for (const call of action.invoke ?? []) {
-            if (call.guard) continue;
             let targetIds: string[] = [];
             if ("instrument" in call) {
               targetIds = [call.instrument];
@@ -2962,7 +2986,9 @@ export function compile(
                 if (!action.subject) {
                   action.subject = { requirements: [], adapters: [] };
                 }
-                for (const adapter of targetAction.subject.adapters) {
+                for (const adapter of call.guard
+                  ? []
+                  : targetAction.subject.adapters) {
                   if (
                     !action.subject.adapters.some(
                       (existing) => existing.binding === adapter.binding,
@@ -2979,9 +3005,65 @@ export function compile(
                     (cr) =>
                       (cr.objectField ?? cr.field.name) === targetObjFieldName,
                   );
+                  const guardValue = (value: UdlValue): UdlValue => {
+                    if (
+                      !("field" in value) ||
+                      !value.field.startsWith("subject.")
+                    )
+                      return value;
+                    const requirement = action.subject?.requirements.find(
+                      (item) => item.field.name === value.field.slice(8),
+                    );
+                    return {
+                      field: `subject.${requirement?.objectField ?? requirement?.field.name ?? value.field.slice(8)}`,
+                    };
+                  };
+                  const guardType =
+                    call.guard &&
+                    [call.guard.left, call.guard.right]
+                      .flatMap((value) =>
+                        "field" in value
+                          ? [
+                              resolveField(
+                                document,
+                                inst,
+                                value.field,
+                                action.input,
+                                action,
+                              )?.type,
+                            ]
+                          : [],
+                      )
+                      .find((type) => type === "money" || type === "date");
+                  const condition:
+                    | NonNullable<UdlSubjectRequirement["when"]>[number][number]
+                    | undefined = call.guard
+                    ? {
+                        instrument: inst.id,
+                        action: actionName,
+                        guard: {
+                          ...call.guard,
+                          left: guardValue(call.guard.left),
+                          right: guardValue(call.guard.right),
+                        },
+                        ...(guardType === "money" || guardType === "date"
+                          ? { valueType: guardType }
+                          : {}),
+                      }
+                    : undefined;
+                  const when = condition
+                    ? (targetReq.when ?? [[]]).map((path) => [
+                        condition,
+                        ...path.filter(
+                          (item) =>
+                            canonicalJson(item) !== canonicalJson(condition),
+                        ),
+                      ])
+                    : targetReq.when;
                   if (!existing) {
-                    const inherited = {
+                    const inherited: UdlSubjectRequirement = {
                       field: { ...targetReq.field, name: targetObjFieldName },
+                      ...(when ? { when: when.map((path) => [...path]) } : {}),
                     };
                     action.subject.requirements.push(inherited);
                     requirementOrigins.set(
@@ -3002,6 +3084,23 @@ export function compile(
                       source: first.source,
                       related: [first, second],
                     });
+                  } else if (existing.when) {
+                    if (!when) {
+                      delete existing.when;
+                      changedInvocations = true;
+                    } else {
+                      for (const path of when) {
+                        if (
+                          !existing.when.some(
+                            (known) =>
+                              canonicalJson(known) === canonicalJson(path),
+                          )
+                        ) {
+                          existing.when.push(path);
+                          changedInvocations = true;
+                        }
+                      }
+                    }
                   }
                 }
               }

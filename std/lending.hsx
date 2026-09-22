@@ -25,14 +25,15 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
 
 instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, investor: party = party(person)) {
   summary: "One investor's original-wallet contribution, capped cumulatively within the round."
-  fields { round: ref<round>, wallet: ref<wallet>, amount: money, loss: account(investor, claim, "loss") }
+  fields { round: ref<round>, wallet: ref<wallet>, investor: account of investor, amount: money, loss: account(investor, claim, "loss") }
   lifecycle { states: [committed, funded, withdrawn, refunded], initial: committed }
-  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366, where: { wallet: { field: self.wallet } } } <= self.round.maximumTicket
+  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366, where: { investor: { field: self.investor } } } <= self.round.maximumTicket
   invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366 } <= self.round.price
   action create {
     actor: { party: investor }
     requires self.round in [open]
     requires self.wallet in [active]
+    requires self.wallet.holder == self.investor
     requires self.amount >= self.round.minimumTicket
     deadline: { at: self.round.closesAt }
     moves self.amount from self.wallet.held to self.round.held
