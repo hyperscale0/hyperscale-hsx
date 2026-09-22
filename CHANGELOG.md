@@ -1,3 +1,9 @@
+# HSX 5.0.1
+
+Per-action subject evidence compiles: `fields { price: money = subject.price }`
+and `set: { x: { field: subject.y } }` accept requirements declared on the
+action alone (UDL 4.2.1).
+
 # HSX 5.0.0
 
 Money moves refuse a zero amount unless the action declares `allowZero: true`,
