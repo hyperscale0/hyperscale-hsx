@@ -11,9 +11,9 @@ object holiday "Holiday booking" {
     price: 5000 SAR, supplier_cost: 3500 SAR, departure: 2027-07-01
     expose publish as publish_trip
   }
-  // Bind travel_insurer to an ADL adapter before activating cover.
+  // Bind travel_insurer to an ADL adapter before creating cover. Premiums net of commission go to its account.
   attach protection = insurance.cover {
-    holder: actor, adapter: "travel_insurer", covers: reservation
+    holder: actor, adapter: "travel_insurer", commission: 10%, covers: reservation
     expose activate as activate_cover
   }
   attach reservation = travel.booking {

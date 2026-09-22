@@ -11,9 +11,9 @@ object device "Insured device" {
     payer: owner, payee: operator
     expose pay as pay_for_device
   }
-  // Bind device_insurer to an ADL adapter before activating cover.
+  // Bind device_insurer to an ADL adapter before creating cover. Premiums net of commission go to its account.
   attach protection = insurance.cover {
-    holder: owner, adapter: "device_insurer", covers: purchase
+    holder: owner, adapter: "device_insurer", commission: 10%, covers: purchase
     expose activate as activate_cover
     expose cancel as cancel_cover
   }

@@ -1711,7 +1711,16 @@ export function compile(
                   "account needs an owner, optional book, mode and key",
                   "write account(buyer, claim, contra)",
                 );
-              f.owner = text(resolve(t.args[0]!));
+              const owner = t.args[0]!;
+              if (owner.kind === "call" && owner.name === "adapter") {
+                if (owner.args.length !== 1)
+                  fail(
+                    owner,
+                    "adapter needs one binding",
+                    'write account(adapter(binding), cash, "premium")',
+                  );
+                f.owner = { adapter: text(resolve(owner.args[0]!)) };
+              } else f.owner = text(resolve(owner));
               f.book = t.args[1] ? text(t.args[1]) : "cash";
               if (t.args[2]) {
                 const mode = text(t.args[2]);

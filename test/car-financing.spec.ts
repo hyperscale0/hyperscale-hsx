@@ -137,7 +137,7 @@ test("outside institutions bind an adapter instead of a party account", () => {
       .fields.filter((field) => field.type === "account")
       .map((field) => field.name);
   expect(accounts("facility_line")).toEqual(["borrower", "facility", "debt"]);
-  expect(accounts("car_auto_insurance")).toEqual(["holder"]);
+  expect(accounts("car_auto_insurance")).toEqual(["holder", "insurer"]);
   expect(
     document.instruments.find((item) => item.id === "facility_line")!.actions
       .activate!.subject!.adapters,

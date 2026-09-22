@@ -69,6 +69,18 @@ keeps it internal. Callers create objects and run their attached actions.
 Accounts use cash or claim books. A move stays in one book. `account of buyer`
 aliases the default cash account; `account of self` provisions an owned account.
 `account(lender, cash, "capital")` binds a named account.
+`account(adapter(insurer), cash, "premium")` binds the account of the provider
+selected by `insurer`. Declare that binding with `subject { adapter: insurer }`
+in an action of the same instrument. A text tunable may supply its binding name.
+The agreement retains the provider identity; aliases for that provider share the
+same book and key within the Product. Providers remain outside parties.
+A missing binding refuses before money moves. Reference paths such as
+`self.cover.insurer` use the referenced agreement's account.
+
+Insurance collection credits the premium to the operator, then moves the premium
+net of commission to the insurer account. Refunds reverse those two portions.
+Claims reserve from the cover's insurer account. These moves record ledger money;
+external confirmation still needs the boundary protocol.
 `account(buyer, claim, contra, "debt")` declares the borrower's claim contra account.
 Provider confirmation belongs on a reserved move with `boundary adapter`,
 followed by instruction-bound evidence and a post or void. External account
@@ -255,7 +267,7 @@ adapters are bound, participants have funds, or the flow can finish.
 | `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                                                                                                                                    |
 | `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                                                                                                                                 |
 | `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                                         |
-| `insurance.cover.slice`                    | `collect` credits the whole premium to the tenant. The required insurer payout of premium minus commission is blocked on generic adapter-owned account binding. This header does not yet implement insurer settlement.                                                                                                       |
+| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                             |
 | `travel.booking`                           | From `deposit_paid` or `paid`, early cancellation returns the full held balance, middle returns held balance minus deposit, and late has no buyer refund transfer. State, time and balance requirements still apply. A deposit-only early cancellation refunds the deposit; a deposit-only middle cancellation refunds zero. |
 | `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member positions.                                                                                                                                                               |
 | `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                           |
@@ -268,12 +280,6 @@ commitment creation, and cash prepare/distribute actions. Its repayment and shar
 child actions still lack a public execution path. It is a composition example,
 not a complete public repayment flow. Callers still need dates, agreement inputs,
 funded wallets, eligible settlements and the distribution's share records.
-
-Insurance providers are adapters, never party declarations. The tenant must retain
-commission and pay the insurer the remaining premium through a confirmed move.
-The current account ABI cannot bind an adapter-owned destination. Do not treat
-`insurance.cover` or `insurance.claim` as a complete insurer integration; claims
-currently reserve tenant funds.
 
 # Header inventory
 

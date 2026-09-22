@@ -2,7 +2,7 @@
   "name": "hsx-vscode",
   "displayName": "HSX 4",
   "description": "Syntax highlighting for typed HSX programs and headers.",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "publisher": "hyperscale0",
   "license": "SEE LICENSE IN LICENSE.md",
   "private": true,

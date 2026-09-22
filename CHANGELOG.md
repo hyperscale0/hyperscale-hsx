@@ -1,3 +1,13 @@
+# HSX 5.2.0
+
+An instrument field can bind an account owned by an ADL adapter:
+`account(adapter(binding), cash, "premium")` resolves at execution
+through the Product's adapter binding to the provider's account in the
+tenant's ledger (UDL 4.4.0). Providers stay adapters, not parties. The
+standard insurance header pays the insurer its premium net of the
+tenant's commission with a plain move, reverses both portions on refund,
+and reserves claim funds from the insurer-owned account.
+
 # HSX 5.1.0
 
 Child records of an attached instrument compile as their own attachments
