@@ -80,7 +80,7 @@ test("mutation conflicting authored type reports subject_field_conflict", () => 
       (item) => item.code,
     ),
     "incompatible authored and adapter types must refuse",
-  ).toContain("subject_field_conflict");
+  ).toEqual(["subject_field_conflict"]);
 });
 
 test("mutation unknown rename source reports subject_field_unknown", () => {
@@ -92,7 +92,7 @@ test("mutation unknown rename source reports subject_field_unknown", () => {
   expect(
     diagnostics.map((item) => item.code),
     "rename must name a declared subject requirement",
-  ).toContain("subject_field_unknown");
+  ).toEqual(["subject_field_unknown"]);
   expect(
     diagnostics.find((item) => item.code === "subject_field_unknown")?.fix,
     "the fix names the declared requirements so the author can pick one",

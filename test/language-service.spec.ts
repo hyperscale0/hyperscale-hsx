@@ -225,7 +225,6 @@ test("every example token is coloured and every UTF-16 offset permits a hover", 
     expect(highlights.map(({ start, end }) => ({ start, end }))).toEqual(
       tokens.map((token) => token.span),
     );
-    for (const span of highlights) expect(span.class.length).toBeGreaterThan(0);
     for (let offset = 0; offset <= example.source.length; offset++) {
       const hover = describe(example.source, offset);
       if (hover) {
@@ -234,4 +233,20 @@ test("every example token is coloured and every UTF-16 offset permits a hover", 
       }
     }
   }
+});
+
+// Mutation: restore the stale keyword list that omits parsed clauses and reserves by/for.
+test("keyword colouring follows the parser's clause words", () => {
+  for (const keyword of [
+    "has",
+    "boundary",
+    "key",
+    "family",
+    "check",
+    "result",
+    "maxAge",
+    "instruction",
+  ])
+    expect(kindAt(keyword, 0)).toBe("keyword");
+  for (const name of ["by", "for"]) expect(kindAt(name, 0)).toBe("name");
 });

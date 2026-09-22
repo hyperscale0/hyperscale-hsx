@@ -132,8 +132,9 @@ test("Role names cannot be declared as parties", () => {
   for (const role of ["owner", "actor", "operator"]) {
     const declaration = `party ${role}: business`;
     const source = `program p "P"\n${declaration}\nobject car "Car" {}`;
-    const diagnostic = compile(source).diagnostics[0]!;
-    expect(diagnostic.code).toBe("party_name_reserved");
+    const diagnostics = compile(source).diagnostics;
+    expect(diagnostics.map((d) => d.code)).toEqual(["party_name_reserved"]);
+    const diagnostic = diagnostics[0]!;
     expect(source.slice(diagnostic.span.start, diagnostic.span.end)).toBe(
       declaration,
     );
@@ -158,8 +159,10 @@ test("Attachment parameter kind controls admission", () => {
     ["party", "customer"],
   ])
     expect(
-      binding(`binding: ${type}`, `binding: ${party}`).diagnostics[0]?.code,
-    ).toBe("party_kind_mismatch");
+      binding(`binding: ${type}`, `binding: ${party}`).diagnostics.map(
+        (d) => d.code,
+      ),
+    ).toEqual(["party_kind_mismatch"]);
 });
 
 test("Named canonical diagnostics retain source spans and fixes", () => {

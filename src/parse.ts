@@ -37,6 +37,18 @@ export function parseProgram(source: string): {
         },
       ],
     };
+  if (/^\s*[[{]/.test(source))
+    return {
+      program: empty,
+      diagnostics: [
+        {
+          code: "HSX1014",
+          message: "JSON is not HSX source",
+          fix: 'write program name "Title" followed by HSX declarations',
+          span: { start: source.search(/\S/), end: source.search(/\S/) + 1 },
+        },
+      ],
+    };
   const result = lex(source);
   if (result.diagnostics.length)
     return { program: empty, diagnostics: result.diagnostics };
@@ -71,12 +83,12 @@ class Parser {
     this.take();
     return true;
   }
-  private fail(message: string, fix: string): never {
+  private fail(message: string, fix: string, span = this.peek().span): never {
     throw new ParseFailure({
       code: "HSX1000",
       message,
       fix,
-      span: this.peek().span,
+      span,
     });
   }
   private expect(text: string): void {
@@ -114,11 +126,19 @@ class Parser {
         );
       program.title = JSON.parse(this.take().text) as string;
     }
+    let currencyDeclared = false;
     while (this.peek().kind !== "eof") {
       this.separators();
       if (this.peek().kind === "eof") break;
       const start = this.peek().span.start;
-      if (this.eat("currency")) {
+      if (this.at("currency")) {
+        if (currencyDeclared)
+          this.fail(
+            "currency is declared twice",
+            "keep one currency declaration",
+          );
+        this.take();
+        currencyDeclared = true;
         program.currency = this.identifier();
         continue;
       }
@@ -326,8 +346,12 @@ class Parser {
   private operator(): Expr {
     const operator = this.take();
     if (!["==", "!=", "<", "<=", ">", ">="].includes(operator.text))
-      this.fail("expected a comparison", "write ==, !=, <, <=, >, or >=");
-    return this.node(operator.text);
+      this.fail(
+        "expected a comparison",
+        "write ==, !=, <, <=, >, or >=",
+        operator.span,
+      );
+    return { kind: "text", value: operator.text, span: operator.span };
   }
   private requirement(): BlockExpr {
     if (this.eat("unique")) {

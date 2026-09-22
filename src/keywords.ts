@@ -9,11 +9,11 @@ export const KEYWORD_HELP = {
   header: ["Names a reusable library of instruments."],
   use: ["Makes a header's instruments available to this program."],
   party: [
-    "Declares a person or business that can own accounts or act in an agreement.",
+    "Declares a person, business or staff party. Staff authority requires a permission role.",
     "Parties",
   ],
   role: ["Names the responsibility a declared party has in this product."],
-  currency: ["Sets the currency used by the program's money amounts."],
+  currency: ["Declares SAR, the currency supported by this compiler."],
   instrument: [
     "Defines an agreement's fields, states and permitted actions.",
     "Instruments",
@@ -37,7 +37,9 @@ export const KEYWORD_HELP = {
   of: [
     "Names the owner of an account, or the records included in a count or sum.",
   ],
-  when: ["Includes rules only when a parameter selects the stated option."],
+  when: [
+    "Includes clauses for a selected enum value or a field present on a bound reference.",
+  ],
   constraints: [
     "Requires parameter values to agree with each other before the program can be used.",
   ],
@@ -61,9 +63,15 @@ export const KEYWORD_HELP = {
     "Requires a referenced agreement to be in one of the listed states.",
     "State requirement",
   ],
-  by: ["Names who performs the stated operation."],
-  for: ["Identifies the subject of the stated rule."],
   is: ["Selects rules for one named parameter choice."],
+  has: ["Selects clauses when a bound reference declares the named field."],
+  family: ["Names an instrument family or the family of an evidence check."],
+  check: ["Names the provider check whose evidence the action requires."],
+  result: ["Names the required outcome of an evidence check."],
+  maxAge: ["Limits how old the required evidence may be."],
+  instruction: ["Binds evidence to the captured boundary instruction."],
+  boundary: ["Dispatches a reserved move through a bound ADL adapter."],
+  key: ["Names a move within its action."],
   unique: [
     "Rejects a repeated combination of values in the named namespace.",
     "Unique requirement",

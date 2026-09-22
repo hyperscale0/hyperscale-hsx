@@ -23,9 +23,8 @@ export const KEYWORDS = [
   "from",
   "to",
   "in",
-  "by",
-  "for",
   "is",
+  "has",
   "unique",
   "on",
   "count",
@@ -35,10 +34,17 @@ export const KEYWORDS = [
   "and",
   "timezone",
   "evidence",
+  "family",
+  "check",
+  "result",
+  "maxAge",
+  "instruction",
   "reserve",
   "post",
   "void",
   "capture",
+  "boundary",
+  "key",
   "fee",
   "shares",
   "object",
@@ -99,9 +105,11 @@ export function scan(
       kind = "name";
       text = name[0];
     } else if (tail[0] === '"') {
-      const quoted = /^"(?:[^"\\\n]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"/.exec(
-        tail,
-      );
+      const quoted =
+        // oxlint-disable-next-line no-control-regex -- JSON strings must escape raw control characters.
+        /^"(?:[^"\\\u0000-\u001f]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*"/.exec(
+          tail,
+        );
       if (!quoted) {
         diagnostics.push({
           code: "HSX1000",

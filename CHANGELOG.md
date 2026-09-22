@@ -1,3 +1,21 @@
+# HSX 5.3.0
+
+Malformed strings, field constructors, lifecycle and action shapes,
+integer bounds, constraints and family targets are refused with a
+diagnostic before traversal instead of throwing. Lifecycle pruning needs
+a real constant specialization: a `from` typo, an unreachable authored
+state and an explicit exposure that does not resolve reach UDL3001
+instead of being dropped. Typed child references follow declarations and
+export paths, so attachment order no longer matters, and subject
+requirement propagation is bounded by the declared action count instead
+of 32 passes. Adapter and party lookups use own entries only. Imported
+header diagnostics keep their source and the CLI prints it. Duplicate
+currency, instrument and parameter declarations refuse. HSX1014 refuses
+JSON authoring. Compilation and metadata share header admission, hover
+text names staff and SAR restrictions, and the keyword tables carry
+`has`, `boundary` and `instruction`. The standard `financing.late_charge`
+drops a `refunded` state no action reached.
+
 # HSX 5.2.0
 
 An instrument field can bind an account owned by an ADL adapter:

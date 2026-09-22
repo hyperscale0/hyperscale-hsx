@@ -23,7 +23,7 @@
     },
     {
       "name": "keyword.control.hsx",
-      "match": "\\b(program|header|use|object|attach|columns|subject|rename|party|role|currency|instrument|fields|lifecycle|action|expose|hide|as|cap|of|when|constraints|requires|invariants|moves|from|to|in|by|for|is|unique|on|count|sum|hours|between|and|timezone|evidence|reserve|post|void|capture|fee|shares)\\b"
+      "match": "\\b(program|header|use|object|attach|columns|subject|rename|party|role|currency|instrument|fields|lifecycle|action|expose|hide|as|cap|of|when|constraints|requires|invariants|moves|from|to|in|is|has|unique|on|count|sum|hours|between|and|timezone|evidence|family|check|result|maxAge|instruction|reserve|post|void|capture|boundary|key|fee|shares)\\b"
     },
     {
       "name": "storage.type.hsx",

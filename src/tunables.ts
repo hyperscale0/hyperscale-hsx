@@ -1,3 +1,4 @@
+import { fail } from "./diagnostics.ts";
 import type { Expr } from "./ast.ts";
 
 /** Bounds use UDL units: minor units, basis points and milliseconds. */
@@ -24,7 +25,11 @@ export function tunableBounds(
       numbers.some((value) => !Number.isSafeInteger(value)) ||
       numbers[0]! > numbers[1]!
     )
-      throw new Error("integer tunable needs a minimum and maximum");
+      fail(
+        type,
+        "integer tunable needs ordered safe integer bounds",
+        "write integer(1, 12)",
+      );
     return { minimum: numbers[0]!, maximum: numbers[1]! };
   }
   return { minimum: 0, maximum: Number.MAX_SAFE_INTEGER };

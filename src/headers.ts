@@ -3,7 +3,7 @@ import {
   parameterDiagnostics,
 } from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
-import { parseProgram } from "./parse.ts";
+import { parseHeader } from "./header-source.ts";
 import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
 import type { BlockExpr, Expr } from "./ast.ts";
 
@@ -32,9 +32,7 @@ export function headerManifest(
     headers: names.map((name) => {
       const source = library.source(name);
       if (!source) throw new Error(`Missing standard header ${name}`);
-      const parsed = parseProgram(source);
-      if (parsed.diagnostics.length)
-        throw new Error(`${name}: ${parsed.diagnostics[0]!.message}`);
+      const parsed = parseHeader(source, name);
       const spelling = (expression: Expr) =>
         source.slice(expression.span.start, expression.span.end).trim();
       const actions = (
@@ -66,7 +64,7 @@ export function headerManifest(
       };
       return {
         name,
-        objects: parsed.program.decls
+        objects: parsed.decls
           .filter((d) => d.kind === "instrument")
           .map((decl) => {
             const tunables = decl.parameters.map((parameter) => {
@@ -184,7 +182,7 @@ export function headerManifest(
                   if (subject?.kind !== "block") continue;
                   for (const field of subject.entries) {
                     const type = spelling(field.value);
-                    if (type !== "adapter") fields.set(field.key, type);
+                    if (field.key !== "adapter") fields.set(field.key, type);
                   }
                 }
                 return [...fields].map(([name, type]) => ({ name, type }));

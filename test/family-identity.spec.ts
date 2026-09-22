@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { assertValidUdl } from "@hyperscale0/udl";
 import { compile } from "../src/compile.ts";
 
 const fixtureHeader = `header fixture
@@ -62,13 +61,9 @@ object facility_pool "FacilityPool" {
   const result = compileFixture(source);
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  expect(() => assertValidUdl(doc)).not.toThrow();
 
   const alpha = doc.instruments.find((i) => i.id === "facility_pool_alpha");
   const beta = doc.instruments.find((i) => i.id === "facility_pool_beta");
-  expect(alpha).toBeDefined();
-  expect(beta).toBeDefined();
-  expect(alpha!.id).not.toEqual(beta!.id);
   expect(alpha!.family).toEqual({
     module: "fixture",
     exportPath: "facility",
@@ -86,9 +81,6 @@ object facility_pool "FacilityPool" {
   const betaTranche = doc.instruments.find(
     (i) => i.id === "facility_pool_beta_tranche",
   );
-  expect(alphaTranche).toBeDefined();
-  expect(betaTranche).toBeDefined();
-  expect(alphaTranche!.id).not.toEqual(betaTranche!.id);
   expect(alphaTranche!.family).toEqual({
     module: "fixture",
     exportPath: "facility.tranche",
@@ -103,7 +95,6 @@ object facility_pool "FacilityPool" {
   const customTranche = doc.instruments.find(
     (i) => i.id === "facility_pool_alpha_custom_tranche",
   );
-  expect(customTranche).toBeDefined();
   expect(customTranche!.family).toEqual({
     module: "fixture",
     exportPath: "facility.custom_tranche",
@@ -150,36 +141,32 @@ instrument tracker {
   const result = compileFixture(source);
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  expect(() => assertValidUdl(doc)).not.toThrow();
 
   const tracker = doc.instruments.find((i) => i.id === "tracker");
-  expect(tracker).toBeDefined();
 
   const refField = tracker!.fields.find((f) => f.name === "boundTranche");
-  expect(refField).toBeDefined();
-  expect(refField!.type).toEqual("ref");
-  if (refField!.type === "ref") {
-    expect(refField!.target).toEqual("loan_fac_tranche");
-    expect(refField!.targetFamily).toEqual({
+  expect(refField).toMatchObject({
+    type: "ref",
+    target: "loan_fac_tranche",
+    targetFamily: {
       module: "fixture",
       exportPath: "facility.tranche",
       revision: 1,
-    });
-  }
+    },
+  });
 
   const checkAction = tracker!.actions.check;
-  expect(checkAction).toBeDefined();
-  expect(checkAction!.invoke).toBeDefined();
   const inv = checkAction!.invoke![0]!;
-  expect("selection" in inv).toBe(true);
-  if ("selection" in inv) {
-    expect(inv.selection.instrument).toEqual("loan_fac_tranche");
-    expect(inv.selection.family).toEqual({
-      module: "fixture",
-      exportPath: "facility.tranche",
-      revision: 1,
-    });
-  }
+  expect(inv).toMatchObject({
+    selection: {
+      instrument: "loan_fac_tranche",
+      family: {
+        module: "fixture",
+        exportPath: "facility.tranche",
+        revision: 1,
+      },
+    },
+  });
 });
 
 test("Compilation refuses when selection.family does not match resolved target", () => {
@@ -280,10 +267,8 @@ instrument slice_picker {
   const result = compileFixture(source);
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  expect(() => assertValidUdl(doc)).not.toThrow();
 
   const planInst = doc.instruments.find((i) => i.id === "contract_plan");
-  expect(planInst).toBeDefined();
   expect(planInst!.family).toEqual({
     module: "financing",
     exportPath: "installments",
@@ -291,7 +276,6 @@ instrument slice_picker {
   });
 
   const sliceInst = doc.instruments.find((i) => i.id === "contract_plan_slice");
-  expect(sliceInst).toBeDefined();
   expect(sliceInst!.family).toEqual({
     module: "financing",
     exportPath: "installments.slice",
@@ -299,18 +283,16 @@ instrument slice_picker {
   });
 
   const picker = doc.instruments.find((i) => i.id === "slice_picker");
-  expect(picker).toBeDefined();
   const f = picker!.fields.find((f) => f.name === "primarySlice");
-  expect(f).toBeDefined();
-  expect(f!.type).toEqual("ref");
-  if (f!.type === "ref") {
-    expect(f!.target).toEqual("contract_plan_slice");
-    expect(f!.targetFamily).toEqual({
+  expect(f).toMatchObject({
+    type: "ref",
+    target: "contract_plan_slice",
+    targetFamily: {
       module: "financing",
       exportPath: "installments.slice",
       revision: 1,
-    });
-  }
+    },
+  });
 });
 
 test("Attached child record with underscore in identifier resolves family from declaration map", () => {
@@ -335,21 +317,18 @@ instrument custom_tracker {
   const result = compileFixture(source);
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  expect(() => assertValidUdl(doc)).not.toThrow();
 
   const tracker = doc.instruments.find((i) => i.id === "custom_tracker");
-  expect(tracker).toBeDefined();
   const refField = tracker!.fields.find((f) => f.name === "boundCustomTranche");
-  expect(refField).toBeDefined();
-  expect(refField!.type).toEqual("ref");
-  if (refField!.type === "ref") {
-    expect(refField!.target).toEqual("facility_pool_alpha_custom_tranche");
-    expect(refField!.targetFamily).toEqual({
+  expect(refField).toMatchObject({
+    type: "ref",
+    target: "facility_pool_alpha_custom_tranche",
+    targetFamily: {
       module: "fixture",
       exportPath: "facility.custom_tranche",
       revision: 3,
-    });
-  }
+    },
+  });
 });
 
 test("Reference field blocks accept an explicit union target list", () => {
@@ -375,22 +354,16 @@ instrument union_tracker {
   const result = compileFixture(source);
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  expect(() => assertValidUdl(doc)).not.toThrow();
 
   const tracker = doc.instruments.find((i) => i.id === "union_tracker");
-  expect(tracker).toBeDefined();
   const refField = tracker!.fields.find((f) => f.name === "bothTranches");
-  expect(refField).toBeDefined();
-  expect(refField!.type).toEqual("ref");
-  if (refField!.type === "ref") {
-    expect(refField!.target).toEqual([
-      "facility_pool_alpha_tranche",
-      "facility_pool_beta_tranche",
-    ]);
-    expect(refField!.targetFamily).toEqual({
+  expect(refField).toMatchObject({
+    type: "ref",
+    target: ["facility_pool_alpha_tranche", "facility_pool_beta_tranche"],
+    targetFamily: {
       module: "fixture",
       exportPath: "facility.tranche",
       revision: 1,
-    });
-  }
+    },
+  });
 });

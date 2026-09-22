@@ -92,14 +92,4 @@ export const lineColAt = (source: string, offset: number) => {
     column: offset - before.lastIndexOf("\n"),
   };
 };
-export function byteOffsetToCodeUnit(source: string, offset: number): number {
-  let bytes = 0;
-  let units = 0;
-  for (const c of source) {
-    bytes += new TextEncoder().encode(c).length;
-    if (bytes > offset) break;
-    units += c.length;
-  }
-  return units;
-}
 export type BlockExpr = Extract<Expr, { kind: "block" }>;

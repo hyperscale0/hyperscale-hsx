@@ -18,7 +18,8 @@ business, or a declared staff party with a supported role. Configure declared
 business participants per Build. Declared person parties cannot bind attachments.
 `owner` is the object's resolved customer or business, `actor` is the authenticated
 caller, and `operator` is the program operator. A parameter with one of these
-names binds by name. Other party parameters require an explicit binding.
+names binds by name. Other party parameters use a same-named eligible declaration,
+a header default, or an explicit binding. Explicit bindings take precedence.
 Unbound parameters report `subject_party_unbound`. These bindings are frozen in
 UDL `objects[].attachments[].parties`; no caller supplies party IDs at creation.
 
@@ -113,7 +114,8 @@ provider confirmation, not an internal account balance change.
 For a new record type, declare `instrument name { fields { ... } lifecycle { ... }
 action create { ... } }`. Fields are `money`, `account of buyer`, `ref<order>`,
 `date`, `duration`, `text`, `integer`, `percent`, `boolean`, `enum(a, b)` or
-`list(date, 12)`. `?` makes a field optional; `= value` fixes a constant or a typed
+`list(date, 12)`. `?` makes a plain type or `ref<T>` optional. Call types such as
+`list(date, 12)` do not accept `?`. `= value` fixes a constant or a typed
 calculation. Actions declare `input { reason: text }`. Headers and expert records
 write ordered requirements and moves as expressions:
 
@@ -125,7 +127,7 @@ moves self.price from self.held to payee fee fee
 ```
 
 Comparisons accept `==`, `!=`, `<`, `<=`, `>` and `>=`. A path beginning with
-`self`, `input` or `party` is a field operand; a quoted string, amount or number is
+`self`, `input`, `party` or `subject` is a field operand; a quoted string, amount or number is
 a literal. `requires unique "order" on [self.order]` fixes an identity namespace.
 `requires count of { instrument: child, reference: "parent", anchor: self.id,
 states: [pending], limit: 12 } == 12` checks a typed selection; `sum "amount" of`

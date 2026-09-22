@@ -1,22 +1,23 @@
 import { expect, test } from "bun:test";
 import { headerManifest } from "../src/headers.ts";
 
-test("manifest lists the subject fields an attached object must carry", () => {
-  const objects = headerManifest().headers.flatMap((header) => header.objects);
-  const byName = new Map(
-    objects.map((object) => [object.qualifiedName, object]),
+// Mutation: filter adapter requirements by their value instead of their key.
+test("manifest separates adapter bindings from authored subject fields", () => {
+  const source = `header custom
+instrument review {
+ action check { subject { adapter: verification, reference: text } }
+}`;
+  const manifest = headerManifest({ source: () => source }, ["custom"]);
+  expect(manifest.headers[0]?.objects[0]?.subject).toEqual([
+    { name: "reference", type: "text" },
+  ]);
+});
+
+// Mutation: bypass shared header declaration validation in headerManifest.
+test("metadata refuses duplicate parameters before presenting a signature", () => {
+  const source =
+    "header custom instrument review(count: integer, count: integer) {}";
+  expect(() => headerManifest({ source: () => source }, ["custom"])).toThrow(
+    "duplicate parameter count",
   );
-  expect(byName.get("escrow.hold")?.subject).toEqual([
-    { name: "price", type: "money" },
-  ]);
-  expect(byName.get("financing.installments")?.subject).toEqual([
-    { name: "price", type: "money" },
-  ]);
-  // Adapter subjects are provider bindings, not object fields.
-  expect(byName.get("insurance.cover")?.subject).toEqual([]);
-  expect(
-    objects.every((object) =>
-      object.subject.every((field) => field.type !== "adapter"),
-    ),
-  ).toBe(true);
 });

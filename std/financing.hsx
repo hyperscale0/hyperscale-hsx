@@ -456,7 +456,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     plan: ref<on>, slice: ref<on.slice>, borrower: account of borrower, fine: money = fine, overdueAt: date?
     receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")
   }
-  lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
+  lifecycle { states: [proposed, assessed, collected, waived], initial: proposed }
   action create { calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan }
   action assess { allowZero: true,
     from: proposed, to: assessed, actor: clock, due: { at: self.overdueAt }
@@ -523,7 +523,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         plan: ref<on>, assessment: ref<parent>, overdueAt: date?, evidence: text, evidencedCost: money, amount: money = minimum(self.evidencedCost, cap)
         receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")
       }
-      lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
+      lifecycle { states: [proposed, assessed, collected, waived], initial: proposed }
       action create { calculate: [{ target: overdueAt, op: shift, date: { field: self.assessment.overdueAt }, milliseconds: { literal: 0 }, direction: after }], requires unique "recovery_assessment" on [self.assessment]; requires self.plan == self.assessment.plan }
       action assess { allowZero: true,
         from: proposed, to: assessed, actor: clock, due: { at: self.assessment.overdueAt }

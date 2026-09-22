@@ -112,8 +112,8 @@ object rental "Rental" {
 }`;
   refusal(
     draft,
-    "`escrow.hold` has no `amount` tunable. Its funding action requires the object's `price` field.",
-    "Remove `amount`. To use your deposit field, add `rename { price: deposit }`.",
+    "`escrow.hold` has no `amount` tunable. Its actions require the object's `price` field.",
+    "Remove `amount`. To use your object's money field, add `rename { price: deposit }`.",
   );
   expect(
     compile(draft.replace("amount: 100 SAR", "rename { price: deposit }"), {

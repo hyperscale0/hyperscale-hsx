@@ -1,3 +1,4 @@
+import { CompileFailure, fail, failWithCode } from "./diagnostics.ts";
 import { hash as sha256 } from "fast-sha256";
 import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
@@ -10,6 +11,7 @@ import {
   type AttachmentPartyBinding,
   type SubjectPartyRole,
   udlObjectFieldSchema,
+  udlInstrumentSchema,
   type UdlAction,
   type UdlActionSubject,
   type UdlAdapterSubjectSnapshot,
@@ -29,6 +31,7 @@ import {
 } from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
+import { parseHeader } from "./header-source.ts";
 import {
   lineColAt,
   type AssignmentDecl,
@@ -71,43 +74,19 @@ export interface CompileResult {
     originMap: CompileOriginMapEntry[];
   };
 }
-class CompileFailure extends Error {
-  constructor(readonly diagnostic: Diagnostic) {
-    super(diagnostic.message);
-  }
-}
-function fail(
-  expr: { span: Span; source?: string },
-  message: string,
-  fix: string,
-): never {
-  return failWithCode(expr, "HSX1001", message, fix);
-}
-function failWithCode(
-  expr: { span: Span; source?: string },
-  code: string,
-  message: string,
-  fix: string,
-): never {
-  throw new CompileFailure({
-    code,
-    message,
-    fix,
-    span: expr.span,
-    ...(expr.source ? { source: expr.source } : {}),
-  });
+function fieldType(row: Entry): { type: Expr; sensitive: boolean } {
+  const type = row.value.kind === "default" ? row.value.type : row.value;
+  if (type.kind !== "call" || type.name !== "sensitive")
+    return { type, sensitive: false };
+  if (type.args.length !== 1)
+    fail(type, "sensitive needs one field type", "write sensitive(text)");
+  return { type: type.args[0]!, sensitive: true };
 }
 function lowerFieldShape(
   row: Entry,
   resolveExpr: (e: Expr) => Expr = (e) => e,
 ): Record<string, unknown> {
-  let rawValue = row.value.kind === "default" ? row.value.type : row.value;
-  let isSensitive = false;
-  if (rawValue.kind === "call" && rawValue.name === "sensitive") {
-    isSensitive = true;
-    rawValue = rawValue.args[0]!;
-  }
-  const t = rawValue;
+  const { type: t, sensitive: isSensitive } = fieldType(row);
   if (t.kind === "block") {
     const b = entries(t);
     if (b.has("family") || b.has("target") || b.has("instrument")) {
@@ -164,7 +143,22 @@ function lowerFieldShape(
     f.minimum = literal(resolveExpr(t.args[0]!));
     f.maximum = literal(resolveExpr(t.args[1]!));
   }
+  if (
+    t.kind === "call" &&
+    !["enum", "text", "integer", "money", "list", "account"].includes(type)
+  )
+    fail(
+      t,
+      `unknown field constructor ${type}`,
+      "use a field type without arguments",
+    );
   if (type === "list" && t.kind === "call") {
+    if (t.args.length < 1 || t.args.length > 2)
+      fail(
+        t,
+        "list needs an item type and optional bound",
+        "write list(text, 12)",
+      );
     const item = t.args[0]!;
     f.item = item.kind === "type" ? item.name : text(item);
     if (item.kind === "type" && item.name === "ref") {
@@ -199,7 +193,7 @@ function lowerObjectField(
     f.value =
       f.type === "enum" && constant.kind === "name"
         ? constant.value
-        : literal(constant);
+        : literal(constant, String(f.type));
   }
   const result = udlObjectFieldSchema.safeParse(f);
   if (!result.success)
@@ -233,7 +227,8 @@ const camel = (name: string) =>
   name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 /** Clock and parent actors run without a caller, so they have no public name. */
 const automatic = (actor: UdlAction["actor"]) =>
-  actor === "clock" || (typeof actor === "object" && "parent" in actor);
+  actor === "clock" ||
+  (actor !== null && typeof actor === "object" && "parent" in actor);
 const title = (name: string) =>
   name[0]!.toUpperCase() + name.slice(1).replaceAll("_", " ");
 function entries(block: BlockExpr): Map<string, Expr> {
@@ -290,7 +285,9 @@ function decimal(raw: string, scale: number, expr: Expr): string {
     BigInt(fraction.padEnd(scale, "0") || "0")
   ).toString();
 }
-function literal(expr: Expr): string | number | boolean {
+function literal(expr: Expr, expectedType?: string): string | number | boolean {
+  if (expr.kind === "text" && expectedType === "duration")
+    return literal({ ...expr, kind: "duration" });
   if (expr.kind === "money") {
     const [raw, currency] = expr.value.split(" ");
     if (currency !== "SAR")
@@ -330,8 +327,7 @@ function literal(expr: Expr): string | number | boolean {
   }
   if (
     expr.kind === "duration" ||
-    (expr.kind === "name" && /^P(?:\d|T)/.test(expr.value)) ||
-    (expr.kind === "text" && /^P(?:\d|T)/.test(expr.value))
+    (expr.kind === "name" && /^P(?:\d|T)/.test(expr.value))
   ) {
     const short = /^(\d+)(ms|s|m|h|d|w)$/.exec(expr.value);
     const units: Record<string, number> = {
@@ -343,7 +339,7 @@ function literal(expr: Expr): string | number | boolean {
       w: 604800000,
     };
     const iso =
-      /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
+      /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?=\d)(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
         expr.value,
       );
     const n = short
@@ -367,10 +363,11 @@ function literal(expr: Expr): string | number | boolean {
     const raw =
       expr.value.length === 10 ? expr.value + "T00:00:00Z" : expr.value;
     const n = Date.parse(raw);
+    const day = Date.parse(raw.slice(0, 10) + "T00:00:00Z");
     if (
       !Number.isFinite(n) ||
-      new Date(raw.slice(0, 10) + "T00:00:00Z").toISOString().slice(0, 10) !==
-        raw.slice(0, 10)
+      !Number.isFinite(day) ||
+      new Date(day).toISOString().slice(0, 10) !== raw.slice(0, 10)
     )
       fail(
         expr,
@@ -407,6 +404,15 @@ export function compile(
     };
   const program = parsed.program;
   const bindingDiagnostics: Diagnostic[] = [];
+  const adapterTarget = (binding: string): AdapterBindingTarget | undefined => {
+    const registry = options.adapterRegistry;
+    if (!registry || !Object.hasOwn(registry, binding)) return;
+    const target = registry[binding];
+    return target &&
+      Object.hasOwn(target.adapter.operationMap, target.operation)
+      ? target
+      : undefined;
+  };
   try {
     if (program.header)
       fail(
@@ -422,7 +428,6 @@ export function compile(
       );
     const templates = new Map<string, InstrumentDecl>();
     const declarationSources = new Map<InstrumentDecl, string>();
-    const declarationExportPaths = new Map<InstrumentDecl, string>();
     const requirementOrigins = new Map<
       UdlSubjectRequirement,
       { source: string; span: Span; message: string }
@@ -442,25 +447,34 @@ export function compile(
       if (!content)
         fail(use, `unknown header ${use.name}`, "choose a published header");
       sources.set(use.name, content);
-      const header = parseProgram(content);
-      if (
-        header.diagnostics.length ||
-        !header.program.header ||
-        header.program.name !== use.name
-      )
-        fail(
-          use,
-          `header ${use.name} is malformed`,
-          "repair the header source before compiling",
-        );
+      let header;
+      try {
+        header = parseHeader(content, use.name);
+      } catch (error) {
+        if (!(error instanceof CompileFailure)) throw error;
+        throw new CompileFailure({
+          ...error.diagnostic,
+          related: [
+            {
+              source: "program",
+              span: use.span,
+              message: `Imported header ${use.name}`,
+            },
+          ],
+        });
+      }
       const registerTemplates = (
         parentDecl: InstrumentDecl,
         prefix: string,
-        exportPath: string,
       ) => {
+        if (templates.has(prefix))
+          fail(
+            parentDecl,
+            `duplicate instrument ${prefix}`,
+            "give each instrument a distinct name",
+          );
         templates.set(prefix, parentDecl);
         declarationSources.set(parentDecl, use.name);
-        declarationExportPaths.set(parentDecl, exportPath);
         const recs = entries(asBlock(entries(parentDecl.body).get("records")));
         for (const [recName, recBlock] of recs) {
           const recDecl: InstrumentDecl = {
@@ -470,16 +484,12 @@ export function compile(
             body: asBlock(recBlock),
             span: parentDecl.span,
           };
-          registerTemplates(
-            recDecl,
-            `${prefix}.${recName}`,
-            `${exportPath}.${recName}`,
-          );
+          registerTemplates(recDecl, `${prefix}.${recName}`);
         }
       };
-      for (const decl of header.program.decls)
+      for (const decl of header.decls)
         if (decl.kind === "instrument") {
-          registerTemplates(decl, `${use.name}.${decl.name}`, decl.name);
+          registerTemplates(decl, `${use.name}.${decl.name}`);
         }
     }
     for (const decl of program.decls)
@@ -498,12 +508,12 @@ export function compile(
       product: program.name,
       title: program.title,
       currency: "SAR",
-      parties: {
+      parties: Object.assign(Object.create(null) as UdlDocument["parties"], {
         programOperator: { kind: "business", role: "program_operator" },
         programTax: { kind: "business", role: "tax_payable" },
         programFines: { kind: "business", role: "fine_payable" },
         programCosts: { kind: "business", role: "cost_recovery" },
-      },
+      }),
       objects: [],
       instruments: [],
     };
@@ -559,6 +569,8 @@ export function compile(
       }
     }
     const origins: CompileOriginMapEntry[] = [];
+    const exposures: { instrument: string; action: string; entry: Entry }[] =
+      [];
     const refundBindings = new Map<
       string,
       { parameter: string; span: Span; defaultState: string; action: string }[]
@@ -760,13 +772,11 @@ export function compile(
           );
           if (sub) {
             const fullExport = `${familyDeclaration.exportPath}.${sub}`;
-            try {
-              return resolveFamily(
-                `${familyDeclaration.module}.${fullExport}`,
-                { span: origin },
-                false,
-              );
-            } catch {}
+            return resolveFamily(
+              `${familyDeclaration.module}.${fullExport}`,
+              { span: origin },
+              false,
+            );
           }
         }
 
@@ -777,9 +787,7 @@ export function compile(
             const mod = declarationSources.get(tmpl);
             if (!mod || mod === "program") continue;
             if (targetId === asgnName) {
-              try {
-                return resolveFamily(asgn.target, asgn, false);
-              } catch {}
+              return resolveFamily(asgn.target, asgn, false);
             } else {
               const sub = resolveChildExportPath(
                 tmpl,
@@ -787,9 +795,7 @@ export function compile(
               );
               if (sub) {
                 const fullTarget = `${asgn.target}.${sub}`;
-                try {
-                  return resolveFamily(fullTarget, asgn, false);
-                } catch {}
+                return resolveFamily(fullTarget, asgn, false);
               }
             }
           }
@@ -798,12 +804,18 @@ export function compile(
       };
 
       const checkTargetFamily = (
-        targetIds: string | string[],
+        targetIds: unknown,
         expectedFamily: UdlFamily,
         expr: { span: Span; source?: string },
       ): void => {
         const ids = Array.isArray(targetIds) ? targetIds : [targetIds];
         for (const tid of ids) {
+          if (typeof tid !== "string")
+            fail(
+              expr,
+              "instrument target needs a name",
+              "name a declared instrument or a list of instruments",
+            );
           const fam = getInstrumentFamily(tid);
           if (
             !fam ||
@@ -964,11 +976,11 @@ export function compile(
                 entry.value.name === "money",
           );
           const target =
-            candidates.length === 1 ? candidates[0]!.key : "yourDepositField";
+            candidates.length === 1 ? candidates[0]!.key : "yourMoneyField";
           fail(
             suppliedValue,
-            `\`${assignments.get(id)?.target ?? decl.name}\` has no \`${key}\` tunable. Its funding action requires the object's \`${field}\` field.`,
-            `Remove \`${key}\`. To use your deposit field, add \`rename { ${field}: ${target} }\`.`,
+            `\`${assignments.get(id)?.target ?? decl.name}\` has no \`${key}\` tunable. Its actions require the object's \`${field}\` field.`,
+            `Remove \`${key}\`. To use your object's money field, add \`rename { ${field}: ${target} }\`.`,
           );
         }
         fail(
@@ -1141,7 +1153,7 @@ export function compile(
             param.value.kind === "default" ? param.value.type : param.value;
           const type =
             t.kind === "type" || t.kind === "call" ? t.name : text(t);
-          const v =
+          let v =
             (supplied.has(param.key) && !attachmentInfo) || type === "enum"
               ? actual
               : resolve(
@@ -1149,6 +1161,12 @@ export function compile(
                   new Set(),
                   !!attachmentInfo && type === "party",
                 );
+          if (
+            type === "duration" &&
+            (v.kind === "text" || v.kind === "name") &&
+            /^P/.test(v.value)
+          )
+            v = { ...v, kind: "duration" };
           environment.set(param.key, v);
           if (type === "enum" && t.kind === "call") {
             if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
@@ -1214,19 +1232,36 @@ export function compile(
                   "reference needs an object name",
                   "name a declared object",
                 );
-              const [root, ...tail] = value.value.split(".");
-              const obj = objects.get(root!);
-              const assignment = assignments.get(root!);
-              const targetType = obj ? obj.name : assignment?.target;
+              let targetType = objects.get(value.value)?.name;
+              const candidates = [
+                ...[...assignments.values()].map(
+                  (assignment) => [assignment.name, assignment.target] as const,
+                ),
+                ...program.decls
+                  .filter((decl) => decl.kind === "instrument")
+                  .map((decl) => [decl.name, decl.name] as const),
+              ];
+              for (const [instance, target] of candidates) {
+                if (value.value === instance) {
+                  targetType = target;
+                  break;
+                }
+                if (
+                  !value.value.startsWith(`${instance}.`) &&
+                  !value.value.startsWith(`${instance}_`)
+                )
+                  continue;
+                const template = templates.get(target);
+                if (!template) continue;
+                const suffix = value.value
+                  .slice(instance.length + 1)
+                  .replaceAll(".", "_");
+                const child = resolveChildExportPath(template, suffix);
+                if (child) targetType = `${target}.${child}`;
+              }
               if (
-                (!obj &&
-                  !assignment &&
-                  !document.instruments.some(
-                    (inst) => inst.id === value.value,
-                  )) ||
-                (t.kind === "type" &&
-                  t.target &&
-                  [targetType, ...tail].join(".") !== t.target)
+                !targetType ||
+                (t.kind === "type" && t.target && targetType !== t.target)
               )
                 fail(
                   value,
@@ -1258,17 +1293,22 @@ export function compile(
             type === "date" ||
             type === "duration" ||
             type === "integer" ||
-            type === "text"
+            type === "text" ||
+            type === "boolean"
           ) {
+            const bounds = tunableBounds(t);
             if (v.kind === "name" && v.value === "runtime") continue;
-            const expected = type === "integer" ? "number" : type;
+            const expected =
+              type === "integer"
+                ? "number"
+                : type === "boolean"
+                  ? "name"
+                  : type;
             if (
-              v.kind !== expected &&
-              !(
-                type === "duration" &&
-                (v.kind === "text" || v.kind === "name") &&
-                /^P/.test(v.value)
-              )
+              v.kind !== expected ||
+              (type === "boolean" &&
+                v.kind === "name" &&
+                !["true", "false"].includes(v.value))
             ) {
               if (type === "money" && v.kind === "name" && attachmentInfo) {
                 const target = v.value.replace(/^subject\./, "");
@@ -1301,7 +1341,6 @@ export function compile(
             }
             try {
               const value = literal(v);
-              const bounds = tunableBounds(t);
               if (
                 bounds &&
                 (BigInt(String(value)) < BigInt(bounds.minimum) ||
@@ -1321,6 +1360,12 @@ export function compile(
                 );
               throw error;
             }
+          } else {
+            fail(
+              t,
+              `unknown tunable type ${type}`,
+              "use a declared HSX tunable type",
+            );
           }
         } catch (error) {
           if (!(error instanceof CompileFailure)) throw error;
@@ -1372,6 +1417,21 @@ export function compile(
             rule,
             "constraint needs two declared tunables",
             "name the compared tunables",
+          );
+        const numericKind = (expr: Expr) =>
+          expr.kind === "name" && /^P/.test(expr.value)
+            ? "duration"
+            : expr.kind;
+        if (
+          !["money", "number", "percent", "duration"].includes(
+            numericKind(left),
+          ) ||
+          numericKind(left) !== numericKind(right)
+        )
+          fail(
+            rule,
+            "constraint needs numeric tunables of the same type",
+            "compare two amounts, integers, percentages or durations",
           );
         const a = BigInt(String(literal(left))),
           b = BigInt(String(literal(right)));
@@ -1473,7 +1533,7 @@ export function compile(
                       ? se.value.items.map(text)
                       : [text(se.value)];
                   return names.some((n) => {
-                    const reg = options.adapterRegistry?.[n];
+                    const reg = adapterTarget(n);
                     if (!reg) return false;
                     const op = reg.adapter.operationMap[reg.operation];
                     return op?.subjectRequirements?.some(
@@ -1534,7 +1594,7 @@ export function compile(
               instrumentVal = data(rawEntries.get("instrument")!);
               if (famTuple) {
                 checkTargetFamily(
-                  instrumentVal as string | string[],
+                  instrumentVal,
                   famTuple,
                   rawEntries.get("instrument")!,
                 );
@@ -1612,7 +1672,7 @@ export function compile(
       const lowerFields = (block: BlockExpr): UdlField[] => {
         const result: UdlField[] = [];
         for (const row of block.entries) {
-          const t = row.value.kind === "default" ? row.value.type : row.value;
+          const { type: t } = fieldType(row);
           const constant =
             row.value.kind === "default" ? resolve(row.value.value) : undefined;
           const f = lowerFieldShape(row, resolve);
@@ -1842,7 +1902,7 @@ export function compile(
                 op: "sum",
                 values: [val(constant)],
               });
-            else f.value = literal(constant);
+            else f.value = literal(constant, String(type));
           }
           result.push(f as UdlField);
         }
@@ -1850,9 +1910,11 @@ export function compile(
       };
       fields.push(...lowerFields(asBlock(body.get("fields"))));
       const lifecycle = data(
-        body.get("lifecycle") ?? emptyBlock,
+        asBlock(body.get("lifecycle")),
       ) as UdlInstrument["lifecycle"];
-      lifecycle.transitions = {};
+      lifecycle.transitions = Object.create(
+        null,
+      ) as UdlInstrument["lifecycle"]["transitions"];
       const inst: UdlInstrument = {
         id,
         ...(attachmentInfo ? { subject: attachmentInfo.subjectKindId } : {}),
@@ -1863,7 +1925,7 @@ export function compile(
         fields,
         calculate: calculations,
         lifecycle,
-        actions: {},
+        actions: Object.create(null) as UdlInstrument["actions"],
         actionOrder: [],
       };
       for (const row of decl.body.entries.filter((e) =>
@@ -1970,15 +2032,8 @@ export function compile(
               "name a bound ADL adapter",
             );
           const binding = text(resolve(adapterExpr!));
-          const target =
-            options.adapterRegistry &&
-            Object.hasOwn(options.adapterRegistry, binding)
-              ? options.adapterRegistry[binding]
-              : undefined;
-          if (
-            !target ||
-            !Object.hasOwn(target.adapter.operationMap, target.operation)
-          )
+          const target = adapterTarget(binding);
+          if (!target)
             fail(
               boundary,
               `unknown boundary adapter ${binding}`,
@@ -2034,7 +2089,7 @@ export function compile(
                   ? entry.value.items.map(adapterName)
                   : [adapterName(entry.value)];
               for (const bindingName of bindingNames) {
-                const target = options.adapterRegistry?.[bindingName];
+                const target = adapterTarget(bindingName);
                 if (target) {
                   const { adapter, operation } = target;
                   const opBinding = adapter.operationMap[operation];
@@ -2562,15 +2617,32 @@ export function compile(
         }
         if (attachmentInfo && !attachmentInfo.child) {
           if (attachmentInfo.exposed.has(name)) {
+            if (automatic(a.actor))
+              fail(
+                row,
+                `${name} runs on the clock or its parent, not a caller`,
+                "expose only caller actions",
+              );
             a.publicAction = attachmentInfo.exposed.get(name)!;
           } else {
             delete a.publicAction;
           }
         }
         if (automatic(a.actor)) delete a.publicAction;
-        const checkSubjectPaths = (obj: unknown, span: Span) => {
+        const checkSubjectPaths = (obj: unknown, span: Span, key = "") => {
           if (typeof obj === "string") {
-            if (obj.startsWith("subject.")) {
+            if (
+              [
+                "field",
+                "fields",
+                "reference",
+                "anchor",
+                "subject",
+                "at",
+                "instruction",
+              ].includes(key) &&
+              obj.startsWith("subject.")
+            ) {
               const subField = obj.split(".")[1]!;
               const req = a.subject?.requirements.find(
                 (r) => r.field.name === subField,
@@ -2585,9 +2657,10 @@ export function compile(
               }
             }
           } else if (Array.isArray(obj)) {
-            for (const item of obj) checkSubjectPaths(item, span);
+            for (const item of obj) checkSubjectPaths(item, span, key);
           } else if (obj !== null && typeof obj === "object") {
-            for (const val of Object.values(obj)) checkSubjectPaths(val, span);
+            for (const [key, val] of Object.entries(obj))
+              checkSubjectPaths(val, span, key);
           }
         };
         checkSubjectPaths(a.requires, row.span);
@@ -2617,6 +2690,27 @@ export function compile(
           (inst as unknown as Record<string, unknown>)[key] = data(
             body.get(key)!,
           );
+      const shape = udlInstrumentSchema.safeParse(inst);
+      if (!shape.success) {
+        const issue = shape.error.issues[0]!;
+        const actionName =
+          issue.path[0] === "actions" ? String(issue.path[1]) : undefined;
+        const node =
+          decl.body.entries.find(
+            (entry) =>
+              entry.key ===
+              (actionName ? `action ${actionName}` : String(issue.path[0])),
+          ) ?? decl;
+        failWithCode(
+          {
+            span: node.span,
+            source: declarationSources.get(decl) ?? "program",
+          },
+          "UDL1003",
+          `${id}.${issue.path.join(".")}: ${issue.message}`,
+          "use the UDL typed clause shape",
+        );
+      }
       origins.push({
         path: `$.instruments[${document.instruments.length}]`,
         span: { ...origin, ...lineColAt(source, origin.start) },
@@ -2696,7 +2790,6 @@ export function compile(
         }
       }
 
-      // 1. Lower authored fields
       const authoredFields: UdlObjectField[] = [];
       const authoredNames: string[] = [];
       const fieldsBlock = asBlock(body.get("fields"));
@@ -2713,7 +2806,6 @@ export function compile(
         authoredNames.push(row.key);
       }
 
-      // 2. Process attachments
       const attachments: UdlObjectAttachment[] = [];
       for (const entry of decl.body.entries) {
         if (!entry.key.startsWith("attach ")) continue;
@@ -2746,6 +2838,12 @@ export function compile(
         for (const row of attachmentBlock.entries) {
           if (row.key === "rename") {
             for (const r of asBlock(row.value).entries) {
+              if (renames.has(r.key))
+                fail(
+                  r,
+                  `duplicate rename ${r.key}`,
+                  "rename each subject field once",
+                );
               renames.set(r.key, text(r.value));
               renameEntries.set(r.key, r);
             }
@@ -2753,7 +2851,23 @@ export function compile(
             if (row.value.kind === "call") {
               const actionName = row.value.name;
               const publicName = text(row.value.args[0]!);
+              if (
+                exposed.has(actionName) ||
+                !template.body.entries.some(
+                  (entry) => entry.key === `action ${actionName}`,
+                )
+              )
+                fail(
+                  row,
+                  `unknown or repeated action ${actionName}`,
+                  "expose one declared action once",
+                );
               exposed.set(actionName, publicName);
+              exposures.push({
+                instrument: instId,
+                action: actionName,
+                entry: row,
+              });
             }
           } else {
             tunableEntries.push(row);
@@ -2882,7 +2996,6 @@ export function compile(
         }
       }
 
-      // 4. Validate columns
       const columnsExpr = body.get("columns");
       let columns: string[] = [];
       if (columnsExpr) {
@@ -2950,7 +3063,11 @@ export function compile(
     // Propagate invoked requirements with the conditions on each invocation path.
     let changedInvocations = true;
     let invocationIterations = 0;
-    while (changedInvocations && invocationIterations < 32) {
+    const invocationDepth = document.instruments.reduce(
+      (total, inst) => total + inst.actionOrder.length,
+      0,
+    );
+    while (changedInvocations && invocationIterations < invocationDepth) {
       changedInvocations = false;
       invocationIterations++;
       for (const inst of document.instruments) {
@@ -3167,6 +3284,17 @@ export function compile(
     const eliminatedStates = new Map<string, Set<string>>();
     // Remove branches excluded by immutable tunables before checking reference states.
     for (const inst of document.instruments) {
+      if (
+        !inst.lifecycle.states.includes(inst.lifecycle.initial) ||
+        Object.values(inst.lifecycle.transitions).some(
+          (edge) =>
+            edge.from.some((state) => !inst.lifecycle.states.includes(state)) ||
+            (edge.to !== "preserve" &&
+              !inst.lifecycle.states.includes(edge.to)),
+        )
+      )
+        continue;
+      let specialized = false;
       for (const [key, action] of Object.entries(inst.actions)) {
         const constant = (value: import("@hyperscale0/udl").UdlValue) => {
           if ("literal" in value) return value.literal;
@@ -3188,8 +3316,10 @@ export function compile(
         ) {
           delete inst.actions[key];
           delete inst.lifecycle.transitions[key];
+          specialized = true;
         }
       }
+      if (!specialized) continue;
       const reachable = new Set([inst.lifecycle.initial]);
       for (let n = 0; n < inst.lifecycle.states.length; n++)
         for (const edge of Object.values(inst.lifecycle.transitions))
@@ -3229,6 +3359,16 @@ export function compile(
             );
         }
       }
+    for (const exposure of exposures)
+      if (
+        !document.instruments.find((inst) => inst.id === exposure.instrument)
+          ?.actions[exposure.action]
+      )
+        fail(
+          exposure.entry,
+          `action ${exposure.action} is excluded by these bindings`,
+          "expose an action available with these tunables",
+        );
     const changed = new Set<string>();
     for (const decl of program.decls)
       if (decl.kind === "hide" || decl.kind === "expose") {
