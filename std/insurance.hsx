@@ -15,6 +15,10 @@ header insurance
 // Inspector is a bound party, not necessarily staff. These are ledger transfers;
 // outside settlement needs the boundary protocol, not a claim of provider success.
 
+// Cost: each slice collection or refund declares two transfers. Claim approval
+// reserves once; pay posts once and expiry voids once. Cover cancellation adds
+// bounded slice invocations. Run hsx cost for composed counts, not provider prices.
+
 instrument cover(holder: party, adapter: text, commission: percent = 0%, broker: party = programOperator, covers: ref, premium: money = runtime) {
   summary: "Recurring cover bound to an outside insurer across an ADL boundary."
   fields { covers: ref<covers>, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date }

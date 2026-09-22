@@ -6,9 +6,9 @@ use collections
 object car "Car" {
  fields { make: text, model: text, year: integer, vin: text, price: money }
  columns: [make, model, year, vin, price]
- attach sale = escrow.hold { payer: actor, payee: operator, expose fund as purchase }
- attach limits = financing.limits { borrower: actor, per_borrower: 250000 SAR }
- attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
+ attach sale = escrow.hold { expose create as create_sale, payer: actor, payee: operator, expose fund as purchase }
+ attach limits = financing.limits { expose create as create_limits, borrower: actor, per_borrower: 250000 SAR }
+ attach ceiling = financing.portfolio_limit { expose create as create_ceiling, limit: 10000000 SAR }
  attach plan = financing.installments {
   borrower: actor, capital: operator
   months: 36, profit: 8.5%, down_payment: 10%
@@ -17,8 +17,9 @@ object car "Car" {
   expose create as finance, expose sign as sign_contract, expose payoff as payoff
  }
  attach late = financing.late_charge {
+   expose create as create_late
   on: plan, grace: 3d, fine: 50 SAR, cap: 25 SAR
   fines_to: operator, costs_to: operator, borrower: actor
  }
- attach reminders = collections.reminder { on: plan, operator: operator, before_days: 3, overdue_days: 1 }
+ attach reminders = collections.reminder { expose create as create_reminders, on: plan, operator: operator, before_days: 3, overdue_days: 1 }
 }

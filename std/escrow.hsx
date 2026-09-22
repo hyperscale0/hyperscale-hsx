@@ -11,6 +11,10 @@ header escrow
 // it returns its credited balance to payer before cancelling. Confirm requires
 // the whole captured price in held. This flow has no partial release or refund.
 
+// Cost: create declares one owned account. Fund and refund each declare one
+// transfer; accept expands the configured fee and tax into moves. Run hsx cost
+// on the composed program for instruction counts. The executor supplies prices.
+
 instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
   revisioned: true
   summary: "Hold the subject price through delivery, acceptance and verified return."

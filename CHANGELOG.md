@@ -1,3 +1,14 @@
+# HSX 5.4.1
+
+Documentation only. The newcomer path now starts from a rental deposit
+with a fixed late fee and a partial refund (`examples/rental-deposit.hsx`),
+every sample program exposes agreement creation, the twelve standard
+library headers explain their instruction cost in their comment blocks,
+the reference explains objects versus agreements and admission versus
+static acceptance before using the terms, and `llms-full.txt` links are
+rebased to the package root. No compiler or standard library behaviour
+changed.
+
 # HSX 5.4.0
 
 Standard library: financing collects the missing down payment as a

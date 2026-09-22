@@ -14,6 +14,10 @@ header marketplace
 // cancellation return the whole reservation balance. Converted money is in escrow,
 // so subsequent return verification and refund use the escrow aliases.
 
+// Cost: listing and order actions declare no transfers. Reservation.create
+// declares one owned account; activate declares one deposit transfer. Cancellation
+// and credit split that balance into moves. Run hsx cost for the composed counts.
+
 instrument listing(seller: party) {
   revisioned: true
   summary: "A seller's offer and its asking price."

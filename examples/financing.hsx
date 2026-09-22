@@ -6,14 +6,17 @@ object enrolment "Enrolment" {
   fields { student: text, course: text, price: money }
   columns: [student, course, price]
   attach allowance = financing.limits {
+    expose create as create_allowance
     borrower: owner, per_borrower: 12000 SAR
     expose approve as approve_student
   }
   attach budget = financing.portfolio_limit {
+    expose create as create_budget
     limit: 500000 SAR
     expose approve as approve_budget
   }
   attach tuition = financing.installments {
+    expose create as create_tuition
     borrower: owner, capital: operator
     months: 3, profit: 0%, disburse_to: borrower
     limits: allowance, portfolio: budget

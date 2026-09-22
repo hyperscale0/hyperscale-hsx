@@ -1,0 +1,60 @@
+// A business rents equipment with a 1000 SAR deposit and a single 50 SAR late fee.
+// On-time return refunds 1000 SAR; late return pays the operator 50 SAR and refunds 950 SAR.
+program equipment_rental "Equipment rental"
+party renter: business
+
+// Program-local instruments have fixed terms and parties, not tunable parameters.
+instrument deposit {
+  summary: "Hold a rental deposit, then return it less any fixed late fee."
+  fields {
+    renter: account of renter
+    held: account of self
+    amount: money = 1000 SAR
+    lateFee: money = 50 SAR
+    dueAt: date
+    refund: money?
+  }
+  lifecycle { states: [pending, funded, returned, cancelled], initial: pending }
+  action create {
+    actor: { party: renter }
+    requires self.dueAt > self.now
+  }
+  action fund {
+    from: pending, to: funded, actor: { party: renter }
+    deadline: { at: self.dueAt }
+    moves self.amount from self.renter to self.held
+  }
+  action return_on_time {
+    from: funded, to: returned, actor: { party: programOperator }
+    deadline: { at: self.dueAt }
+    subject { returnReference: text }
+    moves self.held.balance from self.held to self.renter
+  }
+  action return_late {
+    from: funded, to: returned, actor: { party: programOperator }
+    due: { at: self.dueAt }
+    subject { returnReference: text }
+    calculate: [{ target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.lateFee }] }]
+    moves self.lateFee from self.held to programOperator
+    moves self.refund from self.held to self.renter
+  }
+  action cancel { from: pending, to: cancelled, actor: { party: renter } }
+}
+
+object rental "Equipment rental" {
+  fields { equipment: text }
+  columns: [equipment, dueAt]
+  attach security = deposit {
+    expose create as agree_rental
+    expose fund as pay_deposit
+    expose return_on_time as return_equipment
+    expose return_late as return_equipment_late
+    expose cancel as cancel_rental
+  }
+}
+
+hide deposit.create
+hide deposit.fund
+hide deposit.return_on_time
+hide deposit.return_late
+hide deposit.cancel

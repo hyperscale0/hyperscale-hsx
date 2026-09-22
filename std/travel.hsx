@@ -18,6 +18,11 @@ header travel
 // price from paid only. A penalty above held cash or retained deposit refuses;
 // this header does not subsidize a shortfall or reduce the configured penalty.
 
+// Cost: booking.create declares one owned account. Deposit also invokes premium
+// collections; cancellation declares the selected refund, penalty, tax and retained
+// moves. Run hsx cost for bounded counts. Supplier penalties are business terms,
+// not compiler or executor fees.
+
 instrument package(price: money, supplier_cost: money, departure: date) {
   constraints { supplier_cost: at_most(price) }
   summary: "Immutable package price, supplier cost and departure."

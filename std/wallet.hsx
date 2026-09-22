@@ -9,6 +9,10 @@ header wallet
 // Existing reservations may still post after the wallet freezes. There is no
 // daily aggregate limit, partial spend or card-network settlement in this header.
 
+// Cost: balance.create declares one owned account; topup and withdraw each
+// declare one transfer. Spend reserve, pay and cancel each declare one transfer
+// instruction. These are counts, not the executor tariff.
+
 instrument balance(holder: party, spend_limit: money = 100000 SAR) {
   summary: "A holder's reusable balance with an immutable per-spend ceiling."
   fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit }

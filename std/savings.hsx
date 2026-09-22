@@ -17,6 +17,10 @@ header savings
 // Circle.close needs every membership received and an empty held account.
 // Circle creation collects circleDates, one date per member for contributions and payouts.
 
+// Cost: circle.create declares one owned account. Each contribution payment
+// and each pot payout declares one transfer. Multiply by the actual member and
+// period counts for a completed circle; hsx cost reports per-action bounds.
+
 instrument circle(contribution: money, members: integer(1, 60), starts: date, memberships: ref<savings.membership> = object(savings.membership)) {
   summary: "A fixed group contributes on its explicit calendar and takes the pot in order."
   fields { contribution: money = contribution, members: integer = members, startsAt: date = starts, circleDates: list(date, members), pot: money = multiply(self.contribution, self.members), held: account of self }

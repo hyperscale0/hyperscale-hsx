@@ -4,9 +4,9 @@ use escrow
 use financing
 object car "Cars" {
  fields { make: text, model: text, year: integer }
- attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
- attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
- attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
+ attach sale = escrow.hold { expose create as create_sale, payer: actor, payee: owner, expose fund as sell }
+ attach limits = financing.limits { expose create as create_limits, borrower: actor, per_borrower: 60000 SAR }
+ attach ceiling = financing.portfolio_limit { expose create as create_ceiling, limit: 1500000 SAR }
  attach plan = financing.installments {
   borrower: actor, capital: operator, share: 25%
   months: 3, profit: 2.5%, funds: sale, limits: limits, portfolio: ceiling

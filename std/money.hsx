@@ -13,6 +13,10 @@ header money
 // matching terminal instruction evidence. An acknowledgement cannot settle it.
 // Metered bill charges a unique usage identity at the fixed unit price.
 
+// Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
+// fund, release and refund each declare one transfer. Schedules and pools add bounded
+// child invocations. Run hsx cost on the composed program for counts, not SAR prices.
+
 instrument transfer(payer: party, payee: party, amount: money = runtime) {
   summary: "One transfer between the bound parties."
   fields { amount: money = amount }

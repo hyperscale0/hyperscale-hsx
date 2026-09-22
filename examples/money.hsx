@@ -10,6 +10,7 @@ object lesson "Lesson" {
   }
   columns: [student, tutor, startsAt]
   attach payment = money.transfer {
+    expose create as create_payment
     payer: actor, payee: operator, amount: 150 SAR
     expose pay as pay_for_lesson
     expose cancel as cancel_payment

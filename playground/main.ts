@@ -11,6 +11,7 @@ object tip "Tips" {
   fields { message: text }
   attach payment = money.transfer {
     payer: actor, payee: owner, amount: 10 SAR
+    expose create as create_tip
     expose pay as give
   }
 }

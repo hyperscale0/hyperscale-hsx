@@ -1,78 +1,61 @@
 # HSX
 
-Read the [language reference](docs/README.md).
+HSX is a typed composition language for a company's objects, agreements and
+actions. Programs can model a repair approval, a rental deposit or a financing
+plan. The compiler produces canonical UDL for an executor. It executes no actions.
+This release supports SAR.
 
-Run `bun run build` to build this package and `bun run check` to check it.
+## Start here
+
+Install the published package locally with `npm install @hyperscale0/hsx`.
+Its `hsx` executable requires Node.js 22 or later. Use `npx hsx` for a local install:
+
+```sh
+npx hsx check rental.hsx
+npx hsx build rental.hsx --out rental.udl.json
+npx hsx cost rental.hsx
+```
+
+Start with the [first program and rental guide](docs/README.md). Save the
+[rental source](examples/rental-deposit.hsx) as `rental.hsx` for these commands.
+It holds 1,000 SAR, charges a one-time 50 SAR late fee, and returns the remainder.
+The guide explains the fixed business binding and the host needed to execute it.
+
+The [header inventory](docs/headers.md) lists available instruments and tunables.
+The [sample index](docs/examples.md) includes both complete action paths and
+compositions that still need child-record actions or adapter bindings. A compile
+pass does not prove that a flow is publicly executable or funded.
 
 ## Browser language service
 
-Import `highlight` and `describe` from `@hyperscale0/hsx/language`, or
-`@hyperscale0/hsx/language` in the workspace. The entry has no Node imports and
-needs no editor framework. The playground uses it as you type and shows
-explanations when you point at the highlighted program or move the editor cursor.
-
 ```ts
 import { highlight, describe } from "@hyperscale0/hsx/language";
+import { examples } from "@hyperscale0/hsx/examples";
 
-const source = 'program shop "Shop"\nuse escrow';
+const source = examples[0]!.source;
 const spans = highlight(source);
-const hover = describe(source, source.indexOf("escrow"));
+const hover = describe(source, source.indexOf("program"));
 ```
 
-Both functions accept incomplete source. Highlights are sorted, non-overlapping
-spans with half-open UTF-16 offsets. Whitespace has no span. Hover returns `null`
-for whitespace, unknown names and offsets outside a token. Highlight classes
-separate keywords, headers, instruments, actions, parties, roles, fields,
-parameters, types, states, money, numbers, percentages, durations, dates,
-strings, comments, operators, punctuation and other names.
+Both functions accept incomplete source and need no Node or editor framework.
+Spans use half-open UTF-16 offsets. Whitespace has no span; unknown hover targets
+return `null`. Pass a `StandardLibrary` as the last argument for custom headers.
+Header signatures and bounds come from compiler metadata. Bounds use minor
+currency units, basis points and milliseconds.
 
-Header explanations, signatures, parameter defaults and bounds, states and action
-actors come from the same header manifest used by the compiler's consumers.
-Local explanations use the program's declarations. One keyword table owns the
-business explanations. Bounds retain UDL units, which are minor currency units,
-basis points and milliseconds for money, percentages and durations.
+Examples have `id`, `title`, `summary`, `headers` and `source`. The ID is the
+filename without `.hsx`; leading comments supply the summary. The array is sorted
+by filename and contains no filesystem imports. Workspace imports use
+`@hyperscale0/hsx` instead of the published `@hyperscale0/hsx` name.
 
-Pass an optional `StandardLibrary` as the last argument to either function to
-resolve your own headers. Failed or incomplete headers keep lexical colouring.
-Local declaration resolution uses the parser when the document parses; incomplete
-documents retain token colouring, party declarations, imports and standard
-attachment parameters and actions. The service retains only the latest bundled
-library document and a bounded cache of header metadata. Returned values can be
-modified without changing later results.
+## Working from source
 
-## Sample programs
+Run `bun install` and `bun run build` in this package's public source checkout.
+Run `bun bin/hsx.ts check examples/rental-deposit.hsx` to use the source CLI.
+`bun run check` checks types, compiles bundled examples and checks bundle freshness.
 
-The [sample index](docs/examples.md) lists fifteen programs. Twelve introduce
-the standard headers through small businesses: tutoring, freelance work, used
-devices, prepaid workshops, tuition lending, community lending, device cover,
-collections, travel, employee cards, a savings circle and equipment loan reports.
-The authored repair approval example builds its lifecycle and evidence requirements directly. The two longer-standing examples show a minimal financed car sale and servicing
-with late charges and reminders.
-
-```ts
-import { examples, type HsxExample } from "@hyperscale0/hsx/examples";
-
-const sample: HsxExample = examples[0]!;
-const spans = highlight(sample.source);
-```
-
-Use `@hyperscale0/hsx/examples` inside the workspace. Each record has `id`, `title`,
-`summary`, `headers` and `source`. The ID is the filename without `.hsx`, the title
-is the program's display name, and headers follow its `use` declarations in source
-order. The summary joins the leading `//` comments with spaces. Put the business
-summary before the program declaration; later comments explain individual choices.
-The array is sorted by filename and imports no filesystem or compiler code.
-
-Add an `.hsx` file to `examples/`, then run `bun run generate`. It writes the
-example bundle and sample index alongside the standard-library outputs. Package
-preparation also creates both bundles for a fresh checkout. `bun run check`
-compiles every file, checks that the generated example bytes match the source,
-and exercises highlighting and hover at every sample offset. A stale bundle
-fails the check; regenerate after an example edit.
-
-The insurance and travel samples name ADL adapter bindings. Compilation preserves
-unbound declarations, but Product creation and recomposition reject unresolved
-or changed adapter dependencies during Build admission. Execution checks the
-frozen declaration too, including adapter unavailability after a Build was saved. Dates, agreement inputs and declared business parties still
-need values when the product runs. A compiled sample is not a connected provider
-or a funded agreement.
+Edit prose in `docs/README.md`, programs in `examples/`, and header comments in
+`std/`. Run `bun run generate` after changing these inputs. It emits the header
+and example bundles, reference indexes and model-readable files. Do not edit
+`docs/headers.md`, `docs/examples.md`, `llms.txt` or `llms-full.txt` by hand.
+`bun run build` also builds the browser playground.

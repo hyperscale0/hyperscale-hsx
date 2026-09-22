@@ -1,17 +1,106 @@
 # HSX
 
-A program declares business objects and financial instruments. Objects contain
-optional metadata. Attachments expose named actions against an object.
+HSX composes a company's objects, agreements and actions into a typed program.
+A repair approval can change state without moving money. A rental can collect a
+deposit and refund it under declared rules. Headers supply reusable instruments;
+you can also write an instrument with its own fields, lifecycle and actions.
+The compiler emits UDL, the Universal Domain Language contract an executor reads.
+It does not run the business or move money. This release supports SAR only.
+
+## First program
+
+The package supplies the `hsx` executable. Save this as `lesson.hsx`:
 
 ```hsx
-program cars "Cars"
-use escrow
-object car "Cars" {
- fields { make: text, model: text, year: integer }
- columns: [make, model, year]
- attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
+program tutoring "Tutoring studio"
+use money
+object lesson "Lesson" {
+  fields { student: text }
+  columns: [student]
+  attach payment = money.transfer {
+    payer: owner, payee: operator, amount: 150 SAR
+    expose create as book_lesson
+    expose pay as pay_for_lesson
+    expose cancel as cancel_lesson
+  }
 }
 ```
+
+An object is the business record. An instrument holds an agreement's state and
+money rules. An attachment connects the instrument to an object kind. A tunable
+is a header parameter, such as `amount`, fixed by this program. An exposed action
+is a public name for an instrument action. Exposing it does not grant permission.
+
+```sh
+hsx check lesson.hsx
+hsx build lesson.hsx --out lesson.udl.json
+hsx cost lesson.hsx
+```
+
+`check` exits zero without output on success. `build` writes canonical UDL;
+without `--out` it prints to stdout. `cost` prints instruction counts, described
+below. `format` prints formatted source or writes it with `--out`. `headers --json`
+prints the header manifest. These commands have no `--strict` or `--catalog` option.
+Exit 1 means invalid source; exit 2 means a command or file error. Diagnostics name
+the source, line, column, code, problem and suggested fix. UDL validation keeps
+its UDL diagnostic codes; binding errors can have names such as
+`subject_party_unbound`. Read the message and fix, not just the code.
+
+At runtime, create a lesson object first, then call `book_lesson` to create its
+agreement. Call `pay_for_lesson` on that agreement to move 150 SAR from its bound
+owner to the operator. Object creation alone creates no agreement. Object
+metadata such as `student` is optional until an action requires it. Account IDs
+and party IDs are not metadata supplied by the caller.
+
+## A rental deposit in one hour
+
+Open [rental-deposit.hsx](../examples/rental-deposit.hsx). It is a complete source
+file for a business renting equipment from the program operator. Copy it to
+`rental.hsx` and run the same check, build and cost commands against that file.
+No header import is needed because it declares its own instrument.
+
+The terms are a 1,000 SAR deposit and a one-time 50 SAR late fee. The supplied
+`dueAt` timestamp is the cutoff: a return before it gets the whole deposit back;
+a return at or after it gets 950 SAR back. The operator receives the other 50 SAR.
+The late fee is not a daily charge and is not `financing.late_charge`, which
+requires a financing plan and an overdue installment.
+
+| Step                         | Public action           | Actor and required values                                                             | Money effect                                       |
+| ---------------------------- | ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Create the object            | Host object creation    | Optional `equipment` metadata                                                         | None                                               |
+| Agree terms                  | `agree_rental`          | Bound renter; `dueAt`, for example `2027-01-10T12:00:00+03:00`, must be in the future | Creates the agreement's held account               |
+| Fund before the cutoff       | `pay_deposit`           | Bound renter with 1,000 SAR available                                                 | Renter pays 1,000 SAR into held                    |
+| Record an on-time return     | `return_equipment`      | Operator; `returnReference` metadata                                                  | Held pays 1,000 SAR to renter                      |
+| Or record a late return      | `return_equipment_late` | Operator; `returnReference` metadata                                                  | Held pays 50 SAR to operator and 950 SAR to renter |
+| Cancel an unfunded agreement | `cancel_rental`         | Bound renter, while pending                                                           | None                                               |
+
+Choose one return action. Both finish the agreement, so the fee and refund cannot
+repeat. The late action calculates the refund from the held balance before either
+move runs. Both paths empty the held account. `returnReference` records the
+operator's return evidence; it does not verify the physical return. Time means
+the executor's current time when the action runs, not a caller-supplied return date.
+A late `due` permits the operator action; it does not schedule that action.
+
+This sample binds a declared business named `renter` in Product configuration.
+It uses fixed parties because this compiler rejects parameterized instruments
+inside a program. Changing the renter binding is a Build configuration decision,
+not a different party ID on each request. Use header party parameters bound to
+`owner` or `actor` for per-object participants. Reusable custom headers require a
+host-supplied `StandardLibrary`; `use` cannot load a local file through this CLI.
+
+Inspect `objects` in the compiled UDL for the attachment and public names, then
+its instrument for fields, transitions, actors, requirements and ordered moves.
+The `hide deposit.*` lines remove public names from the unattached declaration;
+the attachment exposes its own copy. `money.hold` and `escrow.hold` both refund
+whole amounts, so neither implements this partial-refund policy by itself.
+
+A local compile gives you a contract. Executing it needs a host with authenticated
+parties, object actions, funded accounts and a saved Product Build. A Build is the
+frozen contract and configuration used by its agreements. Existing agreements
+keep that Build when the program changes. The package includes no local money
+executor. Compilation cannot establish balances, permissions or provider readiness.
+
+## Objects, metadata and parties
 
 Every attached party parameter binds to `owner`, `actor`, `operator`, a declared
 business, or a declared staff party with a supported role. Configure declared
@@ -42,6 +131,8 @@ Creation accepts `{}`. Every normalized field, including adapter requirements,
 is optional at creation. Only a named action requires its subject metadata.
 Use `attach` inside the object block to configure its financial instruments.
 
+## Headers and tunables
+
 The header defines the available policies. The company chooses percentages, amounts, durations,
 parties and typed references. `funds: sale` links the stored records through the
 library's declared reference type. References can name a child, such as
@@ -51,8 +142,13 @@ policy. Its references can point into either plan; selections can span both.
 A plain `ref<T>` accepts one object only.
 Tunable constructors are `enum(choices)` and `integer(minimum, maximum)`.
 Other constructors, including `party(business)` and bounded `money(...)`, are
-rejected at the header declaration. Their arguments do not restrict bindings.
+rejected as tunable types. A default selector such as `payer: party = party(person)`
+is different: its type is plain `party`, and the call chooses a default binding.
+Use explicit `payer: owner` or `payer: actor` bindings when the participant comes
+from the object or session.
 Imports are `use header`; there are no file imports, macros or executable strings.
+
+## Values and money
 
 Amounts use `750 SAR`; percentages use `2.5%`; durations use `48h`, `3d`, or `1w`.
 Dates use `2026-11-28` or a timestamp with an explicit offset. Money has at most two
@@ -81,11 +177,6 @@ same book and key within the Product. Providers remain outside parties.
 A missing binding refuses before money moves. Reference paths such as
 `self.cover.insurer` use the referenced agreement's account.
 
-Insurance collection pays the premium net of commission to the insurer account
-and pays commission separately to the bound broker, which defaults to the operator.
-Refunds return those two portions directly from insurer and broker to holder.
-Claims reserve from the cover's insurer account. These moves record ledger money;
-external confirmation still needs the boundary protocol.
 `account(buyer, claim, contra, "debt")` declares the borrower's claim contra account.
 Provider confirmation belongs on a reserved move with `boundary adapter`,
 followed by instruction-bound evidence and a post or void. External account
@@ -114,6 +205,14 @@ The four transfer instructions are create, reserve, post and void under
 `internal_transfer`. A captured transfer exposes reserved, posted, settled,
 reversed or voided status. Voided means a released reservation. Settled means
 provider confirmation, not an internal account balance change.
+
+## Authored instruments and actions
+
+An action is the business instruction: its actor, state, requirements and effects
+define when it is valid. The executor still checks those conditions on each call.
+The four transfer instructions below that action are its money effects. There is
+no general-purpose `instruction` declaration; `instruction` in an evidence clause
+binds external evidence to a captured boundary instruction.
 
 For a new record type, declare `instrument name { fields { ... } lifecycle { ... }
 action create { ... } }`. Fields are `money`, `account of buyer`, `ref<order>`,
@@ -146,7 +245,7 @@ maxAge 1d` requires a recent completed provider check.
 `capture`, `key` and `boundary` modifiers describe a move. `boundary` applies
 only to reservations. Fees settle with create moves, never reservations. Repeated clauses keep
 their declaration order. The JSON-like clause form remains accepted and lowers
-to the same [UDL clauses](../../udl/spec/README.md).
+to the same [UDL clauses](https://github.com/hyperscale0/hyperscale-udl/blob/main/spec/README.md).
 They cannot add kernel instructions. `at(list, position)` reads a dated list;
 `aggregate(selection, "amount")` sums selected money; `ratio(amount, weight, total)`
 floors a weighted share. `records` declares child types. `invoke` can create a child
@@ -241,25 +340,26 @@ unsupported percentage semantics and repair. They do not change the tunable type
 UDL refusals retain their UDL codes. A terminal-money refusal includes the owned
 account and the prover's action path in related diagnostic information.
 
-Build with `hsx build company.hsx --out company.udl.json`; check with
-`hsx check company.hsx`; print instruction counts with `hsx cost company.hsx`.
-Print the compiler-owned object manifest with `hsx headers --json`.
-The compiler API is `compile(source)`. A valid result contains `artifacts.document`,
-`costManifest` and source origins. Instruction counts are not bank tariffs or a
-promise of provider execution cost.
+## Instruction cost
+
+`hsx cost company.hsx` reports `transfers`, `accounts` and `invocations` per
+instrument action after lowering. Transfers count declared move instructions,
+including reserve, post and void. Accounts count self-owned accounts created by
+`create`, not every party account. Bounded invocations include child costs up to
+the selection limit, so a count is an upper bound rather than observed usage.
+Zero-valued moves can cost fewer actual transfers than their static count.
+
+The rental attachment's create declares one owned account, fund declares one
+transfer, on-time return one, and late return two. These are counts, not SAR
+prices. The executor's tariff supplies commercial prices and actual usage.
+
+The compiler API is `compile(source)`. On success, `result.verdict` is `valid`
+and `result.artifacts` contains `document`, `costManifest` and `originMap`.
+On refusal, inspect `result.diagnostics`; no artifact is returned.
 
 The [header inventory](headers.md) is generated from the declarations. The
 [object example](../examples/library.hsx) shows authenticated role bindings.
 The [playground](../playground/index.html) compiles locally in the browser.
-
-## Financing attachments
-
-Financing retains its authored borrower and portfolio limits. Bind every party
-parameter to a subject role, declared business or staff party with a supported
-role, and link the existing escrow and limits attachments.
-No limit is inferred from object metadata.
-
-See the complete [financing object example](../examples/library.hsx).
 
 ## Standard-library behavior
 
@@ -280,6 +380,12 @@ adapters are bound, participants have funds, or the flow can finish.
 | `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                                   |
 | `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                       |
 | `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate.                                                                                                                                                                                                                                                       |
+
+The financing, collections and reporting samples compose loan agreements; they
+do not supply a complete public repayment path. Insurance and travel also need
+premium-slice records and actions. Savings needs dated contribution records.
+Create aliases in these samples cover the root attachments, not every child
+record. Read each header's creation and lifecycle requirements before execution.
 
 The [lending sample](../examples/lending.hsx) exposes limit approvals, funding and
 commitment creation, and cash prepare/distribute actions. Its repayment and share

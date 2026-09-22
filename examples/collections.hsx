@@ -7,9 +7,10 @@ party agency: business
 object facility "Business loan" {
   fields { businessName: text, purpose: text, price: money }
   columns: [businessName, purpose, price]
-  attach allowance = financing.limits { borrower: owner, per_borrower: 100000 SAR }
-  attach budget = financing.portfolio_limit { limit: 2000000 SAR }
+  attach allowance = financing.limits { expose create as create_allowance, borrower: owner, per_borrower: 100000 SAR }
+  attach budget = financing.portfolio_limit { expose create as create_budget, limit: 2000000 SAR }
   attach loan = financing.installments {
+    expose create as create_loan
     borrower: owner, capital: operator
     months: 12, profit: 6%, disburse_to: borrower
     limits: allowance, portfolio: budget
@@ -17,12 +18,14 @@ object facility "Business loan" {
     expose disburse as release_loan
   }
   attach recovery = collections.case {
+    expose create as create_recovery
     on: loan, agency: agency
     expose assign as assign_case
     expose recover as recover_payment
     expose recall as recall_case
   }
   attach contact = collections.contact {
+    expose create as create_contact
     case: recovery, agency: agency
   }
 }

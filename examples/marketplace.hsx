@@ -7,20 +7,26 @@ object project "Project" {
   fields { brief: text, deliverable: text, price: money }
   columns: [brief, deliverable, price]
   attach offer = marketplace.listing {
+    expose create as create_offer
     seller: owner
     expose publish as publish_offer
     expose withdraw as withdraw_offer
   }
   attach order = marketplace.order {
+    expose create as create_order
     listing: offer, buyer: actor
     expose commit as place_order
     expose fulfill as finish_order
   }
   attach payment = escrow.hold {
+    expose create as create_payment
     payer: actor, payee: owner
     expose fund as fund_project
     expose deliver as submit_work
     expose accept as accept_work
     expose dispute as dispute_work
+    expose verify_return as verify_return
+    expose refund as refund_client
+    expose cancel as cancel_payment
   }
 }

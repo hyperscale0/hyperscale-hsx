@@ -22,6 +22,10 @@ header financing
 // not evidence of outside funding. Caller-authorized limit approvals and advances
 // need the Product's operation authority. No clock declaration proves retries.
 
+// Cost: installments include cash and claim moves, child-account creation and
+// bounded invocations across slices and assessments. Month and charge limits affect
+// the bound. Run hsx cost on the selected policies; profit is not a platform tariff.
+
 instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3, profit: percent, disburse_to: enum(funds, borrower) = funds, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref<escrow.hold>?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
   dependencies {
     funds {

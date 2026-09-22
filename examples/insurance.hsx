@@ -8,16 +8,19 @@ object device "Insured device" {
   fields { model: text, serialNumber: text, purchaseDate: date }
   columns: [model, serialNumber, purchaseDate]
   attach purchase = money.transfer {
+    expose create as create_purchase
     payer: owner, payee: operator
     expose pay as pay_for_device
   }
   // Bind device_insurer to an ADL adapter before creating cover. Premiums net of commission go to its account.
   attach protection = insurance.cover {
+    expose create as create_protection
     holder: owner, adapter: "device_insurer", commission: 10%, covers: purchase
     expose activate as activate_cover
     expose cancel as cancel_cover
   }
   attach claim = insurance.claim {
+    expose create as create_claim
     cover: protection, inspector: inspector
     expose approve as approve_claim
     expose deny as deny_claim

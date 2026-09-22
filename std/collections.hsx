@@ -11,6 +11,10 @@ header collections
 // before_due/overdue are clock-owned and require active debt. Scheduled admission
 // does not prove delivery or retry. No collector can infer authority from an alias.
 
+// Cost: case recovery invokes the linked payment and then charges its agency
+// fee. Its count includes those child effects. Contact and reminder delivery costs
+// are not provider prices in hsx cost; the executor supplies commercial tariffs.
+
 instrument case(on: ref<financing.installments>[], agency: party, capital: party = programOperator, overdue: duration = 3d, fee: percent = 20%) {
   revisioned: true
   summary: "Refer an overdue installment without creating another debt."

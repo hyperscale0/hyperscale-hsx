@@ -13,6 +13,7 @@ Each file is an authored program. Object creation enters no agreement; an attach
 | [Financed car sales](../examples/library.hsx) | escrow, financing | A minimal financed car sale connects escrow to a three-instalment plan and lending limits. |
 | [Freelance marketplace](../examples/marketplace.hsx) | marketplace, escrow | Freelancers publish offers and clients place orders with funds held until work is accepted. |
 | [Tutoring studio](../examples/money.hsx) | money | A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings. |
+| [Equipment rental](../examples/rental-deposit.hsx) |  | A business rents equipment with a 1000 SAR deposit and a single 50 SAR late fee. On-time return refunds 1000 SAR; late return pays the operator 50 SAR and refunds 950 SAR. |
 | [Repair approvals](../examples/repair-approval.hsx) |  | A repair shop records inspection and approval evidence before it can complete a job. |
 | [Equipment loan reports](../examples/reporting.hsx) | reporting, financing | An equipment lender keeps an ageing report over its financed purchases and recorded repayments. |
 | [Savings circle](../examples/savings.hsx) | savings | Six members contribute to a shared pot and receive it in their agreed calendar order. |

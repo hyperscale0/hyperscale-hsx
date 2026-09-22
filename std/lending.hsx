@@ -14,6 +14,10 @@ header lending
 // floored residual goes to residual_to. Loss mode moves claim balances, not cash.
 // Child share execution is parent-owned. No report or clock proves outside payout.
 
+// Cost: round.create declares one owned account. Close transfers its balance
+// and invokes commitments; failure invokes their refunds. Distribution adds moves
+// and bounded share invocations. Run hsx cost for counts after policy selection.
+
 instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), operator: party = programOperator, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
   summary: "A threshold funding round; failed rounds return each original wallet contribution."
   fields {

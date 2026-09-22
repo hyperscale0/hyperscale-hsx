@@ -45,13 +45,18 @@ const examplesReference = [
 ].join("\n");
 await writeFile(new URL("docs/examples.md", root), examplesReference);
 const reference = await readFile(new URL("docs/README.md", root), "utf8");
+// The combined document lives at the package root, one level above docs/.
+const rootReference = reference
+  .replaceAll("](../", "](")
+  .replaceAll("](headers.md)", "](docs/headers.md)")
+  .replaceAll("](examples.md)", "](docs/examples.md)");
 await writeFile(
   new URL("llms.txt", root),
   "# HSX\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Samples](docs/examples.md)\n",
 );
 await writeFile(
   new URL("llms-full.txt", root),
-  reference +
+  rootReference +
     "\n" +
     inventory +
     "\n" +

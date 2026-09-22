@@ -10,6 +10,10 @@ header reporting
 // explicitly refuse until their unavailable governed facts exist. No bureau
 // submission, provider layout, external transport or restructuring proof is supplied.
 
+// Cost: portfolio.create declares no transfers, owned accounts or invocations.
+// That zero instruction count does not price report capture, rendering, storage or
+// release. The host owns those charges and their execution.
+
 instrument portfolio(on: ref<financing.installments>[], default_days: integer(1, 3650) = 90, retention_years: integer(1, 100) = 10, aging_first_days: integer(1, 3650) = 30, aging_second_days: integer(1, 3650) = 60, aging_third_days: integer(1, 3650) = 90, ratio_scale: integer(1, 1000000) = 10000, ratio_rounding: enum(floor, halfUp) = floor, lock_wait_ms: integer(1, 2000) = 2000, capture_ms: integer(1, 10000) = 10000, max_rows: integer(1, 100000) = 10000, max_join_rows: integer(1, 1000000) = 100000, max_bytes: integer(1024, 16777216) = 8388608) {
   summary: "Declared financing reports evaluated over frozen Product facts."
   fields {}

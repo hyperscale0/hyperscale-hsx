@@ -12,6 +12,10 @@ header cards
 // Disputes need a posted transaction, issuer review and win before their deadline;
 // win invokes the same refund. The alias never changes the declared action actor.
 
+// Cost: authorization approve, capture and reverse each declare one transfer
+// instruction. Transaction refund declares one transfer; a successful dispute
+// invokes that refund. Card state changes alone declare no transfers.
+
 instrument cardholder(holder: party) {
   summary: "An account holder whose card access can be activated, suspended or closed."
   fields { holder: account of holder }

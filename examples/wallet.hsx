@@ -6,6 +6,7 @@ object membership "Membership" {
   fields { memberName: text, membershipNumber: text }
   columns: [memberName, membershipNumber]
   attach balance = wallet.balance {
+    expose create as create_balance
     holder: owner
     expose activate as open_balance
     expose topup as add_credit
@@ -13,6 +14,7 @@ object membership "Membership" {
     expose close as close_balance
   }
   attach visit = wallet.spend {
+    expose create as create_visit
     wallet: balance, payee: operator
     expose reserve as reserve_visit
     expose pay as charge_visit

@@ -29,6 +29,7 @@ object repair "Repair" {
   fields { item: text, problem: text }
   columns: [item, problem]
   attach review = assessment {
+    expose create as create_review
     expose inspect as inspect_repair
     expose approve as approve_repair
     expose reject as reject_repair

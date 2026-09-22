@@ -6,11 +6,13 @@ object group "Savings group" {
   fields { groupName: text, purpose: text }
   columns: [groupName, purpose]
   attach circle = savings.circle {
+    expose create as create_circle
     contribution: 500 SAR, members: 6, starts: 2027-01-01
     expose disband as disband_circle
     expose close as close_circle
   }
   attach membership = savings.membership {
+    expose create as create_membership
     circle: circle, member: actor
     expose activate as confirm_membership
     expose withdraw as leave_circle

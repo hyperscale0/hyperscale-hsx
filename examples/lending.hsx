@@ -9,14 +9,17 @@ object business "Business funding" {
   fields { businessName: text, purpose: text, price: money }
   columns: [businessName, purpose, price]
   attach allowance = financing.limits {
+    expose create as create_allowance
     borrower: owner, per_borrower: 100000 SAR
     expose approve as approve_borrower
   }
   attach budget = financing.portfolio_limit {
+    expose create as create_budget
     limit: 2000000 SAR
     expose approve as approve_budget
   }
   attach loan = financing.installments {
+    expose create as create_loan
     borrower: owner, capital: operator
     months: 12, profit: 6%, disburse_to: borrower
     limits: allowance, portfolio: budget
@@ -24,6 +27,7 @@ object business "Business funding" {
     expose disburse as release_loan
   }
   attach investor_balance = wallet.balance {
+    expose create as create_investor_balance
     holder: actor
     expose activate as open_wallet
     expose topup as add_funds
@@ -39,6 +43,7 @@ object business "Business funding" {
     expose withdraw as withdraw_investment
   }
   attach returns = lending.distribution {
+    expose create as create_returns
     round: funding, receipt: loan.settlement
     expose prepare_cash as prepare_returns
     expose distribute_cash as distribute_returns

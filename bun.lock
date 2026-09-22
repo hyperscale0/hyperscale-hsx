@@ -6,7 +6,7 @@
       "name": "@hyperscale0/hsx",
       "dependencies": {
         "@hyperscale0/adl": "1.0.0-beta.8",
-        "@hyperscale0/udl": "4.5.0",
+        "@hyperscale0/udl": "4.5.1",
         "fast-sha256": "1.3.0",
       },
       "devDependencies": {
@@ -16,9 +16,9 @@
     },
   },
   "packages": {
-    "@hyperscale0/adl": ["@hyperscale0/adl@1.0.0-beta.8", "", { "dependencies": { "@hyperscale0/udl": "4.5.0", "zod": "4.6.5" } }],
+    "@hyperscale0/adl": ["@hyperscale0/adl@1.0.0-beta.8", "", { "dependencies": { "@hyperscale0/udl": "4.0.0", "zod": "4.6.5" } }, "sha512-nQdZlqf+1R7n3+yYrEfGW3eibAdrXD+83CiHJeY2KLG/PG7YDx9/UVdMPBsgRSD1GHzB4swUo1rgxbZQpwfjrQ=="],
 
-    "@hyperscale0/udl": ["@hyperscale0/udl@4.5.0", "", { "dependencies": { "zod": "4.6.5" }, "bin": { "udl": "./dist/cli.js" } }],
+    "@hyperscale0/udl": ["@hyperscale0/udl@4.5.1", "", { "dependencies": { "zod": "4.6.5" }, "bin": { "udl": "dist/cli.js" } }, "sha512-W/Z2EOXfMj/P3eXglC96WNww3AKnjG4swERdnBetcO9KT7wgBRcEDYjIjaz/J+RPY8k9JQWNc4ucr0l0hmKdEw=="],
 
     "@types/node": ["@types/node@26.6.2", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-X1P21scMv4zGKLYqjdGjaKa7COa0RKVYYZZN/NfvLQ1JegxFhdhpZG/Lyn8AXx6CDUavKAd11v6BvfpkDByK8g=="],
 
@@ -72,6 +72,6 @@
 
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
-    "@hyperscale0/adl/@hyperscale0/udl": ["@hyperscale0/udl@4.5.0", "", { "dependencies": { "zod": "4.6.5" }, "bin": { "udl": "dist/cli.js" } }, "sha512-/Z0ENhs9syPpl683mUStCSPAT8xKC4Pva8m5CUouTbcVwyeKa8yJsPzkH4KRTjKOGh4+cIa+RUBVhh5fKxGo/Q=="],
+    "@hyperscale0/adl/@hyperscale0/udl": ["@hyperscale0/udl@4.0.0", "", { "dependencies": { "zod": "4.6.5" }, "bin": { "udl": "dist/cli.js" } }, "sha512-RMCdgcFF1YJ2WYHs64t8/whUtesKtruUjsaYQ1uUcS0hpKdoBb7Okrnbm+Xgp1uSlqyUEIg5PJyM/Ib5P5QD0A=="],
   }
 }

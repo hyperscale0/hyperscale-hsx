@@ -11,6 +11,7 @@ object device "Device" {
   }
   columns: [model, condition, price]
   attach sale = escrow.hold {
+    expose create as create_sale
     payer: actor, payee: owner
     expose fund as pay_for_device
     expose deliver as confirm_delivery
@@ -18,5 +19,6 @@ object device "Device" {
     expose dispute as report_problem
     expose verify_return as verify_return
     expose refund as refund_buyer
+    expose cancel as cancel_sale
   }
 }
