@@ -22,6 +22,11 @@ import {
   type UdlSubjectRequirement,
   type UdlValue,
 } from "@hyperscale0/udl";
+import {
+  bindingDependencies,
+  parameterDiagnostics,
+  BindingContractError,
+} from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
 import {
@@ -401,6 +406,7 @@ export function compile(
       diagnostics: parsed.diagnostics.map((d) => diagnostic(d, "parse")),
     };
   const program = parsed.program;
+  const bindingDiagnostics: Diagnostic[] = [];
   try {
     if (program.header)
       fail(
@@ -478,6 +484,14 @@ export function compile(
     }
     for (const decl of program.decls)
       if (decl.kind === "instrument") templates.set(decl.name, decl);
+    for (const decl of program.decls) {
+      if (decl.kind === "instrument" && decl.parameters.length)
+        fail(
+          decl,
+          "This compiler cannot instantiate a parameterized instrument declared inside a program.",
+          "For this version, specialize the instrument with fixed bindings and remove its parameters. Custom reusable headers require a host-supplied library.",
+        );
+    }
     const document: UdlDocument = {
       udl: 4,
       version: 1,
@@ -545,6 +559,10 @@ export function compile(
       }
     }
     const origins: CompileOriginMapEntry[] = [];
+    const refundBindings = new Map<
+      string,
+      { parameter: string; span: Span; defaultState: string; action: string }[]
+    >();
     const resolveFamily = (
       rawPath: string,
       expr: { span: Span; source?: string },
@@ -821,6 +839,7 @@ export function compile(
         supplied.set(entry.key, entry.value);
       }
       const environment = new Map<string, Expr>(inherited);
+      const parameterErrors: Diagnostic[] = [];
       for (const param of decl.parameters) {
         const type =
           param.value.kind === "default" ? param.value.type : param.value;
@@ -844,24 +863,118 @@ export function compile(
           });
         if (!actual) {
           if (type.kind === "type" && type.optional) continue;
-          failWithCode(
-            { span: origin },
-            partyParameter ? "subject_party_unbound" : "HSX1001",
-            `${id} needs ${param.key}`,
-            partyParameter
-              ? `bind ${param.key} to ${[...subjectPartyRoles, ...Object.keys(document.parties)].join(", ")} or declare a party`
+          parameterErrors.push({
+            span: origin,
+            code: partyParameter ? "subject_party_unbound" : "HSX1001",
+            message: partyParameter
+              ? `\`${param.key}\` has no binding. An attached ${param.key} must resolve to a subject role or an eligible declared party.`
+              : `${id} needs ${param.key}`,
+            fix: partyParameter
+              ? `Use \`${param.key}: actor\` for the initiating customer or \`${param.key}: owner\` for the object owner. Declare a business for a fixed company counterparty.`
               : `add ${param.key}: value inside ${id}`,
-          );
+            related: [
+              {
+                source: declarationSources.get(decl) ?? "program",
+                span: param.span,
+                message: `Parameter ${param.key}`,
+              },
+            ],
+          });
+          continue;
         }
         environment.set(param.key, actual);
       }
-      for (const key of supplied.keys())
-        if (!decl.parameters.some((p) => p.key === key))
-          fail(
-            supplied.get(key)!,
-            `unknown tunable ${key}`,
-            `choose ${decl.parameters.map((p) => p.key).join(", ")}`,
+      let policyDiagnostics: ReturnType<typeof parameterDiagnostics>;
+      let dependencies: ReturnType<typeof bindingDependencies>;
+      try {
+        policyDiagnostics = parameterDiagnostics(decl);
+        dependencies = bindingDependencies(decl);
+      } catch (error) {
+        if (!(error instanceof BindingContractError)) throw error;
+        throw new CompileFailure({
+          code: "HSX1001",
+          message: error.message,
+          fix: "Repair the header binding contract.",
+          span: error.entry.span,
+          source: declarationSources.get(decl) ?? "program",
+        });
+      }
+      for (const dependency of dependencies) {
+        const selected = environment.get(dependency.when);
+        if (
+          selected?.kind === "name" &&
+          selected.value === dependency.is &&
+          !environment.has(dependency.binding)
+        ) {
+          throw new CompileFailure({
+            code: "HSX1001",
+            message: dependency.message.replaceAll(
+              "{attachment}",
+              attachmentInfo?.attachmentName ?? id,
+            ),
+            fix: dependency.fix,
+            span: origin,
+            related: [
+              {
+                source: declarationSources.get(decl) ?? "program",
+                span: dependency.span,
+                message: "Conditional binding requirement",
+              },
+            ],
+          });
+        }
+      }
+      for (const key of supplied.keys()) {
+        if (decl.parameters.some((p) => p.key === key)) continue;
+        const suppliedValue = supplied.get(key)!;
+        const requirements = decl.body.entries
+          .filter((entry) => entry.key.startsWith("action "))
+          .flatMap(
+            (entry) =>
+              asBlock(entries(asBlock(entry.value)).get("subject")).entries,
           );
+        const moneyFields = [
+          ...new Set(
+            requirements
+              .filter((entry) => {
+                const type = entry.value;
+                return type.kind === "name"
+                  ? type.value === "money"
+                  : (type.kind === "type" || type.kind === "call") &&
+                      type.name === "money";
+              })
+              .map((entry) => entry.key),
+          ),
+        ];
+        if (
+          attachmentInfo &&
+          (suppliedValue.kind === "money" || suppliedValue.kind === "name") &&
+          moneyFields.length === 1
+        ) {
+          const field = moneyFields[0]!;
+          const object = objects.get(attachmentInfo.subjectKindId)!;
+          const candidates = asBlock(
+            entries(object.body).get("fields"),
+          ).entries.filter((entry) =>
+            entry.value.kind === "name"
+              ? entry.value.value === "money"
+              : (entry.value.kind === "type" || entry.value.kind === "call") &&
+                entry.value.name === "money",
+          );
+          const target =
+            candidates.length === 1 ? candidates[0]!.key : "yourDepositField";
+          fail(
+            suppliedValue,
+            `\`${assignments.get(id)?.target ?? decl.name}\` has no \`${key}\` tunable. Its funding action requires the object's \`${field}\` field.`,
+            `Remove \`${key}\`. To use your deposit field, add \`rename { ${field}: ${target} }\`.`,
+          );
+        }
+        fail(
+          suppliedValue,
+          `unknown tunable ${key}`,
+          `choose ${decl.parameters.map((p) => p.key).join(", ")}`,
+        );
+      }
       const isParty = (name: string) =>
         !!document.parties[name] ||
         (!!attachmentInfo &&
@@ -909,6 +1022,44 @@ export function compile(
                       assignment.name +
                       type.slice(assignment.target.length).replaceAll(".", "_"),
                   );
+          if (
+            expr.name === "object" &&
+            matches.length !== 1 &&
+            attachmentInfo
+          ) {
+            const parameter =
+              [...environment].find(([, value]) => value === expr)?.[0] ??
+              decl.parameters.find(
+                (p) =>
+                  p.value.kind === "default" &&
+                  p.value.value.span.start === expr.span.start,
+              )?.key ??
+              "reference";
+            const local = (name: string) =>
+              attachmentSubjects.has(name)
+                ? name.slice(attachmentInfo.subjectKindId.length + 1)
+                : `${name} (program)`;
+            const target = templates.get(type);
+            const required =
+              target?.parameters
+                .filter(
+                  (p) =>
+                    p.value.kind !== "default" &&
+                    !(p.value.kind === "type" && p.value.optional),
+                )
+                .map((p) => p.key) ?? [];
+            fail(
+              { span: origin },
+              `Attachment \`${attachmentInfo.attachmentName}\` needs a \`${parameter}\` binding. ${
+                matches.length === 0
+                  ? `No \`${type}\` attachment exists on \`${attachmentInfo.subjectKindId}\`.`
+                  : `Several \`${type}\` attachments match on \`${attachmentInfo.subjectKindId}\`: ${matches.map(local).join(", ")}.`
+              }`,
+              matches.length
+                ? `Bind \`${parameter}\` explicitly to one of: ${matches.map(local).join(", ")}.`
+                : `Declare a ${parameter} attachment and bind \`${parameter}: allowance\`. Choose ${required.map((name) => (name.startsWith("per_") ? `its ${name.slice(4).replaceAll("_", " ")} limit` : `\`${name}\``)).join(", ") || "its required bindings"} explicitly.`,
+            );
+          }
           if (expr.name !== "all" && matches.length !== 1)
             failWithCode(
               expr,
@@ -981,152 +1132,223 @@ export function compile(
         return resolved;
       };
       for (const param of decl.parameters) {
-        const actual = environment.get(param.key);
-        if (!actual) continue;
-        const t =
-          param.value.kind === "default" ? param.value.type : param.value;
-        const type = t.kind === "type" || t.kind === "call" ? t.name : text(t);
-        const v =
-          (supplied.has(param.key) && !attachmentInfo) || type === "enum"
-            ? actual
-            : resolve(actual, new Set(), !!attachmentInfo && type === "party");
-        environment.set(param.key, v);
-        if (type === "enum" && t.kind === "call") {
-          if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
-            fail(
-              v,
-              `invalid ${param.key}`,
-              `choose ${t.args.map(text).join(", ")}`,
-            );
-        } else if (type === "list") {
-          if (v.kind !== "list")
-            fail(v, `${param.key} needs a list`, "write [value, value]");
-        } else if (type === "party") {
-          if (v.kind !== "name" || !isParty(v.value))
-            failWithCode(
-              actual,
-              attachmentInfo ? "subject_party_unbound" : "HSX1001",
-              `${param.key} needs a declared party`,
-              attachmentInfo
-                ? `bind ${param.key} to ${[...subjectPartyRoles, ...Object.keys(document.parties)].join(", ")} or declare a party`
-                : "declare a party and use its name here",
-            );
-          const party = document.parties[v.value];
-          if (
-            (party?.kind === "staff" && !party.role) ||
-            (attachmentInfo && party?.kind === "person")
-          )
-            failWithCode(
-              actual,
-              "party_kind_mismatch",
-              `${param.key} cannot bind ${v.value}`,
-              "use a subject role, declared business, or staff with a role",
-            );
-          resolvedParties.add(param.key);
-          if (attachmentInfo)
-            attachmentInfo.parties[param.key] = subjectPartyRoles.includes(
-              v.value as SubjectPartyRole,
-            )
-              ? { role: v.value as SubjectPartyRole }
-              : { party: v.value };
-        } else if (type === "ref") {
-          const values = v.kind === "list" ? v.items : [v];
-          if (v.kind === "list" && (t.kind !== "type" || !t.many))
-            fail(
-              v,
-              `${param.key} accepts one reference`,
-              "use one object name",
-            );
-          if (!values.length || values.length > 16)
-            fail(
-              v,
-              "reference union needs 1 to 16 objects",
-              "use at most 16 distinct object names",
-            );
-          const seen = new Set<string>();
-          for (const value of values) {
-            if (value.kind !== "name")
+        try {
+          const actual = environment.get(param.key);
+          if (!actual) continue;
+          const t =
+            param.value.kind === "default" ? param.value.type : param.value;
+          const type =
+            t.kind === "type" || t.kind === "call" ? t.name : text(t);
+          const v =
+            (supplied.has(param.key) && !attachmentInfo) || type === "enum"
+              ? actual
+              : resolve(
+                  actual,
+                  new Set(),
+                  !!attachmentInfo && type === "party",
+                );
+          environment.set(param.key, v);
+          if (type === "enum" && t.kind === "call") {
+            if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
               fail(
-                value,
-                "reference needs an object name",
-                "name a declared object",
+                v,
+                `invalid ${param.key}`,
+                `choose ${t.args.map(text).join(", ")}`,
               );
-            const [root, ...tail] = value.value.split(".");
-            const obj = objects.get(root!);
-            const assignment = assignments.get(root!);
-            const targetType = obj ? obj.name : assignment?.target;
+          } else if (type === "list") {
+            if (v.kind !== "list")
+              fail(v, `${param.key} needs a list`, "write [value, value]");
+          } else if (type === "party") {
+            if (v.kind !== "name" || !isParty(v.value))
+              failWithCode(
+                actual,
+                attachmentInfo ? "subject_party_unbound" : "HSX1001",
+                attachmentInfo
+                  ? `\`${param.key}: ${"value" in actual && typeof actual.value === "string" ? actual.value : param.key}\` has no binding. An attached ${param.key} must resolve to a subject role or an eligible declared party.`
+                  : `${param.key} needs a declared party`,
+                attachmentInfo
+                  ? `Use \`${param.key}: actor\` for the initiating customer or \`${param.key}: owner\` for the object owner. Declare a business for a fixed company counterparty.`
+                  : "declare a party and use its name here",
+              );
+            const party = document.parties[v.value];
             if (
-              (!obj &&
-                !assignment &&
-                !document.instruments.some(
-                  (inst) => inst.id === value.value,
-                )) ||
-              (t.kind === "type" &&
-                t.target &&
-                [targetType, ...tail].join(".") !== t.target)
+              (party?.kind === "staff" && !party.role) ||
+              (attachmentInfo && party?.kind === "person")
             )
-              fail(
-                value,
-                `${param.key} has the wrong object type`,
-                `use an object of type ${t.kind === "type" ? t.target : "ref"}`,
+              failWithCode(
+                actual,
+                "party_kind_mismatch",
+                party?.kind === "person"
+                  ? `\`${v.value}\` is a declared person. Attachments resolve customer identity through \`owner\` or \`actor\`, rather than a fixed person declaration.`
+                  : `\`${v.value}\` is declared staff without a permission role.`,
+                "Replace this binding with the appropriate subject role. Use declared businesses for fixed counterparties and permission-bearing staff roles for authorized actions.",
               );
-            if (seen.has(value.value))
-              fail(value, "duplicate reference", "list each object once");
-            seen.add(value.value);
+            resolvedParties.add(param.key);
+            if (attachmentInfo)
+              attachmentInfo.parties[param.key] = subjectPartyRoles.includes(
+                v.value as SubjectPartyRole,
+              )
+                ? { role: v.value as SubjectPartyRole }
+                : { party: v.value };
+          } else if (type === "ref") {
+            const values = v.kind === "list" ? v.items : [v];
+            if (v.kind === "list" && (t.kind !== "type" || !t.many))
+              fail(
+                v,
+                `${param.key} accepts one reference`,
+                "use one object name",
+              );
+            if (!values.length || values.length > 16)
+              fail(
+                v,
+                "reference union needs 1 to 16 objects",
+                "use at most 16 distinct object names",
+              );
+            const seen = new Set<string>();
+            for (const value of values) {
+              if (value.kind !== "name")
+                fail(
+                  value,
+                  "reference needs an object name",
+                  "name a declared object",
+                );
+              const [root, ...tail] = value.value.split(".");
+              const obj = objects.get(root!);
+              const assignment = assignments.get(root!);
+              const targetType = obj ? obj.name : assignment?.target;
+              if (
+                (!obj &&
+                  !assignment &&
+                  !document.instruments.some(
+                    (inst) => inst.id === value.value,
+                  )) ||
+                (t.kind === "type" &&
+                  t.target &&
+                  [targetType, ...tail].join(".") !== t.target)
+              )
+                fail(
+                  value,
+                  `${param.key} has the wrong object type`,
+                  `use an object of type ${t.kind === "type" ? t.target : "ref"}`,
+                );
+              if (seen.has(value.value))
+                fail(value, "duplicate reference", "list each object once");
+              seen.add(value.value);
+            }
+            // A many-reference tunable is a list even when one object is bound,
+            // so report datasets and other value positions never see a bare name.
+            if (t.kind === "type" && t.many && v.kind !== "list")
+              environment.set(param.key, {
+                kind: "list",
+                items: [v],
+                span: v.span,
+              });
+          } else if (type === "fee" || type === "split" || type === "policy") {
+            if (v.kind !== "block")
+              fail(
+                v,
+                `${param.key} needs a block`,
+                `write ${param.key} { ... }`,
+              );
+          } else if (
+            type === "money" ||
+            type === "percent" ||
+            type === "date" ||
+            type === "duration" ||
+            type === "integer" ||
+            type === "text"
+          ) {
+            if (v.kind === "name" && v.value === "runtime") continue;
+            const expected = type === "integer" ? "number" : type;
+            if (
+              v.kind !== expected &&
+              !(
+                type === "duration" &&
+                (v.kind === "text" || v.kind === "name") &&
+                /^P/.test(v.value)
+              )
+            ) {
+              if (type === "money" && v.kind === "name" && attachmentInfo) {
+                const target = v.value.replace(/^subject\./, "");
+                const fallback =
+                  param.value.kind === "default"
+                    ? param.value.value
+                    : undefined;
+                const advice =
+                  fallback?.kind === "name" && fallback.value === "runtime"
+                    ? `omit \`${param.key}\``
+                    : `set \`${param.key}: runtime\``;
+                fail(
+                  v,
+                  `\`${param.key}\` cannot read \`${v.value}\` as a tunable. This position accepts a fixed money amount or a runtime amount.`,
+                  `For a varying deposit, ${advice} and add \`rename { ${param.key}: ${target} }\`. Use a literal only for a fixed charge.`,
+                );
+              }
+              if (type === "money" && v.kind === "percent") {
+                const policy = policyDiagnostics.find(
+                  (policy) => policy.parameter === param.key,
+                );
+                fail(
+                  v,
+                  `\`${assignments.get(id)?.target ?? decl.name}.${param.key}\` accepts ${policy?.accepts ?? "a fixed amount"}. It cannot express ${policy?.percentage ?? "a percentage-based charge"}.`,
+                  policy?.fix ??
+                    "Use a fixed amount only if that is the intended policy. A percentage charge needs an authored rate calculation; do not approximate it with a cash amount.",
+                );
+              }
+              fail(v, `${param.key} needs ${type}`, `write a ${type} literal`);
+            }
+            try {
+              const value = literal(v);
+              const bounds = tunableBounds(t);
+              if (
+                bounds &&
+                (BigInt(String(value)) < BigInt(bounds.minimum) ||
+                  BigInt(String(value)) > BigInt(bounds.maximum))
+              )
+                fail(
+                  v,
+                  `${param.key} is outside ${bounds.minimum}..${bounds.maximum}`,
+                  "choose a value inside the tunable's bounds",
+                );
+            } catch (error) {
+              if (error instanceof CompileFailure)
+                fail(
+                  v,
+                  `${param.key}: ${error.diagnostic.message}`,
+                  error.diagnostic.fix,
+                );
+              throw error;
+            }
           }
-          // A many-reference tunable is a list even when one object is bound,
-          // so report datasets and other value positions never see a bare name.
-          if (t.kind === "type" && t.many && v.kind !== "list")
-            environment.set(param.key, {
-              kind: "list",
-              items: [v],
-              span: v.span,
+        } catch (error) {
+          if (!(error instanceof CompileFailure)) throw error;
+          const related = [
+            {
+              source: declarationSources.get(decl) ?? "program",
+              span: param.span,
+              message: `Parameter ${param.key}`,
+            },
+          ];
+          const actual = supplied.get(param.key);
+          const party =
+            actual?.kind === "name"
+              ? program.decls.find(
+                  (entry) =>
+                    entry.kind === "party" && entry.name === actual.value,
+                )
+              : undefined;
+          if (party?.kind === "party")
+            related.push({
+              source: "program",
+              span: party.span,
+              message: `Declared party ${party.name}`,
             });
-        } else if (type === "fee" || type === "split" || type === "policy") {
-          if (v.kind !== "block")
-            fail(v, `${param.key} needs a block`, `write ${param.key} { ... }`);
-        } else if (
-          type === "money" ||
-          type === "percent" ||
-          type === "date" ||
-          type === "duration" ||
-          type === "integer" ||
-          type === "text"
-        ) {
-          if (v.kind === "name" && v.value === "runtime") continue;
-          const expected = type === "integer" ? "number" : type;
-          if (
-            v.kind !== expected &&
-            !(
-              type === "duration" &&
-              (v.kind === "text" || v.kind === "name") &&
-              /^P/.test(v.value)
-            )
-          )
-            fail(v, `${param.key} needs ${type}`, `write a ${type} literal`);
-          try {
-            const value = literal(v);
-            const bounds = tunableBounds(t);
-            if (
-              bounds &&
-              (BigInt(String(value)) < BigInt(bounds.minimum) ||
-                BigInt(String(value)) > BigInt(bounds.maximum))
-            )
-              fail(
-                v,
-                `${param.key} is outside ${bounds.minimum}..${bounds.maximum}`,
-                "choose a value inside the tunable's bounds",
-              );
-          } catch (error) {
-            if (error instanceof CompileFailure)
-              fail(
-                v,
-                `${param.key}: ${error.diagnostic.message}`,
-                error.diagnostic.fix,
-              );
-            throw error;
-          }
+          parameterErrors.push({ ...error.diagnostic, related });
         }
+      }
+      if (parameterErrors.length) {
+        bindingDiagnostics.push(...parameterErrors.slice(1));
+        throw new CompileFailure(parameterErrors[0]!);
       }
       const body = entries(decl.body);
       for (const constraint of asBlock(body.get("constraints")).entries) {
@@ -1174,6 +1396,8 @@ export function compile(
             "summary",
             "invariants",
             "constraints",
+            "dependencies",
+            "parameterDiagnostics",
             "reports",
             "revisioned",
           ].includes(key) &&
@@ -1926,6 +2150,39 @@ export function compile(
             };
           }
         }
+        const fromBinding = slots.get("from");
+        if (
+          fromBinding?.kind === "name" &&
+          fromBinding.value.includes(".") &&
+          slots.has("moves")
+        ) {
+          const [parameter, member] = fromBinding.value.split(".");
+          const suppliedPolicy = supplied.get(parameter!);
+          if (suppliedPolicy?.kind === "block") {
+            const selected = entries(suppliedPolicy).get(member!);
+            const parameterDecl = decl.parameters.find(
+              (entry) => entry.key === parameter,
+            );
+            const fallback =
+              parameterDecl?.value.kind === "default"
+                ? parameterDecl.value.value
+                : undefined;
+            const defaultState =
+              fallback?.kind === "block"
+                ? entries(fallback).get(member!)
+                : undefined;
+            if (selected && defaultState?.kind === "name") {
+              const bindings = refundBindings.get(id) ?? [];
+              bindings.push({
+                parameter: member!,
+                span: selected.span,
+                defaultState: defaultState.value,
+                action: name,
+              });
+              refundBindings.set(id, bindings);
+            }
+          }
+        }
         const a: UdlAction = {
           summary: slots.has("summary")
             ? String(data(slots.get("summary")!))
@@ -2489,23 +2746,28 @@ export function compile(
         };
 
         const templateFamily = resolveFamily(targetTemplate, entry, false);
-        addInstrument(
-          template,
-          instId,
-          tunableBlock,
-          entry.span,
-          new Map(),
-          new Map(),
-          {
-            subjectKindId: decl.name,
-            attachmentName,
-            renames,
-            exposed,
-            parties,
-          },
-          templateFamily ? { ...templateFamily } : undefined,
-        );
-
+        try {
+          addInstrument(
+            template,
+            instId,
+            tunableBlock,
+            entry.span,
+            new Map(),
+            new Map(),
+            {
+              subjectKindId: decl.name,
+              attachmentName,
+              renames,
+              exposed,
+              parties,
+            },
+            templateFamily ? { ...templateFamily } : undefined,
+          );
+        } catch (error) {
+          if (!(error instanceof CompileFailure)) throw error;
+          bindingDiagnostics.push(error.diagnostic);
+          continue;
+        }
         const attachedInst = document.instruments.find((i) => i.id === instId);
         if (attachedInst?.actions.create) {
           const owned = new Set(
@@ -2601,8 +2863,8 @@ export function compile(
         if (columns.length > 8) {
           fail(
             columnsExpr,
-            "at most 8 columns allowed",
-            "choose up to 8 columns",
+            `The object list selects ${columns.length} columns; this release supports 8. The object may retain all its fields.`,
+            `Remove ${columns.length === 9 ? "one name" : `${columns.length - 8} names`} from \`columns\`, not from \`fields\`.`,
           );
         }
       }
@@ -2618,12 +2880,6 @@ export function compile(
     };
     for (const decl of program.decls) {
       if (decl.kind === "instrument") {
-        if (decl.parameters.length)
-          fail(
-            decl,
-            "program records cannot declare tunables",
-            "put reusable instruments in a header",
-          );
         addInstrument(decl, decl.name, emptyBlock, decl.span);
       }
       if (decl.kind === "assignment") {
@@ -2650,6 +2906,13 @@ export function compile(
         compileObject(decl);
       }
     }
+    if (bindingDiagnostics.length)
+      return {
+        verdict: "invalid",
+        diagnostics: bindingDiagnostics
+          .sort((a, b) => a.span.start - b.span.start)
+          .map((d) => diagnostic(d, "check")),
+      };
     // Propagate mandatory invoked action requirements
     let changedInvocations = true;
     let invocationIterations = 0;
@@ -2904,9 +3167,49 @@ export function compile(
           const origin = [...origins]
             .reverse()
             .find((o) => i.path.startsWith(o.path));
+          const index = /^\$\.instruments\[(\d+)\]/.exec(i.path)?.[1];
+          const instrument =
+            index === undefined
+              ? undefined
+              : document.instruments[Number(index)];
+          const attachment = document.objects
+            .flatMap((object) => object.attachments)
+            .find((attachment) => attachment.instrument === instrument?.id);
+          const stranded = i.stranded;
+          if (instrument && stranded?.accounts.length) {
+            const binding = refundBindings
+              .get(instrument.id)
+              ?.find(
+                (binding) =>
+                  binding.defaultState === stranded.state &&
+                  instrument.actions[binding.action]?.moves.some(
+                    (move) =>
+                      "amount" in move &&
+                      stranded.accounts.some(
+                        (account) => move.from === `self.${account}`,
+                      ),
+                  ),
+              );
+            return diagnostic(
+              {
+                code: i.code,
+                message: `\`${attachment?.name ?? instrument.id}\` can reach \`${stranded.state}\` with money in ${stranded.accounts.map((account) => `\`${account}\``).join(", ")}, but no action leaves that state and disposes of the balance.`,
+                fix: binding
+                  ? `Restore \`${binding.parameter}: ${stranded.state}\`, or author a complete refund path for every reachable funded state.`
+                  : "Author a complete refund path for every reachable funded state.",
+                span: binding?.span ?? origin?.span ?? program.span,
+                related: stranded.accounts.map((account) => ({
+                  source: "program",
+                  span: origin?.span ?? program.span,
+                  message: `State path: ${instrument.lifecycle.initial} -> ${(stranded.paths[account] ?? stranded.actions).join(" -> ")} -> ${stranded.state}; owned accounts: ${account}.`,
+                })),
+              },
+              "lower",
+            );
+          }
           return diagnostic(
             {
-              code: i.code.startsWith("UDL") ? "HSX1601" : i.code,
+              code: i.code,
               message: `${i.path}: ${i.message}`,
               fix: i.fix,
               span: origin?.span ?? program.span,
@@ -2928,7 +3231,9 @@ export function compile(
     if (error instanceof CompileFailure)
       return {
         verdict: "invalid",
-        diagnostics: [diagnostic(error.diagnostic, "check")],
+        diagnostics: [...bindingDiagnostics, error.diagnostic].map((d) =>
+          diagnostic(d, "check"),
+        ),
       };
     throw error;
   }

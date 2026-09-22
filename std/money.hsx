@@ -4,7 +4,7 @@ instrument transfer(payer: party, payee: party, amount: money = runtime) {
   summary: "One transfer between the bound parties."
   fields { amount: money = amount }
   lifecycle { states: [pending, paid, cancelled], initial: pending }
-  action create { actor: { party: payer } }
+  action create { actor: { party: payer }, requires self.amount > "0" }
   action pay {
     from: pending, to: paid, actor: { party: payer }
     moves self.amount from payer to payee
@@ -41,7 +41,7 @@ instrument split(payer: party, amount: money = runtime, shares: split = { progra
   fields { amount: money = amount }
   lifecycle { states: [pending, paid, cancelled], initial: pending }
   action create {}
-  action pay { from: pending, to: paid, actor: { party: payer }, moves self.amount from payer shares shares }
+  action pay { allowZero: true, requires self.amount > "0"; from: pending, to: paid, actor: { party: payer }, moves self.amount from payer shares shares }
   action cancel { from: pending, to: cancelled }
 }
 
@@ -72,7 +72,7 @@ instrument schedule(payer: party, payee: party, amount: money = runtime, count: 
       }
       lifecycle { states: [pending, paid, cancelled], initial: pending }
       action create { requires self.schedule in [draft]; requires unique "scheduled_position" on [self.schedule, self.position] }
-      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.schedule in [active], moves self.amount from payer to payee }
+      action pay { allowZero: true, from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.schedule in [active], moves self.amount from payer to payee }
       action cancel { from: pending, to: cancelled, requires self.schedule in [cancelled] }
     }
   }
@@ -95,10 +95,10 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
   }
   records {
     contribution: {
-      fields { pool: ref<parent>, payer: account of payer, amount: money }
+      fields { pool: ref<parent>, payer: account of payer, amount: money, remaining: money? }
       lifecycle { states: [pending, paid, refunded], initial: pending }
       action create { requires self.pool in [open] }
-      action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], moves self.amount from self.payer to self.pool.held }
+      action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], calculate: [{ target: remaining, op: subtract, base: { field: self.pool.target }, subtract: [{ field: self.pool.held.balance }] }], requires self.amount <= self.remaining, moves self.amount from self.payer to self.pool.held }
       action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer }
     }
   }
@@ -146,6 +146,6 @@ instrument metered(payer: party, payee: party, unit_price: money, units: integer
   fields { usageIdentity: text, unitPrice: money = unit_price, units: integer = units, amount: money = multiply(self.unitPrice, self.units) }
   lifecycle { states: [recorded, billed, cancelled], initial: recorded }
   action create { requires unique "usage_event" on [self.usageIdentity] }
-  action bill { from: recorded, to: billed, actor: { party: payee }, moves self.amount from payer to payee fee fee }
+  action bill { allowZero: true, requires self.amount > "0"; from: recorded, to: billed, actor: { party: payee }, moves self.amount from payer to payee fee fee }
   action cancel { from: recorded, to: cancelled }
 }

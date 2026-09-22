@@ -1,6 +1,13 @@
 header financing
 
 instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3, profit: percent, disburse_to: enum(funds, borrower) = funds, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref<escrow.hold>?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
+  dependencies {
+    funds {
+      selector: disburse_to, is: funds
+      message: "Attachment `{attachment}` disburses into a hold, but `funds` is not bound."
+      fix: "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: borrower` only if the borrower should receive the money directly."
+    }
+  }
   revisioned: true
   familyRevision: 1
   summary: "Funding, profit recognition and payment order chosen by the program."
@@ -29,7 +36,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     from: quoted, to: signed, actor: { party: borrower }, input { signedOffer: text, affordabilityReference: text }
     requires count of { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366 } == self.months
   }
-  action disburse {
+  action disburse { allowZero: true,
     from: signed, to: active, actor: { party: capital }
     requires self.borrowerLimit in [approved]
     requires self.portfolioLimit in [approved]
@@ -41,7 +48,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366, order: [position] }, action: activate, input: {} }]
     when disburse_to is funds { invoke: [{ reference: self.funds, action: confirm, input: {} }] }
   }
-  action fund_down_payment {
+  action fund_down_payment { allowZero: true,
     from: active, to: active, actor: { parent: current() }
     when disburse_to is funds {
       calculate: [{ target: downPaymentCredit, op: minimum, values: [{ field: self.funds.held.balance }, { field: self.downPayment }] }, { target: downPaymentRemaining, op: subtract, base: { field: self.downPayment }, subtract: [{ field: self.downPaymentCredit }] }]
@@ -186,14 +193,14 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       fields { plan: ref<parent>, identity: text, principal: money, profit: money, loss: money, kind: enum(cash, loss), share: money?, retainedProfit: money?
         allocatedPayable: account(capital, cash, "allocatedProfitPayable"), capital: account(capital, cash, "capital"), profitIncome: account(capital, cash, "profitIncome"), lossAccount: account(capital, claim, "loss") }
       lifecycle { states: [recorded, refunded], initial: recorded }
-      action create {
+      action create { allowZero: true,
         actor: { parent: parent }
         input { plan: ref<parent>, identity: text, principal: money, profit: money, loss: money, kind: enum(cash, loss) }
         requires unique "settlement_identity" on [self.plan, self.identity]
         calculate: [{ target: "share", op: "rate", base: { field: self.profit }, bps: { literal: share }, rounding: "floor" }, { target: retainedProfit, op: "subtract", base: { field: self.profit }, subtract: [{ field: self.share }] }]
         moves self.share from self.profitIncome to self.allocatedPayable
       }
-      action refund {
+      action refund { allowZero: true,
         from: recorded, to: refunded, actor: { parent: payment }
         moves self.share from self.allocatedPayable to self.profitIncome
       }
@@ -259,7 +266,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         calculate: [{ target: nextDueAt, op: at, list: input.amendment.dates, position: { field: self.position } }]
         requires self.nextDueAt == self.dueAt
       }
-      action activate {
+      action activate { allowZero: true,
         from: draft, to: pending, actor: { parent: parent }
         moves self.principal from self.debt to self.principalReceivable
         moves self.profit from self.debt to self.profitReceivable
@@ -324,7 +331,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         requires self.principalReceivable.balance == "0"; requires self.profitReceivable.balance == "0"; requires self.profitEarned.balance == "0"
       }
       action restore { from: [pending, due, paid], to: pending, actor: { parent: payment } }
-      action payoff {
+      action payoff { allowZero: true,
         from: [pending, due], to: paid, actor: { parent: parent }, input { identity: text }
         set: { payoffIdentity: { field: input.identity } }
         calculate: [{ target: payoffRebate, op: rate, base: { field: self.profitReceivable.balance }, bps: { literal: payoff_rebate }, rounding: floor }, { target: payoffProfitTotal, op: sum, values: [{ field: self.profitReceivable.balance }, { field: self.profitEarned.balance }] }, { target: payoffProfit, op: subtract, base: { field: self.payoffProfitTotal }, subtract: [{ field: self.payoffRebate }] }]
@@ -334,7 +341,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         moves self.profitReceivable.balance from self.profitReceivable to self.debt
         moves self.profitEarned.balance from self.profitEarned to self.debt
       }
-      action write_off {
+      action write_off { allowZero: true,
         from: [pending, due], to: written_off, actor: { parent: parent }
         moves self.principalReceivable.balance from self.principalReceivable to self.loss; moves self.profitReceivable.balance from self.profitReceivable to self.debt; moves self.profitEarned.balance from self.profitEarned to self.loss
       }
@@ -344,7 +351,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       lifecycle { states: [pending, recognised], initial: pending }
       action create { actor: { parent: slice }, input { slice: ref<slice> }, requires unique "profit_recognition" on [self.slice] }
       action reschedule { from: pending, to: pending, actor: { parent: slice } }
-      action mature { from: pending, to: recognised, actor: clock, due: { at: self.dueAt }, moves self.slice.profitReceivable.balance from self.slice.profitReceivable to self.slice.profitEarned }
+      action mature { allowZero: true, from: pending, to: recognised, actor: clock, due: { at: self.dueAt }, moves self.slice.profitReceivable.balance from self.slice.profitReceivable to self.slice.profitEarned }
     }
     payment: {
       revisioned: true
@@ -398,14 +405,14 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     principal_piece: {
       fields { slice: ref<slice>, payment: ref<payment>, limit: money, amount: money? }
       lifecycle { states: [paid, refunded], initial: paid }
-      action create {
+      action create { allowZero: true,
         calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.slice.principalReceivable.balance }, { field: self.limit }] }]
         actor: { parent: slice }
         input { slice: ref<slice>, payment: ref<payment>, limit: money }
         requires unique "principal_receipt" on [self.slice, self.payment]
         moves self.amount from self.payment.held to self.slice.plan.capital; moves self.amount from self.slice.principalReceivable to self.slice.debt
       }
-      action refund {
+      action refund { allowZero: true,
         from: paid, to: refunded, actor: { parent: payment }
         moves self.amount from self.slice.plan.capital to self.slice.plan.borrower; moves self.amount from self.slice.debt to self.slice.principalReceivable
       }
@@ -413,7 +420,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     profit_piece: {
       fields { slice: ref<slice>, payment: ref<payment>, limit: money, amount: money? }
       lifecycle { states: [paid, refunded], initial: paid }
-      action create {
+      action create { allowZero: true,
         calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.limit }] }]
         actor: { parent: slice }
         input { slice: ref<slice>, payment: ref<payment>, limit: money }
@@ -423,7 +430,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         when profit_earned is by_schedule { moves self.amount from self.slice.profitEarned to self.slice.debt }
         when profit_earned is at_disbursement { moves self.amount from self.slice.profitEarned to self.slice.debt }
       }
-      action refund {
+      action refund { allowZero: true,
         from: paid, to: refunded, actor: { parent: payment }
         moves self.amount from self.slice.plan.profitIncome to self.slice.plan.borrower
         when profit_earned is on_payment { moves self.amount from self.slice.debt to self.slice.profitReceivable }
@@ -435,6 +442,13 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
 }
 
 instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, fine: money = 50 SAR, cap: money = 25 SAR, fines_to: party = programOperator, costs_to: party = programOperator, borrower: party = party(person)) {
+  parameterDiagnostics {
+    fine {
+      accepts: "a fixed amount"
+      percentage: "a percentage of overdue debt"
+      fix: "Use a fixed amount only if that is the intended policy. A percentage charge needs an authored rate calculation; do not approximate it with a cash amount."
+    }
+  }
   revisioned: true
   familyRevision: 1
   summary: "Separate approved fine and evidenced recovery claims on an overdue installment."
@@ -444,7 +458,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
   }
   lifecycle { states: [proposed, assessed, collected, waived, refunded], initial: proposed }
   action create { calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan }
-  action assess {
+  action assess { allowZero: true,
     from: proposed, to: assessed, actor: clock, due: { at: self.overdueAt }
     requires self.slice.principalReceivable.balance > "0"
     moves self.fine from self.debt to self.receivable
@@ -455,7 +469,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     requires input.payment.plan == self.plan
     invoke: [{ instrument: receipt, action: create, input: { assessment: { field: self.id }, payment: { field: input.payment } } }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
   }
-  action payoff {
+  action payoff { allowZero: true,
     from: [assessed, collected], to: collected, actor: { parent: on }
     requires self.plan in [paid]
     moves self.receivable.balance from self.plan.borrower to fines_to
@@ -468,7 +482,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     requires input.amendment.plan == self.plan; requires input.amendment in [applied]
     invoke: [{ instrument: waiver, action: create, input: { assessment: { field: self.id }, amendment: { field: input.amendment } } }]
   }
-  action waive { from: [assessed, collected], to: waived, actor: { parent: waiver_request }, input { reason: text, evidence: text }, moves self.receivable.balance from self.receivable to self.debt }
+  action waive { allowZero: true, from: [assessed, collected], to: waived, actor: { parent: waiver_request }, input { reason: text, evidence: text }, moves self.receivable.balance from self.receivable to self.debt }
   action refund {
     from: [assessed, collected], to: assessed, actor: { party: fines_to }, input { payment: ref<on.payment> }
     requires input.payment in [paid, refunded]
@@ -489,7 +503,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     waiver: {
       fields { assessment: ref<parent>, amendment: ref<on.amendment>, amount: money? }
       lifecycle { states: [recorded], initial: recorded }
-      action create {
+      action create { allowZero: true,
         actor: { parent: parent }, input { assessment: ref<parent>, amendment: ref<on.amendment> }
         calculate: [{ target: amount, op: rate, base: { field: self.assessment.receivable.balance }, bps: { field: self.amendment.waiverPercent }, rounding: floor }]
         requires unique "amendment_waiver" on [self.assessment, self.amendment]
@@ -499,8 +513,8 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     receipt: {
       fields { assessment: ref<parent>, payment: ref<on.payment>, amount: money? }
       lifecycle { states: [paid, refunded], initial: paid }
-      action create { calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "fine_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to fines_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
-      action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from fines_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
+      action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "fine_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to fines_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
+      action refund { allowZero: true, from: paid, to: refunded, actor: { parent: parent }, moves self.amount from fines_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
     }
 
     cost: {
@@ -522,7 +536,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         requires input.payment.plan == self.plan
         invoke: [{ instrument: receipt, action: create, input: { assessment: { field: self.id }, payment: { field: input.payment } } }, { selection: { instrument: current(), reference: "plan", anchor: self.plan, states: [assessed], limit: 1, where: { id: { field: self.id }, receivable.balance: { literal: "0" } } }, action: finish, input: {} }]
       }
-      action payoff {
+      action payoff { allowZero: true,
         from: [assessed, collected], to: collected, actor: { parent: on }
         requires self.plan in [paid]
         moves self.receivable.balance from self.plan.borrower to costs_to
@@ -535,7 +549,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         requires input.amendment.plan == self.plan; requires input.amendment in [applied]
         invoke: [{ instrument: waiver, action: create, input: { assessment: { field: self.id }, amendment: { field: input.amendment } } }]
       }
-      action waive { from: [assessed, collected], to: waived, actor: { parent: waiver_request }, input { reason: text, evidence: text }, moves self.receivable.balance from self.receivable to self.debt }
+      action waive { allowZero: true, from: [assessed, collected], to: waived, actor: { parent: waiver_request }, input { reason: text, evidence: text }, moves self.receivable.balance from self.receivable to self.debt }
       action refund {
         from: [assessed, collected], to: assessed, actor: { party: costs_to }, input { payment: ref<on.payment> }
         requires input.payment in [paid, refunded]
@@ -556,7 +570,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         waiver: {
           fields { assessment: ref<parent>, amendment: ref<on.amendment>, amount: money? }
           lifecycle { states: [recorded], initial: recorded }
-          action create {
+          action create { allowZero: true,
             actor: { parent: parent }, input { assessment: ref<parent>, amendment: ref<on.amendment> }
             calculate: [{ target: amount, op: rate, base: { field: self.assessment.receivable.balance }, bps: { field: self.amendment.waiverPercent }, rounding: floor }]
             requires unique "amendment_waiver" on [self.assessment, self.amendment]
@@ -566,8 +580,8 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         receipt: {
           fields { assessment: ref<parent>, payment: ref<on.payment>, amount: money? }
           lifecycle { states: [paid, refunded], initial: paid }
-          action create { calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "cost_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to costs_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
-          action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from costs_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
+          action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "cost_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to costs_to; moves self.amount from self.assessment.receivable to self.assessment.debt }
+          action refund { allowZero: true, from: paid, to: refunded, actor: { parent: parent }, moves self.amount from costs_to to self.payment.plan.borrower; moves self.amount from self.assessment.debt to self.assessment.receivable }
         }
       }
     }

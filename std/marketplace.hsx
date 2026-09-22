@@ -71,7 +71,7 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
     invoke: [{ reference: self.funds, action: fund, input: {} }]
   }
-  action credit {
+  action credit { allowZero: true,
     from: active, to: converted, actor: { parent: converters }, deadline: { at: self.expiresAt }
     input { funds: ref<funds>, contribution: money }
     requires input.funds == self.funds; requires input.funds in [pending, funded]; requires input.funds.payer == self.buyer; requires input.funds.price == self.price
@@ -81,7 +81,7 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     moves self.credit from self.held to input.funds.held
     moves self.refund from self.held to self.buyer
   }
-  action cancel {
+  action cancel { allowZero: true,
     from: active, to: cancelled, actor: { party: buyer }, input { reason: text }
     calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: cancellation_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
     set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
@@ -98,7 +98,7 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     moves self.held.balance from self.held to self.buyer
   }
   action withdraw { from: proposed, to: cancelled, actor: { party: buyer } }
-  action expire {
+  action expire { allowZero: true,
     from: active, to: expired, actor: clock, due: { at: self.expiresAt }
     calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: expiry_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
     set: { dispositionAt: { field: self.now } }

@@ -13,7 +13,9 @@ object car "Cars" {
 }
 ```
 
-Every attached party parameter binds to `owner`, `actor`, or `operator`.
+Every attached party parameter binds to `owner`, `actor`, `operator`, a declared
+business, or a declared staff party with a supported role. Configure declared
+business participants per Build. Declared person parties cannot bind attachments.
 `owner` is the object's resolved customer or business, `actor` is the authenticated
 caller, and `operator` is the program operator. A parameter with one of these
 names binds by name. Other party parameters require an explicit binding.
@@ -24,7 +26,10 @@ Object `fields` are authored metadata. `columns` names up to eight normalized
 fields. An action's `subject { price: money }` declares its metadata requirement;
 `subject { adapter: verification }` inherits a selected ADL declaration. The
 compiler freezes the adapter identity, digest and requirements. An unavailable
-declaration leaves a null snapshot and an unavailable action.
+declaration leaves a null snapshot in compiled output. Product creation and
+recomposition reject unresolved or changed declarations during Build admission.
+Execution checks the frozen declaration too; later adapter unavailability can
+block actions on an already saved Build.
 
 An attachment can use `rename { price: salePrice }` to separate requirements with
 different meanings. Matching names must match types and constraints. The compiler
@@ -69,6 +74,22 @@ aliases the default cash account; `account of self` provisions an owned account.
 Outstanding debt is an account balance. The library pairs cash repayment with
 claim reduction and represents receipts as immutable child records. Cash and loss
 shares round down; the declared residual account receives leftover minor units.
+
+Money moves require a positive amount by default. An action may declare
+`allowZero: true` when a calculated piece can be zero, such as an exhausted
+repayment slice, a floored fee or a rounding remainder. A zero create move in
+that action posts no transfer and captures no receipt. The permission belongs
+to that action only and does not pass to invoked actions. Reserve, post and
+void still require real reservation receipts. Keep a positive requirement on
+an authored total when only its calculated pieces may be zero.
+
+```hsx
+action collect {
+  from: pending, to: paid
+  allowZero: true
+  moves self.calculatedPiece from payer to payee
+}
+```
 
 The four transfer instructions are create, reserve, post and void under
 `internal_transfer`. A captured transfer exposes reserved, posted, settled,
@@ -173,6 +194,33 @@ requires a valid hours interval. `at_most` and `greater_than` are also supported
 A refusal names the tunable. Empty `all(type)` selections lower to zero aggregates
 or no invocations, so a plan does not require a late-charge object.
 
+Headers can declare conditional bindings and parameter policy diagnostics:
+
+```hsx
+dependencies {
+  funds {
+    selector: destination, is: held
+    message: "Attachment `{attachment}` needs a funds binding."
+    fix: "Bind funds to a hold attachment."
+  }
+}
+parameterDiagnostics {
+  amount {
+    accepts: "a fixed amount"
+    percentage: "a percentage-based charge"
+    fix: "Author a rate calculation when the policy varies with a base amount."
+  }
+}
+```
+
+Each dependency names a declared tunable, an enum selector and one of its choices.
+The compiler checks selected dependencies before lowering and the manifest retains
+them. `{attachment}` in the message expands to the authored attachment name.
+Parameter diagnostics name a declared tunable and explain its accepted value,
+unsupported percentage semantics and repair. They do not change the tunable type.
+UDL refusals retain their UDL codes. A terminal-money refusal includes the owned
+account and the prover's action path in related diagnostic information.
+
 Build with `hsx build company.hsx --out company.udl.json`; check with
 `hsx check company.hsx`; print instruction counts with `hsx cost company.hsx`.
 Print the compiler-owned object manifest with `hsx headers --json`.
@@ -187,15 +235,42 @@ The [playground](../playground/index.html) compiles locally in the browser.
 ## Financing attachments
 
 Financing retains its authored borrower and portfolio limits. Bind every party
-parameter to a subject role and link the existing escrow and limits attachments.
+parameter to a subject role, declared business or staff party with a supported
+role, and link the existing escrow and limits attachments.
 No limit is inferred from object metadata.
 
 See the complete [financing object example](../examples/library.hsx).
 
+## Standard-library behavior
+
+Read the instrument's states, time gates and moves before promising a money
+outcome. A compiler pass does not prove that required actions are exposed,
+adapters are bound, participants have funds, or the flow can finish.
+
+| Instrument | Behavior |
+| --- | --- |
+| `financing.installments` | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income. |
+| `financing.limits` | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them. |
+| `lending.round` | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount. |
+| `lending.distribution` | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing. |
+| `insurance.cover.slice` | `commission` is calculated, but `collect` sends the whole premium to `programOperator`; that action makes no broker commission transfer. |
+| `travel.booking` | From `deposit_paid` or `paid`, early cancellation returns the full held balance, middle returns held balance minus deposit, and late has no buyer refund transfer. State, time and balance requirements still apply. A deposit-only early cancellation refunds the deposit; a deposit-only middle cancellation refunds zero. |
+| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member positions. |
+| `escrow.hold` | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout. |
+| `escrow.hold` | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds. |
+| `financing.late_charge` | `fine` is a fixed money amount, not a percentage of overdue principal. |
+| `cards.card` | `spend_limit` is a per-authorization ceiling, not a monthly aggregate. |
+
+The [lending sample](../examples/lending.hsx) exposes limit approvals, funding and
+commitment creation, and cash prepare/distribute actions. Its repayment and share
+child actions still lack a public execution path. It is a composition example,
+not a complete public repayment flow. Callers still need dates, agreement inputs,
+funded wallets, eligible settlements and the distribution's share records.
+
 # Header inventory
 
 Attach library instruments inside authored object kinds. Each program selects policies through typed tunables.
-Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. Expose the chosen business action; instrument creation stays internal.
+Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. An attachment may expose create by name; clock and parent actions remain internal.
 `ref<T>[]` accepts one reference or up to 16 references as one policy.
 
 | Instrument | Tunables |
@@ -235,13 +310,13 @@ Bind party parameters to owner, actor, operator or declared parties. Configure d
 | cards.authorization | `card: ref<cards.card>`, `merchant: party`, `issuer: party = programOperator` |
 | cards.transaction | `authorization: ref<cards.authorization>` |
 | cards.dispute | `transaction: ref<cards.transaction>`, `issuer: party = programOperator`, `within: duration = 90d` |
-| savings.circle | `contribution: money`, `members: integer(1, 366)`, `starts: date`, `memberships: ref<savings.membership> = object(savings.membership)` |
+| savings.circle | `contribution: money`, `members: integer(1, 60)`, `starts: date`, `memberships: ref<savings.membership> = object(savings.membership)` |
 | savings.membership | `circle: ref<savings.circle>`, `member: party` |
 | reporting.portfolio | `on: ref<financing.installments>[]`, `default_days: integer(1, 3650) = 90`, `retention_years: integer(1, 100) = 10`, `aging_first_days: integer(1, 3650) = 30`, `aging_second_days: integer(1, 3650) = 60`, `aging_third_days: integer(1, 3650) = 90`, `ratio_scale: integer(1, 1000000) = 10000`, `ratio_rounding: enum(floor, halfUp) = floor`, `lock_wait_ms: integer(1, 2000) = 2000`, `capture_ms: integer(1, 10000) = 10000`, `max_rows: integer(1, 100000) = 10000`, `max_join_rows: integer(1, 1000000) = 100000`, `max_bytes: integer(1024, 16777216) = 8388608`; aging_first_days less_than aging_second_days, aging_second_days less_than aging_third_days |
 
 # Sample programs
 
-Each file is a complete authored program. Instrument creation stays internal; exposed actions operate on its agreements.
+Each file is an authored program. Object creation enters no agreement; an attachment may expose its instrument create action by name. Compilation alone does not prove a complete business flow.
 
 | Program | Headers | Business |
 | --- | --- | --- |
@@ -250,10 +325,11 @@ Each file is a complete authored program. Instrument creation stays internal; ex
 | [Used device sales](examples/escrow.hsx) | escrow | Buyers fund a used device purchase, then accept delivery or raise a dispute before release. |
 | [Tuition instalments](examples/financing.hsx) | financing | A tuition lender funds a student's fees over three interest-free instalments with borrowing limits. |
 | [Device insurance](examples/insurance.hsx) | insurance, money | A device retailer collects the purchase price and attaches cover with a claim review process. |
-| [Community business lending](examples/lending.hsx) | lending, financing, wallet | Investors fund a small business loan from their wallets and share its recorded repayments. |
+| [Community business lending](examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow. |
 | [Financed car sales](examples/library.hsx) | escrow, financing | A minimal financed car sale connects escrow to a three-instalment plan and lending limits. |
 | [Freelance marketplace](examples/marketplace.hsx) | marketplace, escrow | Freelancers publish offers and clients place orders with funds held until work is accepted. |
 | [Tutoring studio](examples/money.hsx) | money | A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings. |
+| [Repair approvals](examples/repair-approval.hsx) |  | A repair shop records inspection and approval evidence before it can complete a job. |
 | [Equipment loan reports](examples/reporting.hsx) | reporting, financing | An equipment lender keeps an ageing report over its financed purchases and recorded repayments. |
 | [Savings circle](examples/savings.hsx) | savings | Six members contribute to a shared pot and receive it in their agreed calendar order. |
 | [Car financing](examples/serviced.hsx) | escrow, financing, collections | A car finance company services loans with late charges, payment reminders and early repayment. |

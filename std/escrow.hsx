@@ -26,7 +26,7 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     from: funded, to: delivered, actor: { party: payee }
     set: { deliveredAt: { field: self.now } }
   }
-  action accept {
+  action accept { allowZero: true, requires self.price > "0";
     from: delivered, to: released, actor: { party: payer }
     input { acceptanceReference: text }
     deadline: { at: self.deliveredAt, offset: accept_within }

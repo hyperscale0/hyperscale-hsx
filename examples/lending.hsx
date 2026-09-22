@@ -1,4 +1,5 @@
-// Investors fund a small business loan from their wallets and share its recorded repayments.
+// A lending composition with limit approvals, wallet commitments and cash distribution transitions.
+// Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow.
 program community_business_lending "Community business lending"
 use lending
 use financing
@@ -7,8 +8,14 @@ use wallet
 object business "Business funding" {
   fields { businessName: text, purpose: text, price: money }
   columns: [businessName, purpose, price]
-  attach allowance = financing.limits { borrower: owner, per_borrower: 100000 SAR }
-  attach budget = financing.portfolio_limit { limit: 2000000 SAR }
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: 100000 SAR
+    expose approve as approve_borrower
+  }
+  attach budget = financing.portfolio_limit {
+    limit: 2000000 SAR
+    expose approve as approve_budget
+  }
   attach loan = financing.installments {
     borrower: owner, capital: operator
     months: 12, profit: 6%, disburse_to: borrower
@@ -23,13 +30,17 @@ object business "Business funding" {
   }
   attach funding = lending.round {
     borrower: owner, plan: loan
+    expose create as open_funding
     expose close as close_funding
   }
   attach investment = lending.commitment {
     round: funding, wallet: investor_balance, investor: actor
+    expose create as invest
     expose withdraw as withdraw_investment
   }
   attach returns = lending.distribution {
     round: funding, receipt: loan.settlement
+    expose prepare_cash as prepare_returns
+    expose distribute_cash as distribute_returns
   }
 }

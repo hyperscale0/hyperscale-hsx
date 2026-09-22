@@ -1,3 +1,20 @@
+# HSX 5.0.0
+
+Money moves refuse a zero amount unless the action declares `allowZero: true`,
+so a program that moved zero before now fails at compile or at execution. The
+standard library declares the permission on calculated pieces (repayment
+slices, floored fees, rounding remainders) and keeps a positive requirement on
+authored totals. Pools refuse a contribution above the remaining target and
+fee collection posts the exact fee that was billed.
+
+Headers carry binding contracts: `dependencies` name a binding that only
+applies under one enum choice of another, and `parameterDiagnostics` explain
+why a typed parameter refuses a policy shape. Ten diagnostics were rewritten
+to name the failing construct and the repair; each carries a compiler witness.
+Worked programs open with a one-line intent comment and `repair-approval.hsx`
+joins the examples. Header docs, README and llms-full.txt correct sixteen
+stale claims. Package, compiler and VS Code versions are aligned at 5.0.0.
+
 # HSX 4.2.0
 
 Adds the browser-safe `language` export with semantic highlights and hover

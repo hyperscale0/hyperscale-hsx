@@ -1,3 +1,7 @@
+import {
+  bindingDependencies,
+  parameterDiagnostics,
+} from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
 import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
@@ -141,6 +145,10 @@ export function headerManifest(
                 })),
               },
               tunables,
+              dependencies: bindingDependencies(decl).map(
+                ({ span: _span, ...dependency }) => dependency,
+              ),
+              parameterDiagnostics: parameterDiagnostics(decl),
               constraints: (() => {
                 const block = decl.body.entries.find(
                   (entry) => entry.key === "constraints",

@@ -1,0 +1,43 @@
+// A repair shop records inspection and approval evidence before it can complete a job.
+program repair_shop "Repair approvals"
+
+instrument assessment {
+  summary: "Inspect the repair, collect approval, then record completion."
+  fields { inspectedAt: date?, approvedAt: date? }
+  lifecycle { states: [submitted, inspected, approved, completed, rejected], initial: submitted }
+  action create {}
+  action inspect {
+    from: submitted, to: inspected, actor: { party: programOperator }
+    subject { inspectionNotes: text }
+    set: { inspectedAt: { field: self.now } }
+  }
+  action approve {
+    from: inspected, to: approved, actor: { party: programOperator }
+    subject { approvalReference: text }
+    set: { approvedAt: { field: self.now } }
+  }
+  action reject {
+    from: inspected, to: rejected, actor: { party: programOperator }
+  }
+  action complete {
+    from: approved, to: completed, actor: { party: programOperator }
+    subject { completionNotes: text }
+  }
+}
+
+object repair "Repair" {
+  fields { item: text, problem: text }
+  columns: [item, problem]
+  attach review = assessment {
+    expose inspect as inspect_repair
+    expose approve as approve_repair
+    expose reject as reject_repair
+    expose complete as complete_repair
+  }
+}
+
+hide assessment.create
+hide assessment.inspect
+hide assessment.approve
+hide assessment.reject
+hide assessment.complete

@@ -42,11 +42,11 @@ modified without changing later results.
 
 ## Sample programs
 
-The [sample index](docs/examples.md) lists fourteen programs. Twelve introduce
+The [sample index](docs/examples.md) lists fifteen programs. Twelve introduce
 the standard headers through small businesses: tutoring, freelance work, used
 devices, prepaid workshops, tuition lending, community lending, device cover,
 collections, travel, employee cards, a savings circle and equipment loan reports.
-The two longer-standing examples show a minimal financed car sale and servicing
+The authored repair approval example builds its lifecycle and evidence requirements directly. The two longer-standing examples show a minimal financed car sale and servicing
 with late charges and reminders.
 
 ```ts
@@ -71,7 +71,8 @@ and exercises highlighting and hover at every sample offset. A stale bundle
 fails the check; regenerate after an example edit.
 
 The insurance and travel samples name ADL adapter bindings. Compilation preserves
-unbound declarations; a configured adapter must supply the requirements before
-cover activation. Dates, agreement inputs and declared business parties still
+unbound declarations, but Product creation and recomposition reject unresolved
+or changed adapter dependencies during Build admission. Execution checks the
+frozen declaration too, including adapter unavailability after a Build was saved. Dates, agreement inputs and declared business parties still
 need values when the product runs. A compiled sample is not a connected provider
 or a funded agreement.

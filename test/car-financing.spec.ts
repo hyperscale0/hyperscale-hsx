@@ -101,7 +101,9 @@ test("the three car financing candidates compile against the standard library", 
     ["serviced", servicedCarFinancing],
     ["institutional", institutionalCarFinancing],
   ] as const)
-    expect(valid(name, source).objects.length).toBeGreaterThan(0);
+    expect(valid(name, source).objects.map((object) => object.id)).toEqual(
+      name === "institutional" ? ["facility", "car"] : ["car"],
+    );
 });
 
 test("the portfolio ceiling is a sibling instrument, not a child record", () => {

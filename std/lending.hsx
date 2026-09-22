@@ -76,23 +76,23 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     requires self.mode == "loss"; requires self.source.kind == "loss"; requires self.source in [recorded]
     calculate: [{ target: "net", op: "sum", values: [{ field: self.source.loss }] }]
   }
-  action distribute_cash {
+  action distribute_cash { allowZero: true,
     from: cash_ready, to: distributed, actor: { party: operator }
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator; moves self.vat from self.held to programTax
     invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
   }
-  action residual_cash {
+  action residual_cash { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }
     moves self.held.balance from self.held to residual_to
   }
-  action distribute_loss {
+  action distribute_loss { allowZero: true,
     from: loss_ready, to: distributed, actor: { party: operator }
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.net from self.source.lossAccount to self.losses
     invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
   }
-  action residual_loss {
+  action residual_loss { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }
     moves self.losses.balance from self.losses to self.residualLoss
   }
@@ -105,11 +105,11 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
       }
       lifecycle { states: [pending, paid], initial: pending }
       action create { requires self.distribution in [cash_ready, loss_ready]; requires self.commitment in [funded]; requires unique "distribution_weight" on [self.distribution, self.commitment]; requires self.commitment.round == self.distribution.round }
-      action cash {
+      action cash { allowZero: true,
         from: pending, to: paid, actor: { parent: parent }
         moves self.gross from self.distribution.held to self.commitment.wallet.held
       }
-      action loss { from: pending, to: paid, actor: { parent: parent }, moves self.gross from self.distribution.losses to self.commitment.loss }
+      action loss { allowZero: true, from: pending, to: paid, actor: { parent: parent }, moves self.gross from self.distribution.losses to self.commitment.loss }
     }
   }
 }

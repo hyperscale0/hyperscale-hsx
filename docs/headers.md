@@ -1,7 +1,7 @@
 # Header inventory
 
 Attach library instruments inside authored object kinds. Each program selects policies through typed tunables.
-Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. Expose the chosen business action; instrument creation stays internal.
+Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. An attachment may expose create by name; clock and parent actions remain internal.
 `ref<T>[]` accepts one reference or up to 16 references as one policy.
 
 | Instrument | Tunables |
@@ -41,6 +41,6 @@ Bind party parameters to owner, actor, operator or declared parties. Configure d
 | cards.authorization | `card: ref<cards.card>`, `merchant: party`, `issuer: party = programOperator` |
 | cards.transaction | `authorization: ref<cards.authorization>` |
 | cards.dispute | `transaction: ref<cards.transaction>`, `issuer: party = programOperator`, `within: duration = 90d` |
-| savings.circle | `contribution: money`, `members: integer(1, 366)`, `starts: date`, `memberships: ref<savings.membership> = object(savings.membership)` |
+| savings.circle | `contribution: money`, `members: integer(1, 60)`, `starts: date`, `memberships: ref<savings.membership> = object(savings.membership)` |
 | savings.membership | `circle: ref<savings.circle>`, `member: party` |
 | reporting.portfolio | `on: ref<financing.installments>[]`, `default_days: integer(1, 3650) = 90`, `retention_years: integer(1, 100) = 10`, `aging_first_days: integer(1, 3650) = 30`, `aging_second_days: integer(1, 3650) = 60`, `aging_third_days: integer(1, 3650) = 90`, `ratio_scale: integer(1, 1000000) = 10000`, `ratio_rounding: enum(floor, halfUp) = floor`, `lock_wait_ms: integer(1, 2000) = 2000`, `capture_ms: integer(1, 10000) = 10000`, `max_rows: integer(1, 100000) = 10000`, `max_join_rows: integer(1, 1000000) = 100000`, `max_bytes: integer(1024, 16777216) = 8388608`; aging_first_days less_than aging_second_days, aging_second_days less_than aging_third_days |

@@ -1,6 +1,6 @@
 # Sample programs
 
-Each file is a complete authored program. Instrument creation stays internal; exposed actions operate on its agreements.
+Each file is an authored program. Object creation enters no agreement; an attachment may expose its instrument create action by name. Compilation alone does not prove a complete business flow.
 
 | Program | Headers | Business |
 | --- | --- | --- |
@@ -9,10 +9,11 @@ Each file is a complete authored program. Instrument creation stays internal; ex
 | [Used device sales](../examples/escrow.hsx) | escrow | Buyers fund a used device purchase, then accept delivery or raise a dispute before release. |
 | [Tuition instalments](../examples/financing.hsx) | financing | A tuition lender funds a student's fees over three interest-free instalments with borrowing limits. |
 | [Device insurance](../examples/insurance.hsx) | insurance, money | A device retailer collects the purchase price and attaches cover with a claim review process. |
-| [Community business lending](../examples/lending.hsx) | lending, financing, wallet | Investors fund a small business loan from their wallets and share its recorded repayments. |
+| [Community business lending](../examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow. |
 | [Financed car sales](../examples/library.hsx) | escrow, financing | A minimal financed car sale connects escrow to a three-instalment plan and lending limits. |
 | [Freelance marketplace](../examples/marketplace.hsx) | marketplace, escrow | Freelancers publish offers and clients place orders with funds held until work is accepted. |
 | [Tutoring studio](../examples/money.hsx) | money | A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings. |
+| [Repair approvals](../examples/repair-approval.hsx) |  | A repair shop records inspection and approval evidence before it can complete a job. |
 | [Equipment loan reports](../examples/reporting.hsx) | reporting, financing | An equipment lender keeps an ageing report over its financed purchases and recorded repayments. |
 | [Savings circle](../examples/savings.hsx) | savings | Six members contribute to a shared pot and receive it in their agreed calendar order. |
 | [Car financing](../examples/serviced.hsx) | escrow, financing, collections | A car finance company services loans with late charges, payment reminders and early repayment. |

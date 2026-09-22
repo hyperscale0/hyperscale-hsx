@@ -10,7 +10,7 @@ const rows = [
   "# Header inventory",
   "",
   "Attach library instruments inside authored object kinds. Each program selects policies through typed tunables.",
-  "Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. Expose the chosen business action; instrument creation stays internal.",
+  "Bind party parameters to owner, actor, operator or declared parties. Configure declared businesses per Build. The authoringTemplate source is an attach fragment for an object block. An attachment may expose create by name; clock and parent actions remain internal.",
   "`ref<T>[]` accepts one reference or up to 16 references as one policy.",
   "",
   "| Instrument | Tunables |",
@@ -33,7 +33,7 @@ const examples = readExamples();
 const examplesReference = [
   "# Sample programs",
   "",
-  "Each file is a complete authored program. Instrument creation stays internal; exposed actions operate on its agreements.",
+  "Each file is an authored program. Object creation enters no agreement; an attachment may expose its instrument create action by name. Compilation alone does not prove a complete business flow.",
   "",
   "| Program | Headers | Business |",
   "| --- | --- | --- |",
