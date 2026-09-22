@@ -848,7 +848,9 @@ export function compile(
             { span: origin },
             partyParameter ? "subject_party_unbound" : "HSX1001",
             `${id} needs ${param.key}`,
-            `add ${param.key}: value inside ${id}`,
+            partyParameter
+              ? `bind ${param.key} to ${[...subjectPartyRoles, ...Object.keys(document.parties)].join(", ")} or declare a party`
+              : `add ${param.key}: value inside ${id}`,
           );
         }
         environment.set(param.key, actual);
@@ -1005,7 +1007,9 @@ export function compile(
               actual,
               attachmentInfo ? "subject_party_unbound" : "HSX1001",
               `${param.key} needs a declared party`,
-              "declare a party and use its name here",
+              attachmentInfo
+                ? `bind ${param.key} to ${[...subjectPartyRoles, ...Object.keys(document.parties)].join(", ")} or declare a party`
+                : "declare a party and use its name here",
             );
           const party = document.parties[v.value];
           if (
@@ -2562,11 +2566,21 @@ export function compile(
             );
           if (!found) {
             const renameEntry = renameEntries.get(oldName) ?? entry;
+            const declared = attachedInst
+              ? Object.values(attachedInst.actions).flatMap(
+                  (action) =>
+                    action.subject?.requirements.map(
+                      (requirement) => requirement.field.name,
+                    ) ?? [],
+                )
+              : [];
             failWithCode(
               renameEntry,
               "subject_field_unknown",
               `rename source '${oldName}' is not a declared subject requirement of ${targetTemplate}`,
-              "rename a declared subject requirement",
+              declared.length
+                ? `rename one of: ${[...new Set(declared)].join(", ")}`
+                : "rename a declared subject requirement",
             );
           }
         }

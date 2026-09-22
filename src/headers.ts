@@ -163,6 +163,24 @@ export function headerManifest(
               parties: tunables
                 .filter((t) => t.type === "party")
                 .map((t) => t.name),
+              // Fields the attached object must carry (or rename to) before
+              // the instrument's actions can read them.
+              subject: (() => {
+                const fields = new Map<string, string>();
+                for (const entry of decl.body.entries) {
+                  if (!entry.key.startsWith("action ")) continue;
+                  if (entry.value.kind !== "block") continue;
+                  const subject = entry.value.entries.find(
+                    (slot) => slot.key === "subject",
+                  )?.value;
+                  if (subject?.kind !== "block") continue;
+                  for (const field of subject.entries) {
+                    const type = spelling(field.value);
+                    if (type !== "adapter") fields.set(field.key, type);
+                  }
+                }
+                return [...fields].map(([name, type]) => ({ name, type }));
+              })(),
               actions: actions(decl.body),
             };
           }),

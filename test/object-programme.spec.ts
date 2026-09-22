@@ -88,12 +88,15 @@ test("mutation unknown rename source reports subject_field_unknown", () => {
     "expose check",
     "rename { absent: renamed } expose check",
   );
+  const diagnostics = compile(mutation, objectProgrammeOptions).diagnostics;
   expect(
-    compile(mutation, objectProgrammeOptions).diagnostics.map(
-      (item) => item.code,
-    ),
+    diagnostics.map((item) => item.code),
     "rename must name a declared subject requirement",
   ).toContain("subject_field_unknown");
+  expect(
+    diagnostics.find((item) => item.code === "subject_field_unknown")?.fix,
+    "the fix names the declared requirements so the author can pick one",
+  ).toMatch(/^rename one of: /);
 });
 
 test("mutation missing invocation metadata reports subject_requirement_missing", () => {
