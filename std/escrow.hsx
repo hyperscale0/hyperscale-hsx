@@ -1,5 +1,16 @@
 header escrow
 
+// Expose create, fund, deliver and accept for the purchase path. Create captures
+// subject.price; acceptance pays payee less the configured fee, not payer.
+// Expose dispute, verify_return and refund separately for the return path.
+// Payer disputes delivered goods; payee verifies return evidence from disputed;
+// payee refunds the entire held price from return_verified by default.
+// Acceptance expiry enters disputed, never released. Neither verify_return nor
+// refund becomes public merely because dispute is exposed. Clock actions remain
+// internal. Expose cancel for a pending hold, including a checkout-funded hold;
+// it returns its credited balance to payer before cancelling. Confirm requires
+// the whole captured price in held. This flow has no partial release or refund.
+
 instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
   revisioned: true
   summary: "Hold the subject price through delivery, acceptance and verified return."
@@ -16,7 +27,7 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
   action fund {
     from: pending, to: funded, actor: { party: payer }
     subject { price: money }
-    moves subject.price from payer to self.held
+    moves self.price from payer to self.held
   }
   action confirm {
     from: pending, to: funded
@@ -48,5 +59,8 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     from: dispute.refund_after, to: refunded, actor: { party: payee }
     moves self.price from self.held to payer
   }
-  action cancel { from: pending, to: cancelled }
+  action cancel { allowZero: true,
+    from: pending, to: cancelled, actor: { party: payer }
+    moves self.held.balance from self.held to payer
+  }
 }

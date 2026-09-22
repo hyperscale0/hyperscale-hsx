@@ -1099,11 +1099,16 @@ export function compile(
             (binding.kind === "name" && binding.value === expr.value))
         )
           return expr;
-        // A resolved party parameter takes precedence over a same-named attachment.
+        // A resolved party parameter or an own parameter bound to a value takes
+        // precedence over a same-named sibling attachment; `limits: limits`
+        // binds by identity and still names the sibling.
         if (attachmentInfo && !resolvedParties.has(expr.value)) {
           const [local, ...tail] = expr.value.split(".");
+          const own = environment.get(local!);
+          const ownValue =
+            own !== undefined && !(own.kind === "name" && own.value === local);
           const target = `${attachmentInfo.subjectKindId}_${local}`;
-          if (attachmentSubjects.has(target))
+          if (!ownValue && attachmentSubjects.has(target))
             return { ...expr, value: [target, ...tail].join("_") };
         }
         if (expr.value.startsWith("party.")) {
@@ -2629,7 +2634,7 @@ export function compile(
           }
         }
         if (automatic(a.actor)) delete a.publicAction;
-        const checkSubjectPaths = (obj: unknown, span: Span, key = "") => {
+        const checkSubjectPaths = (obj: unknown, key = "") => {
           if (typeof obj === "string") {
             if (
               [
@@ -2649,7 +2654,7 @@ export function compile(
               );
               if (!req) {
                 failWithCode(
-                  { span },
+                  row,
                   "subject_field_unknown",
                   `subject.${subField} names no declared subject requirement in action ${name}`,
                   `declare ${subField} in subject { ... }`,
@@ -2657,15 +2662,15 @@ export function compile(
               }
             }
           } else if (Array.isArray(obj)) {
-            for (const item of obj) checkSubjectPaths(item, span, key);
+            for (const item of obj) checkSubjectPaths(item, key);
           } else if (obj !== null && typeof obj === "object") {
             for (const [key, val] of Object.entries(obj))
-              checkSubjectPaths(val, span, key);
+              checkSubjectPaths(val, key);
           }
         };
-        checkSubjectPaths(a.requires, row.span);
-        checkSubjectPaths(a.set, row.span);
-        checkSubjectPaths(a.invoke, row.span);
+        checkSubjectPaths(a.requires);
+        checkSubjectPaths(a.set);
+        checkSubjectPaths(a.invoke);
         currentAction = undefined;
         currentActionName = undefined;
         for (const requirement of a.subject?.requirements ?? []) {
@@ -3394,6 +3399,24 @@ export function compile(
           );
         else action!.publicAction = decl.name!;
       }
+    for (const decl of program.decls) {
+      if (decl.kind !== "expose") continue;
+      const parts = decl.target.split(".");
+      parts.pop();
+      const instrument = document.instruments.find(
+        (item) => item.id === parts.join("_"),
+      )!;
+      if (
+        Object.values(instrument.actions).filter(
+          (action) => action.publicAction === decl.name,
+        ).length > 1
+      )
+        fail(
+          decl,
+          `public action ${decl.name} is used more than once on ${parts.join(".")}`,
+          "give each exposed action a distinct public name",
+        );
+    }
     const usedParties = new Set<string>();
     const collectParties = (value: unknown): void => {
       if (typeof value === "string") {

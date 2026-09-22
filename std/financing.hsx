@@ -1,5 +1,27 @@
 header financing
 
+// Expose create and sign on installments, then collect_down_payment as checkout
+// for disburse_to: funds. Checkout requires a signed plan and pending escrow;
+// it tops up only the missing down payment, without advancing lender principal.
+// Disburse still collects any missing down payment, activates slices, and confirms
+// the fully funded hold. Existing escrow credit counts once toward the down payment.
+// Borrower-directed disbursement excludes collect_down_payment. A down_payment
+// there reduces principal but does not collect cash. Price is subject metadata,
+// not the borrower limit. The escrow payer and price must match the plan.
+// Expose escrow cancel to return checkout cash if financing is abandoned; plan
+// void alone cancels the agreement and does not refund its separate escrow.
+// Approve borrower and portfolio limits before disbursement. Create builds the
+// dated slice records; payments need a separate payment record and pay action.
+// Expose parent payoff separately and create a current, unexpired payoff_quote.
+// Expose late_charge.create as propose_assessment before the clock can assess;
+// provide matching plan, slice and borrower. Fine is fixed money, not a percentage.
+// Collection uses the minimum of payment cash and outstanding fine; a partial
+// payment does not settle the remaining fine. Recovery cost needs its own record.
+// Profit share credits capital's allocatedProfitPayable, not an outside agency.
+// Credit lines need adapter binding at activation; draws are ledger advances,
+// not evidence of outside funding. Caller-authorized limit approvals and advances
+// need the Product's operation authority. No clock declaration proves retries.
+
 instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3, profit: percent, disburse_to: enum(funds, borrower) = funds, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref<escrow.hold>?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
   dependencies {
     funds {
@@ -29,12 +51,21 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
   action create {
     subject { price: money }
     requires self.borrowerLimit.borrower == self.borrower
-    when disburse_to is funds { requires self.borrower == self.funds.payer }
+    when disburse_to is funds { requires self.borrower == self.funds.payer; requires self.price == self.funds.price }
     invoke: [{ range: { count: { literal: months }, maximum: months, bind: position }, instrument: slice, action: create, input: { plan: { field: self.id }, borrowerLimit: { field: self.borrowerLimit }, portfolioLimit: { field: self.portfolioLimit }, position: { field: position } } }]
   }
   action sign {
     from: quoted, to: signed, actor: { party: borrower }, input { signedOffer: text, affordabilityReference: text }
     requires count of { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366 } == self.months
+  }
+  action collect_down_payment { allowZero: true,
+    from: signed, to: signed, actor: { party: borrower }
+    when disburse_to is borrower { requires true == false }
+    when disburse_to is funds {
+      requires self.funds in [pending]
+      calculate: [{ target: downPaymentCredit, op: minimum, values: [{ field: self.funds.held.balance }, { field: self.downPayment }] }, { target: downPaymentRemaining, op: subtract, base: { field: self.downPayment }, subtract: [{ field: self.downPaymentCredit }] }]
+      moves self.downPaymentRemaining from self.borrower to self.funds.held
+    }
   }
   action disburse { allowZero: true,
     from: signed, to: active, actor: { party: capital }
@@ -350,7 +381,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       fields { slice: ref<slice>, dueAt: date = after(self.slice.dueAt, 0) }
       lifecycle { states: [pending, recognised], initial: pending }
       action create { actor: { parent: slice }, input { slice: ref<slice> }, requires unique "profit_recognition" on [self.slice] }
-      action reschedule { from: pending, to: pending, actor: { parent: slice } }
+      action reschedule { from: pending, to: pending, actor: { parent: slice }, calculate: [{ target: dueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: 0 }, direction: after }] }
       action mature { allowZero: true, from: pending, to: recognised, actor: clock, due: { at: self.dueAt }, moves self.slice.profitReceivable.balance from self.slice.profitReceivable to self.slice.profitEarned }
     }
     payment: {
@@ -451,7 +482,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
   }
   revisioned: true
   familyRevision: 1
-  summary: "Separate approved fine and evidenced recovery claims on an overdue installment."
+  summary: "Separate fine and evidenced recovery claims on an overdue installment."
   fields {
     plan: ref<on>, slice: ref<on.slice>, borrower: account of borrower, fine: money = fine, overdueAt: date?
     receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")

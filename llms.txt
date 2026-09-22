@@ -1,4 +1,4 @@
-# HSX 4
+# HSX
 
 - [Language](docs/README.md)
 - [Headers](docs/headers.md)

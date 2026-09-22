@@ -1,5 +1,17 @@
 header cards
 
+// Activate holder and card before creating and approving an authorization.
+// Expose authorization.create, approve and capture; expose decline and reverse
+// separately if callers need those paths. Issuer declines only from pending;
+// merchant captures or reverses an approved reservation. Expiry voids approved
+// reservations or abandons pending ones; it does not delay a captured refund.
+// Create one transaction for the captured authorization and expose its refund.
+// Refund is available immediately from posted, even before authorization.expiresAt,
+// and moves the whole captured amount from merchant to holder under programOperator.
+// No partial capture, repeated capture or partial transaction refund is provided.
+// Disputes need a posted transaction, issuer review and win before their deadline;
+// win invokes the same refund. The alias never changes the declared action actor.
+
 instrument cardholder(holder: party) {
   summary: "An account holder whose card access can be activated, suspended or closed."
   fields { holder: account of holder }

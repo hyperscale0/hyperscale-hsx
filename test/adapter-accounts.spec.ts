@@ -32,10 +32,13 @@ object policy "Policy" { attach funds = custody.balance { provider: "insurer" } 
   expect(doc.parties).not.toHaveProperty("insurer");
 });
 
-// Mutation: restore tenant-only collection, refund, or claim funding in insurance.hsx.
-test("insurance allocates net premiums and reverses the insurer share before refund", () => {
+// Mutation broker-payment: send the commission to programOperator instead of broker.
+// Mutation broker-refund: return the gross premium from insurer instead of both portions.
+test("insurance pays and refunds insurer and broker as separate funded portions", () => {
   const result = compile(
-    readFileSync(new URL("../examples/insurance.hsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../examples/insurance.hsx", import.meta.url), "utf8")
+      .replace("party inspector:", "party broker: business\nparty inspector:")
+      .replace("commission: 10%", "commission: 10%, broker: broker"),
     {
       standardLibrary: {
         source: (name) =>
@@ -45,13 +48,13 @@ test("insurance allocates net premiums and reverses the insurer share before ref
   );
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
-  const cover = doc.instruments.find(
-    (item) => item.id === "device_protection",
-  )!;
+  const cover = doc.instruments.find((item) => item.id === "device_protection");
   const slice = doc.instruments.find(
     (item) => item.id === "device_protection_slice",
-  )!;
-  const claim = doc.instruments.find((item) => item.id === "device_claim")!;
+  );
+  const claim = doc.instruments.find((item) => item.id === "device_claim");
+  if (!cover || !slice || !claim)
+    throw new Error("Missing insurance agreements");
   expect(cover.fields.find((field) => field.name === "insurer")).toMatchObject({
     owner: { adapter: "device_insurer" },
     book: "cash",
@@ -66,25 +69,25 @@ test("insurance allocates net premiums and reverses the insurer share before ref
   expect(slice.actions.collect!.moves).toMatchObject([
     {
       from: "party.owner",
-      to: "party.programOperator",
-      amount: { field: "self.premium" },
-    },
-    {
-      from: "party.programOperator",
       to: "self.cover.insurer",
       amount: { field: "self.insurerPremium" },
+    },
+    {
+      from: "party.owner",
+      to: "party.broker",
+      amount: { field: "self.commission" },
     },
   ]);
   expect(slice.actions.refund!.moves).toMatchObject([
     {
       from: "self.cover.insurer",
-      to: "party.programOperator",
+      to: "party.owner",
       amount: { field: "self.insurerPremium" },
     },
     {
-      from: "party.programOperator",
+      from: "party.broker",
       to: "party.owner",
-      amount: { field: "self.premium" },
+      amount: { field: "self.commission" },
     },
   ]);
   expect(claim.actions.approve!.moves[0]).toMatchObject({

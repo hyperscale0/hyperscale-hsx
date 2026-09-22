@@ -47,7 +47,7 @@ await writeFile(new URL("docs/examples.md", root), examplesReference);
 const reference = await readFile(new URL("docs/README.md", root), "utf8");
 await writeFile(
   new URL("llms.txt", root),
-  "# HSX 4\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Samples](docs/examples.md)\n",
+  "# HSX\n\n- [Language](docs/README.md)\n- [Headers](docs/headers.md)\n- [Samples](docs/examples.md)\n",
 );
 await writeFile(
   new URL("llms-full.txt", root),

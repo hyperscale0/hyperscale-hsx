@@ -1,8 +1,8 @@
-# HSX 4
+# HSX
 
 Read the [language reference](docs/README.md).
 
-Run `bun run check` to build and check this package.
+Run `bun run build` to build this package and `bun run check` to check it.
 
 ## Browser language service
 

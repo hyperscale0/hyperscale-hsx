@@ -1,5 +1,15 @@
 header reporting
 
+// Attach portfolio to one or more financing plans. Its only lifecycle action is
+// create; reports use the declared report request/read roles, not a money action.
+// Aging selects active facilities and includes earned profit when deciding arrears.
+// The default-rate report measures period-end stock, not new default incidence.
+// Paid facilities are excluded and write-offs counted separately. Amounts are SAR
+// minor units; declared scale and rounding govern ratios. Missing identity joins
+// or unreconciled schedule counts refuse. Origination cohorts and bureau output
+// explicitly refuse until their unavailable governed facts exist. No bureau
+// submission, provider layout, external transport or restructuring proof is supplied.
+
 instrument portfolio(on: ref<financing.installments>[], default_days: integer(1, 3650) = 90, retention_years: integer(1, 100) = 10, aging_first_days: integer(1, 3650) = 30, aging_second_days: integer(1, 3650) = 60, aging_third_days: integer(1, 3650) = 90, ratio_scale: integer(1, 1000000) = 10000, ratio_rounding: enum(floor, halfUp) = floor, lock_wait_ms: integer(1, 2000) = 2000, capture_ms: integer(1, 10000) = 10000, max_rows: integer(1, 100000) = 10000, max_join_rows: integer(1, 1000000) = 100000, max_bytes: integer(1024, 16777216) = 8388608) {
   summary: "Declared financing reports evaluated over frozen Product facts."
   fields {}

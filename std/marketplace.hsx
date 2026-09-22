@@ -1,5 +1,19 @@
 header marketplace
 
+// Listing, order and reservation are separate agreements. Expose their create
+// and decision actions individually. Order fulfillment does not move escrow cash.
+// Pair an order with escrow.hold and expose its fund, deliver, accept, dispute,
+// verify_return and refund aliases. Refund needs disputed -> return_verified,
+// with payee evidence, then returns the full price to payer; accept pays payee.
+// A reservation holds its own deposit. Activate requires an active listing and
+// no placed order. Convert must wire the declared converters to invoke credit;
+// naming a converter alone does not add that invocation. Credit consumes the
+// deposit once, credits at most the contribution, and returns excess to buyer.
+// Expose cancel, seller_cancel or operator_cancel for the intended actors.
+// Buyer cancel and expiry use configured refund percentages; seller/operator
+// cancellation return the whole reservation balance. Converted money is in escrow,
+// so subsequent return verification and refund use the escrow aliases.
+
 instrument listing(seller: party) {
   revisioned: true
   summary: "A seller's offer and its asking price."

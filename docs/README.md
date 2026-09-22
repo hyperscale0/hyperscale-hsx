@@ -1,4 +1,4 @@
-# HSX 5.0.1
+# HSX
 
 A program declares business objects and financial instruments. Objects contain
 optional metadata. Attachments expose named actions against an object.
@@ -49,6 +49,9 @@ library's declared reference type. References can name a child, such as
 objects of type T. `on: [plan_3, plan_6]` creates one late-charge or collections
 policy. Its references can point into either plan; selections can span both.
 A plain `ref<T>` accepts one object only.
+Tunable constructors are `enum(choices)` and `integer(minimum, maximum)`.
+Other constructors, including `party(business)` and bounded `money(...)`, are
+rejected at the header declaration. Their arguments do not restrict bindings.
 Imports are `use header`; there are no file imports, macros or executable strings.
 
 Amounts use `750 SAR`; percentages use `2.5%`; durations use `48h`, `3d`, or `1w`.
@@ -78,8 +81,9 @@ same book and key within the Product. Providers remain outside parties.
 A missing binding refuses before money moves. Reference paths such as
 `self.cover.insurer` use the referenced agreement's account.
 
-Insurance collection credits the premium to the operator, then moves the premium
-net of commission to the insurer account. Refunds reverse those two portions.
+Insurance collection pays the premium net of commission to the insurer account
+and pays commission separately to the bound broker, which defaults to the operator.
+Refunds return those two portions directly from insurer and broker to holder.
 Claims reserve from the cover's insurer account. These moves record ledger money;
 external confirmation still needs the boundary protocol.
 `account(buyer, claim, contra, "debt")` declares the borrower's claim contra account.
@@ -271,7 +275,7 @@ adapters are bound, participants have funds, or the flow can finish.
 | `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                                         |
 | `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                             |
 | `travel.booking`                           | From `deposit_paid` or `paid`, early cancellation returns the full held balance, middle returns held balance minus deposit, and late has no buyer refund transfer. State, time and balance requirements still apply. A deposit-only early cancellation refunds the deposit; a deposit-only middle cancellation refunds zero. |
-| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member positions.                                                                                                                                                               |
+| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                                                                                                                                   |
 | `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                           |
 | `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                                   |
 | `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                       |
@@ -282,3 +286,44 @@ commitment creation, and cash prepare/distribute actions. Its repayment and shar
 child actions still lack a public execution path. It is a composition example,
 not a complete public repayment flow. Callers still need dates, agreement inputs,
 funded wallets, eligible settlements and the distribution's share records.
+
+## Checkout and reversals
+
+For financed checkout, expose `installments.collect_down_payment` after `create`
+and `sign`. It credits the linked pending escrow with the missing down payment.
+It does not disburse principal or activate the plan. The later `disburse` action
+uses that credit before collecting any remainder. Borrower-directed financing
+has no checkout collection action. The plan and escrow must agree on payer and
+price.
+
+Expose escrow `cancel` to return money credited before full funding. Plan `void`
+cancels the signed financing agreement but does not cancel its escrow. After
+funding and delivery, the default return path needs three separate aliases for
+`dispute`, `verify_return` and `refund`. The payee supplies return evidence and
+returns the full price to the payer. `accept` pays the payee instead.
+Marketplace order fulfillment alone does not execute any of these money actions.
+
+Expose `late_charge.create` to create an assessment with matching plan, slice
+and borrower. Only that existing assessment can reach clock-owned `assess` after
+grace. A payment can collect part of a fine without settling the rest. A recovery
+cost assessment is a separate record.
+
+## Separate payments and states
+
+Bind `insurance.cover.broker` to the agency that receives commission. Collection
+pays the insurer's net premium and the broker's commission as two moves. Refunds
+reverse those same portions. The default broker is the program operator.
+`claim.deny` accepts only `submitted`; after approval, `pay` or expiry consumes
+the reservation.
+
+A booking cancellation refunds only its own held cash. Expose `cover.cancel`
+separately for eligible premium refunds before the paid period starts. Active
+and expired premium periods are excluded. A card transaction needs a captured
+authorization and its own record before refund, but no authorization-expiry wait.
+
+A savings membership becomes `received` after its pot payout. Its contribution
+records become `paid` independently. Future contributions can remain pending
+after the member receives the pot; paying a contribution does not advance their
+payout seat. Late contributions remain eligible while the membership is
+`active` or `received` and the circle is `active`. These guards do not promise
+scheduler retries or permit a payout larger than the available cash.

@@ -15,6 +15,36 @@ instrument approval(destination: enum(direct, held) = held, reserve: ref<custom.
 }`;
 const standardLibrary = { source: () => header };
 
+// Mutation: ignore the arguments of a tunable's unsupported constructor.
+test("header restrictions cannot disappear during binding or manifest admission", () => {
+  for (const [type, value] of [
+    ["party(business)", "owner"],
+    ["money(10 SAR, 20 SAR)", "30 SAR"],
+    ["text(1, 2)", '"long"'],
+  ] as const) {
+    const declaration = `header custom
+instrument review(value: ${type}) {
+ lifecycle { states: [open], initial: open }
+ action create {}
+}`;
+    const standardLibrary = { source: () => declaration };
+    const result = compile(
+      `program p "P" use custom object item { attach review = custom.review { value: ${value} } }`,
+      { standardLibrary },
+    );
+    expect(result.diagnostics).toMatchObject([
+      { code: "HSX1001", source: "custom" },
+    ]);
+    const diagnostic = result.diagnostics[0]!;
+    expect(declaration.slice(diagnostic.span.start, diagnostic.span.end)).toBe(
+      type,
+    );
+    expect(() => headerManifest(standardLibrary, ["custom"])).toThrow(
+      "unsupported tunable constructor",
+    );
+  }
+});
+
 // Mutation: special-case financing or omit contract metadata from the manifest.
 test("host headers own conditional requirements and parameter policy explanations", () => {
   const source = `program reviews "Reviews"

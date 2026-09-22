@@ -5,6 +5,8 @@ import { HSX_VERSION } from "./version.ts";
 import { compile } from "./compile.ts";
 import { format } from "./format.ts";
 import { serializeUdl } from "@hyperscale0/udl";
+const usage =
+  "hsx build|format|cost <file> [--out path]\nhsx check <file>\nhsx headers --json";
 const standardLibrary = {
   source: (header: string) => {
     for (const base of ["../std/", "../../std/"]) {
@@ -20,8 +22,6 @@ export interface Io {
   err(line: string): void;
   readFile(path: string): Promise<string>;
   writeFile(path: string, text: string): Promise<void>;
-  stdin?: NodeJS.ReadableStream;
-  stdout?: NodeJS.WritableStream;
 }
 export async function runCli(argv: readonly string[], io: Io): Promise<number> {
   const [command, file, ...options] = argv;
@@ -34,7 +34,7 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return 0;
   }
   if (["--help", "help", "-h"].includes(command ?? "")) {
-    io.out("hsx build|check|format|cost <file> [--out path]");
+    io.out(usage);
     return 0;
   }
   if (command === "--version") {
@@ -46,14 +46,20 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     !file ||
     !["build", "check", "format", "cost"].includes(command)
   ) {
-    io.err("usage: hsx build|check|format|cost <file> [--out path]");
+    io.err(`usage:\n${usage}`);
     return 2;
   }
   let output: string | undefined;
   for (let i = 0; i < options.length; i++) {
-    if (options[i] === "--out" && options[i + 1] && output === undefined)
+    if (
+      command !== "check" &&
+      options[i] === "--out" &&
+      options[i + 1] &&
+      !options[i + 1]!.startsWith("--") &&
+      output === undefined
+    )
       output = options[++i];
-    else if (!["--json", "--strict"].includes(options[i]!)) {
+    else {
       io.err(`unknown option ${options[i]}`);
       return 2;
     }

@@ -1,5 +1,16 @@
 header collections
 
+// Expose case.create, assign and recover as separate steps. Creation needs overdue
+// outstanding principal and a matching slice/plan. Assignment belongs to capital;
+// recovery belongs to agency and pays the linked payment before the agency fee.
+// Payment must belong to the same plan. Recovered means that payment was processed,
+// not that the entire debt was repaid. Fee debits plan.capital, not the borrower.
+// Expose recall for capital and return_uncollected for agency when needed.
+// Contacts need an assigned case, matching agency, local hours and rolling count.
+// Contact outcomes are separate records. Reminder dispatch is operator-owned;
+// before_due/overdue are clock-owned and require active debt. Scheduled admission
+// does not prove delivery or retry. No collector can infer authority from an alias.
+
 instrument case(on: ref<financing.installments>[], agency: party, capital: party = programOperator, overdue: duration = 3d, fee: percent = 20%) {
   revisioned: true
   summary: "Refer an overdue installment without creating another debt."

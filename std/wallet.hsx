@@ -1,5 +1,14 @@
 header wallet
 
+// Expose balance.create, activate, topup and withdraw as needed. Holder moves
+// cash only while active. Freeze blocks new topups, withdrawals and spend reserves;
+// close requires no held cash. Freeze/unfreeze use caller operation authority.
+// A separate spend record checks its amount against spendLimit at creation.
+// Expose reserve, pay and cancel for the bound payee. Reserve requires an active
+// wallet before expiresAt; pay posts the whole reservation, cancel/expiry void it.
+// Existing reservations may still post after the wallet freezes. There is no
+// daily aggregate limit, partial spend or card-network settlement in this header.
+
 instrument balance(holder: party, spend_limit: money = 100000 SAR) {
   summary: "A holder's reusable balance with an immutable per-spend ceiling."
   fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit }

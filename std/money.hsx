@@ -1,5 +1,18 @@
 header money
 
+// Expose each attachment's create and caller actions explicitly. A transfer or
+// split pays once; a hold exposes fund, release and refund separately. Release
+// pays payee and refund returns payer. A hold has no dispute or damage decision.
+// A schedule needs count unique occurrence records before activation; each due
+// occurrence pays only while the schedule is active. A due time promises no retry.
+// A pool accepts whole contributions only up to its remaining target and at most
+// 366 paid records. Expose pay to release the exact target. Clock failure refunds
+// original contributors; excess acceptance and partial contribution are absent.
+// A swap reserves both legs before exchange or voids reservations on expiry.
+// Payout instruct reserves across the selected adapter; confirm/reject require
+// matching terminal instruction evidence. An acknowledgement cannot settle it.
+// Metered bill charges a unique usage identity at the fixed unit price.
+
 instrument transfer(payer: party, payee: party, amount: money = runtime) {
   summary: "One transfer between the bound parties."
   fields { amount: money = amount }

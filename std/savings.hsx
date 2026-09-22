@@ -1,8 +1,25 @@
 header savings
 
+// Expose circle.create and membership.create; create one pending contribution
+// record per member per circle date before membership.activate. Circle activation
+// is clock-owned and needs exactly members joined memberships at or after startsAt.
+// Membership.activate needs the active circle and its full pending schedule.
+// Membership.received means the member received the pot. Contribution.paid means
+// one contribution was collected. Neither record's state proves the other's state.
+// A member can have received the pot with future unpaid contributions, or paid
+// a contribution while their membership still waits for its payout seat.
+// Receive counts preceding received memberships, never paid contributions.
+// Eight members at 300 SAR require 2400 SAR per payout; seven payments supply 2100,
+// so a full payout lacks 300 unless other cash exists. There is no reduced payout.
+// Contribution.pay has a due time and no deadline or prior-payment requirement.
+// Late and out-of-order collection is admitted while membership is active or
+// received and circle is active. Clock admission does not promise scheduler retry.
+// Circle.close needs every membership received and an empty held account.
+// Circle creation collects circleDates, one date per member for contributions and payouts.
+
 instrument circle(contribution: money, members: integer(1, 60), starts: date, memberships: ref<savings.membership> = object(savings.membership)) {
   summary: "A fixed group contributes on its explicit calendar and takes the pot in order."
-  fields { contribution: money = contribution, members: integer = members, startsAt: date = starts, dates: list(date, members), pot: money = multiply(self.contribution, self.members), held: account of self }
+  fields { contribution: money = contribution, members: integer = members, startsAt: date = starts, circleDates: list(date, members), pot: money = multiply(self.contribution, self.members), held: account of self }
   lifecycle { states: [forming, active, closed, disbanded], initial: forming }
   action create { }
   action activate {
@@ -11,35 +28,35 @@ instrument circle(contribution: money, members: integer(1, 60), starts: date, me
   }
   action close {
     from: active, to: closed
-    requires count of { instrument: memberships, reference: "circle", anchor: self.id, states: [paid], limit: 60 } == self.members
+    requires count of { instrument: memberships, reference: "circle", anchor: self.id, states: [received], limit: 60 } == self.members
     requires self.held.balance == "0"
   }
   action disband { from: forming, to: disbanded }
 }
 
 instrument membership(circle: ref<savings.circle>, member: party) {
-  summary: "A member contributes on the circle calendar and receives the pot in the assigned position."
-  fields { circle: ref<circle>, member: account of member, position: integer(1, 60), preceding: integer = subtract(self.position, 1), receivesAt: date = at(self.circle.dates, self.position), contribution: money = self.circle.contribution, total: money = self.circle.pot }
-  lifecycle { states: [joined, active, paid, withdrawn], initial: joined }
-  action create { requires self.position <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.position]; requires unique "circle_member" on [self.circle, self.member] }
+  summary: "A member contributes on the circle calendar and receives the pot in the assigned seat."
+  fields { circle: ref<circle>, member: account of member, seat: integer(1, 60), preceding: integer = subtract(self.seat, 1), receivesAt: date = at(self.circle.circleDates, self.seat), contribution: money = self.circle.contribution, total: money = self.circle.pot }
+  lifecycle { states: [joined, active, received, withdrawn], initial: joined }
+  action create { requires self.seat <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.seat]; requires unique "circle_member" on [self.circle, self.member] }
   action activate {
     from: joined, to: active
     requires self.circle in [active]
     requires count of { instrument: contribution, reference: "membership", anchor: self.id, states: [pending], limit: 60 } == self.circle.members
   }
   action receive {
-    from: active, to: paid, actor: clock, due: { at: self.receivesAt }
+    from: active, to: received, actor: clock, due: { at: self.receivesAt }
     requires self.circle in [active]
-    requires count of { instrument: all(savings.membership), reference: "circle", anchor: self.circle, states: [paid], limit: 60 } == self.preceding
+    requires count of { instrument: all(savings.membership), reference: "circle", anchor: self.circle, states: [received], limit: 60 } == self.preceding
     moves self.total from self.circle.held to self.member
   }
   action withdraw { from: joined, to: withdrawn, requires self.circle in [disbanded] }
   records {
     contribution: {
-      fields { membership: ref<parent>, position: integer(1, 60), dueAt: date = at(self.membership.circle.dates, self.position), amount: money = self.membership.contribution }
+      fields { membership: ref<parent>, period: integer(1, 60), dueAt: date = at(self.membership.circle.circleDates, self.period), amount: money = self.membership.contribution }
       lifecycle { states: [pending, paid], initial: pending }
-      action create { requires self.position <= self.membership.circle.members; requires self.membership in [joined]; requires unique "seat_period" on [self.membership, self.position] }
-      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.membership in [active, paid]; requires self.membership.circle in [active], moves self.amount from self.membership.member to self.membership.circle.held }
+      action create { requires self.period <= self.membership.circle.members; requires self.membership in [joined]; requires unique "seat_period" on [self.membership, self.period] }
+      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.membership in [active, received]; requires self.membership.circle in [active], moves self.amount from self.membership.member to self.membership.circle.held }
     }
   }
 }

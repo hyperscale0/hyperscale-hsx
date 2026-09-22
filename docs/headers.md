@@ -29,7 +29,7 @@ Bind party parameters to owner, actor, operator or declared parties. Configure d
 | lending.round | `borrower: party`, `plan: ref<financing.installments> = object(financing.installments)`, `operator: party = programOperator`, `minimum_ticket: money = 100 SAR`, `investor_cap: percent = 20%`, `commitments: ref<lending.commitment> = object(lending.commitment)` |
 | lending.commitment | `round: ref<lending.round>`, `wallet: ref<wallet.balance>`, `investor: party = party(person)` |
 | lending.distribution | `round: ref<lending.round>`, `receipt: ref`, `commitments: ref<lending.commitment> = object(lending.commitment)`, `mode: enum(cash, loss) = cash`, `residual_to: party = programOperator`, `operator: party = programOperator`, `fee: percent = 1%`, `tax: percent = 15%` |
-| insurance.cover | `holder: party`, `adapter: text`, `commission: percent = 0%`, `covers: ref`, `premium: money = runtime` |
+| insurance.cover | `holder: party`, `adapter: text`, `commission: percent = 0%`, `broker: party = programOperator`, `covers: ref`, `premium: money = runtime` |
 | insurance.claim | `cover: ref<insurance.cover>`, `inspector: party` |
 | collections.case | `on: ref<financing.installments>[]`, `agency: party`, `capital: party = programOperator`, `overdue: duration = 3d`, `fee: percent = 20%` |
 | collections.contact | `case: ref<collections.case>[]`, `agency: party`, `max_contacts: integer = 10`, `window: duration = 30d`, `contact_from: integer(0, 23) = 8`, `contact_until: integer(1, 23) = 20`, `timezone: text = "Asia/Riyadh"`; contact_from less_than contact_until |

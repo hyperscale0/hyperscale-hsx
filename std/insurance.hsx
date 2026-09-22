@@ -1,6 +1,21 @@
 header insurance
 
-instrument cover(holder: party, adapter: text, commission: percent = 0%, covers: ref, premium: money = runtime) {
+// Expose cover.create, activate and cancel separately. Activation binds adapter;
+// each slice needs a separately created unique period and an active cover to collect.
+// Collection debits holder for insurerPremium to the insurer and commission to
+// broker as two moves. Broker defaults to programOperator; bind a declared business
+// for a distinct agency. The two amounts sum to premium. Zero portions are allowed.
+// Cover.cancel invokes refund only on paid slices, before each startsAt. It returns
+// insurerPremium from insurer and commission from broker to holder. Active or
+// expired periods are excluded; insufficient recipient funds refuse the reversal.
+// Slice refund is parent-owned, not a public alias. Expose cover.cancel instead.
+// Claims require active cover. Expose claim.create, approve, deny and pay as needed.
+// Inspector approves OR denies from submitted. After approval only pay or clock
+// expiry can consume the reservation; deny is never available after approval.
+// Inspector is a bound party, not necessarily staff. These are ledger transfers;
+// outside settlement needs the boundary protocol, not a claim of provider success.
+
+instrument cover(holder: party, adapter: text, commission: percent = 0%, broker: party = programOperator, covers: ref, premium: money = runtime) {
   summary: "Recurring cover bound to an outside insurer across an ADL boundary."
   fields { covers: ref<covers>, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date }
   lifecycle { states: [pending, active, cancelled, expired], initial: pending }
@@ -33,8 +48,8 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, covers:
         requires self.premium > "0"
         from: pending, to: paid, actor: { party: holder }
         requires self.cover in [active]
-        moves self.premium from holder to programOperator
-        moves self.insurerPremium from programOperator to self.cover.insurer
+        moves self.insurerPremium from holder to self.cover.insurer
+        moves self.commission from holder to broker
       }
       action start { from: paid, to: active, actor: clock, due: { at: self.startsAt } }
       action expire { from: active, to: expired, actor: clock, due: { at: self.endsAt } }
@@ -42,8 +57,8 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, covers:
         allowZero: true
         requires self.premium > "0"
         from: paid, to: refunded, actor: { parent: parent }, deadline: { at: self.startsAt }
-        moves self.insurerPremium from self.cover.insurer to programOperator
-        moves self.premium from programOperator to holder
+        moves self.insurerPremium from self.cover.insurer to holder
+        moves self.commission from broker to holder
       }
     }
   }

@@ -1,3 +1,25 @@
+# HSX 5.4.0
+
+Standard library: financing collects the missing down payment as a
+separate checkout action (`collect_down_payment`) after a signed plan,
+with escrow cancel returning checkout cash when financing is abandoned;
+insurance cover pays the insurer's net premium and the broker's
+commission as two moves, the broker defaulting to `programOperator`;
+savings memberships take a fixed seat with `preceding` recipients
+counted before the pot is received; every header documents which
+actions to expose and why. An instrument's own parameter shadows a
+same-named sibling attachment instead of colliding with it.
+
+Header admission refuses unsupported tunable constructors: only
+`enum(choices)` and `integer(minimum, maximum)` carry arguments, so
+`money(10 SAR, 20 SAR)` no longer loses its bounds silently. An
+exposure alias cannot reuse another action's generated public name.
+Undeclared subject-path diagnostics keep the imported header's source
+location. The CLI refuses `--strict` and `--json` where they have no
+effect and `check --out`, and output commands require a real
+destination. The `HSX_TARGET_UDL_VERSION` export is gone and the
+model-readable index heading is unversioned.
+
 # HSX 5.3.0
 
 Malformed strings, field constructors, lifecycle and action shapes,

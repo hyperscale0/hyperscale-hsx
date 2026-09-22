@@ -1,5 +1,19 @@
 header lending
 
+// Round target is plan.principal from runtime subject.price, not its credit limit.
+// Expose round.create and close plus commitment.create and withdraw. A commitment
+// debits the bound investor's original active wallet before closesAt. Investor cap
+// aggregates by investor across wallets. Failure refunds those original wallets.
+// Closing needs the exact target; it funds plan.capital and does not disburse the
+// loan. Expose plan.disburse separately after signing and limit approval.
+// Distribution.create needs a recorded, unconsumed settlement matching the plan.
+// Prepare cash or loss first, then create shares against funded commitments of
+// that round. Distribution needs pending share weights equal to the round target.
+// Cash fee is a percentage of retained profit, VAT a percentage of that fee.
+// Principal plus retained profit less fee and VAT goes to weighted wallets;
+// floored residual goes to residual_to. Loss mode moves claim balances, not cash.
+// Child share execution is parent-owned. No report or clock proves outside payout.
+
 instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), operator: party = programOperator, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
   summary: "A threshold funding round; failed rounds return each original wallet contribution."
   fields {

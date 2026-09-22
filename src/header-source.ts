@@ -38,6 +38,16 @@ export function parseHeader(source: string, name: string) {
           "declare each parameter once",
         );
       parameters.add(parameter.key);
+      const type =
+        parameter.value.kind === "default"
+          ? parameter.value.type
+          : parameter.value;
+      if (type.kind === "call" && !["enum", "integer"].includes(type.name))
+        fail(
+          type,
+          `unsupported tunable constructor ${type.name}`,
+          "Only enum(choices) and integer(minimum, maximum) are supported tunable constructors. This constructor's restrictions cannot be enforced.",
+        );
     }
   }
   return program;
