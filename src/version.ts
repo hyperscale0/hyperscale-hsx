@@ -1,1 +1,1 @@
-export const HSX_VERSION = "5.4.1";
+export const HSX_VERSION = "5.4.2";

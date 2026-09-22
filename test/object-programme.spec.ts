@@ -139,7 +139,7 @@ test("mutation removed registry binding reports subject_adapter_unbound", () => 
     "undeclared adapter must make its action unavailable",
   ).toMatchObject({
     status: "unavailable",
-    code: "subject_adapter_unbound",
+    blockers: [{ code: "setup_required" }],
   });
   expect(validateObjectActionSubject(action, {}, {})).toMatchObject([
     {
@@ -208,7 +208,10 @@ test("mandatory invocation inherits requirements and unavailable adapters", () =
   expect(
     projectObjectDiscovery(unbound, build).kinds[0]!.actions[0]!.availability,
     "mandatory invocation must inherit the child's unavailable adapter",
-  ).toMatchObject({ status: "unavailable", code: "subject_adapter_unbound" });
+  ).toMatchObject({
+    status: "unavailable",
+    blockers: [{ code: "setup_required" }],
+  });
 });
 
 test("the design escrow attachment resolves subject.price through its rename", () => {

@@ -1,3 +1,7 @@
+# HSX 5.4.2
+
+Follows UDL 4.6.0: an action's `availability` carries `blockers` with a code and a plain reason instead of one code; an adapter that is not set up reads as `setup_required`. Tests updated. No compiler behaviour changed.
+
 # HSX 5.4.1
 
 Documentation only. The newcomer path now starts from a rental deposit
