@@ -1,5 +1,8 @@
 header collections
 
+// Economics: Company capital pays agencies as participant payouts; outside capital passes through.
+// A company agency earns outside capital fees; its own capital fee is internal.
+
 // Expose case.create, assign and recover as separate steps. Creation needs overdue
 // outstanding principal and a matching slice/plan. Assignment belongs to capital;
 // recovery belongs to agency and pays the linked payment before the agency fee.
@@ -28,7 +31,7 @@ instrument case(on: ref<financing.installments>[], agency: party, capital: party
   }
   action assign { from: opened, to: assigned, actor: { party: capital } }
   action recover { expansionLimit: 8192, from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
-  action pay_fee { allowZero: true, from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency }
+  action pay_fee { allowZero: true, from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency economics { recipient: agency, company: { recipient: capital, company: { purpose: internal, sourceParty: capital }, participant: { purpose: earning, sourceParty: capital } }, participant: { recipient: capital, company: { purpose: participant_payout, sourceParty: capital }, participant: { purpose: pass_through, sourceParty: capital } } } }
   action recall { from: [opened, assigned], to: recalled, actor: { party: capital } }
   action return_uncollected { from: assigned, to: returned_uncollected, actor: { party: agency } }
 }

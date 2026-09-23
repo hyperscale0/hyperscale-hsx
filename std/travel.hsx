@@ -1,5 +1,9 @@
 header travel
 
+// Economics: Booking funds and refunds are principal. Supplier payments are payouts,
+// tax is pass-through, and the company margin is earning. An outside operator
+// receives a participant payout instead of company earnings.
+
 // Publish a package before booking.create. Expose deposit, balance and confirm
 // separately. Deposit needs pending premium slices whose cover is active, and
 // collects those premiums in addition to booking cash. Balance is due by balanceAt.
@@ -59,27 +63,27 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
   action deposit { allowZero: true, requires self.price > "0";
     from: created, to: deposit_paid, actor: { party: buyer }, deadline: { at: self.balanceAt }
     requires count of { instrument: child(cover, slice), reference: "covers", anchor: self.id, states: [pending], limit: 366 } >= 1
-    moves self.deposit from buyer to self.held
+    moves self.deposit from buyer to self.held economics { purpose: principal, sourceParty: buyer }
     invoke: [{ selection: { instrument: child(cover, slice), reference: "covers", anchor: self.id, states: [pending], limit: 366 }, action: collect, input: {} }]
   }
   action balance { allowZero: true, requires self.price > "0";
     from: deposit_paid, to: paid, actor: { party: buyer }, deadline: { at: self.balanceAt }
-    moves self.balance from buyer to self.held
+    moves self.balance from buyer to self.held economics { purpose: principal, sourceParty: buyer }
   }
   action confirm { allowZero: true, requires self.price > "0";
     from: paid, to: completed, actor: { party: operator }
     due: { at: self.package.departure }, deadline: { at: self.confirmBy }
-    moves self.supplierCost from self.held to supplier
-    moves self.tax from self.held to programTax
-    moves self.operatorNet from self.held to operator
+    moves self.supplierCost from self.held to supplier economics { purpose: participant_payout, sourceParty: programOperator }
+    moves self.tax from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
+    moves self.operatorNet from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action timeout {
     from: paid, to: refunded, actor: clock, due: { at: self.confirmBy }
-    moves self.price from self.held to buyer
+    moves self.price from self.held to buyer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel_early { allowZero: true, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, deadline: { at: self.earlyAt }
-    moves self.held.balance from self.held to buyer
+    moves self.held.balance from self.held to buyer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel_middle { allowZero: true, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, due: { at: self.earlyAt }, deadline: { at: self.lateAt }
@@ -89,10 +93,10 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
       { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
       { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
     ]
-    moves self.refund from self.held to buyer
-    moves self.middlePenalty from self.held to supplier
-    moves self.retainedTax from self.held to programTax
-    moves self.retainedNet from self.held to operator
+    moves self.refund from self.held to buyer economics { purpose: principal, sourceParty: programOperator }
+    moves self.middlePenalty from self.held to supplier economics { purpose: participant_payout, sourceParty: programOperator }
+    moves self.retainedTax from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
+    moves self.retainedNet from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action cancel_late { allowZero: true, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, due: { at: self.lateAt }
@@ -101,9 +105,9 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
       { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
       { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
     ]
-    moves self.latePenalty from self.held to supplier
-    moves self.retainedTax from self.held to programTax
-    moves self.retainedNet from self.held to operator
+    moves self.latePenalty from self.held to supplier economics { purpose: participant_payout, sourceParty: programOperator }
+    moves self.retainedTax from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
+    moves self.retainedNet from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action default_balance { allowZero: true, requires self.price > "0";
     from: deposit_paid, to: cancelled, actor: clock, due: { at: self.balanceAt }
@@ -112,8 +116,8 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
       { target: retainedTax, op: "rate", base: { field: self.retainedMargin }, bps: { literal: tax }, rounding: "floor" }
       { target: retainedNet, op: "subtract", base: { field: self.retainedMargin }, subtract: [{ field: self.retainedTax }] }
     ]
-    moves self.latePenalty from self.held to supplier
-    moves self.retainedTax from self.held to programTax
-    moves self.retainedNet from self.held to operator
+    moves self.latePenalty from self.held to supplier economics { purpose: participant_payout, sourceParty: programOperator }
+    moves self.retainedTax from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
+    moves self.retainedNet from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
 }

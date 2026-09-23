@@ -1,5 +1,8 @@
 header marketplace
 
+// Economics: Deposit funding, escrow credit and returns are principal. Retention is
+// earning for the company or a payout to a bound outside recipient.
+
 // Listing, order and reservation are separate agreements. Expose their create
 // and decision actions individually. Order fulfillment does not move escrow cash.
 // Pair an order with escrow.hold and expose its fund, deliver, accept, dispute,
@@ -77,7 +80,7 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     calculate: [{ target: expiresAt, op: shift, date: { field: self.now }, milliseconds: { literal: expires_after }, direction: after }]
     requires self.listing in [active]; requires self.price == self.listing.price
     requires count of { instrument: all(marketplace.order), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } == 0
-    moves self.deposit from self.buyer to self.held
+    moves self.deposit from self.buyer to self.held economics { purpose: principal, sourceParty: buyer }
   }
   action convert_financed {
     from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
@@ -96,31 +99,31 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     requires input.contribution <= self.price
     calculate: [{ target: credit, op: minimum, values: [{ field: self.held.balance }, { field: input.contribution }] }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.credit }] }]
     set: { dispositionAt: { field: self.now } }
-    moves self.credit from self.held to input.funds.held
-    moves self.refund from self.held to self.buyer
+    moves self.credit from self.held to input.funds.held economics { purpose: principal, sourceParty: programOperator }
+    moves self.refund from self.held to self.buyer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel { allowZero: true,
     from: active, to: cancelled, actor: { party: buyer }, input { reason: text }
     calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: cancellation_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
     set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
-    moves self.refund from self.held to self.buyer; moves self.retained from self.held to retained_to
+    moves self.refund from self.held to self.buyer economics { purpose: principal, sourceParty: programOperator }; moves self.retained from self.held to retained_to economics { recipient: retained_to, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action seller_cancel {
     from: active, to: cancelled, actor: { party: seller }, input { reason: text }
     set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
-    moves self.held.balance from self.held to self.buyer
+    moves self.held.balance from self.held to self.buyer economics { purpose: principal, sourceParty: programOperator }
   }
   action operator_cancel {
     from: active, to: cancelled, actor: { party: operator }, input { reason: text }
     set: { reason: { field: input.reason }, dispositionAt: { field: self.now } }
-    moves self.held.balance from self.held to self.buyer
+    moves self.held.balance from self.held to self.buyer economics { purpose: principal, sourceParty: programOperator }
   }
   action withdraw { from: proposed, to: cancelled, actor: { party: buyer } }
   action expire { allowZero: true,
     from: active, to: expired, actor: clock, due: { at: self.expiresAt }
     calculate: [{ target: refund, op: rate, base: { field: self.held.balance }, bps: { literal: expiry_refund }, rounding: floor }, { target: retained, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.refund }] }]
     set: { dispositionAt: { field: self.now } }
-    moves self.refund from self.held to self.buyer; moves self.retained from self.held to retained_to
+    moves self.refund from self.held to self.buyer economics { purpose: principal, sourceParty: programOperator }; moves self.retained from self.held to retained_to economics { recipient: retained_to, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action expire_proposal { from: proposed, to: expired, actor: clock, due: { at: self.proposalExpiresAt } }
 }

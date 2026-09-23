@@ -1,5 +1,7 @@
 header savings
 
+// Economics: Contributions and returned pots are principal, not company earnings.
+
 // Expose circle.create and membership.create; create one pending contribution
 // record per member per circle date before membership.activate. Circle activation
 // is clock-owned and needs exactly members joined memberships at or after startsAt.
@@ -52,7 +54,7 @@ instrument membership(circle: ref<savings.circle>, member: party) {
     from: active, to: received, actor: clock, due: { at: self.receivesAt }
     requires self.circle in [active]
     requires count of { instrument: all(savings.membership), reference: "circle", anchor: self.circle, states: [received], limit: 60 } == self.preceding
-    moves self.total from self.circle.held to self.member
+    moves self.total from self.circle.held to self.member economics { purpose: principal, sourceParty: programOperator }
   }
   action withdraw { from: joined, to: withdrawn, requires self.circle in [disbanded] }
   records {
@@ -60,7 +62,7 @@ instrument membership(circle: ref<savings.circle>, member: party) {
       fields { membership: ref<parent>, period: integer(1, 60), dueAt: date = at(self.membership.circle.circleDates, self.period), amount: money = self.membership.contribution }
       lifecycle { states: [pending, paid], initial: pending }
       action create { requires self.period <= self.membership.circle.members; requires self.membership in [joined]; requires unique "seat_period" on [self.membership, self.period] }
-      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.membership in [active, received]; requires self.membership.circle in [active], moves self.amount from self.membership.member to self.membership.circle.held }
+      action pay { from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.membership in [active, received]; requires self.membership.circle in [active], moves self.amount from self.membership.member to self.membership.circle.held economics { purpose: principal, sourceParty: member } }
     }
   }
 }

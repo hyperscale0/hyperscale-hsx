@@ -90,6 +90,29 @@ instrument invoice {
   ]).toEqual(["valid", object.artifacts?.document, "invalid"]);
 });
 
+// Mutation: drop economics while lowering the generic move record.
+test("authored move economics survives compilation into the Build document", () => {
+  const source = `program invoice "Invoice"
+party buyer: person
+party seller: business
+instrument invoice {
+ fields { amount: money = 100 SAR }
+ lifecycle { states: [paid], initial: paid }
+ action create {
+  moves self.amount from buyer to seller economics { purpose: earning, sourceParty: buyer }
+ }
+}`;
+  const compiled = compile(source);
+  expect(compiled.verdict).toBe("valid");
+  expect(
+    compiled.artifacts?.document.instruments[0]?.actions.create?.moves[0]
+      ?.economics,
+  ).toEqual({
+    purpose: "earning",
+    sourceParty: "buyer",
+  });
+});
+
 test("enum branches keep only the chosen ordered moves", () => {
   const standardLibrary = {
     source: (name: string) =>
@@ -310,4 +333,60 @@ payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d,
   expect(
     validation.ok ? [] : validation.issues.map((issue) => issue.message),
   ).toContain("boundary reservation requires a retained adapter binding");
+});
+
+// Mutation: copy the sale purpose onto the fee and pass-through legs.
+test("fee expansion preserves a separate economic purpose on each leg", () => {
+  const result = compile(`program fee_purposes "Fees"
+party buyer: person
+instrument bill {
+ fields { amount: money = 100 SAR }
+ lifecycle { states: [paid], initial: paid }
+ action create {
+  moves self.amount from buyer to programOperator fee { seller: 1%, tax: 15% } economics {
+   payee: { purpose: earning, sourceParty: buyer }
+   fee: { purpose: earning, sourceParty: buyer }
+   tax: { purpose: pass_through, sourceParty: buyer }
+  }
+ }
+}`);
+  expect(result.diagnostics).toEqual([]);
+  expect(
+    result.artifacts!.document.instruments[0]!.actions.create!.moves.map(
+      (m) => m.economics?.purpose,
+    ),
+  ).toEqual(["earning", "earning", "pass_through"]);
+});
+
+// Mutation: treat a declared outside recipient as the company.
+test("economics chooses a purpose from the resolved recipient", () => {
+  for (const [recipient, purpose, sourceParty] of [
+    ["operator", "earning", "owner"],
+    ["provider", "participant_payout", "programOperator"],
+  ] as const) {
+    const result = compile(`program costs "Costs"
+use financing
+party provider: business
+object purchase "Purchase" {
+ fields { price: money }
+ attach limits = financing.limits { borrower: owner, per_borrower: 1000 SAR }
+ attach budget = financing.portfolio_limit { limit: 10000 SAR }
+ attach plan = financing.installments { borrower: owner, capital: operator, months: 3, profit: 1%, disburse_to: borrower, limits: limits, portfolio: budget }
+ attach charge = financing.late_charge { on: plan, borrower: owner, costs_to: ${recipient} }
+}`);
+    expect(result.diagnostics).toEqual([]);
+    const receipt = result.artifacts!.document.instruments.find(
+      (i) => i.id === "purchase_charge_cost_receipt",
+    )!;
+    expect(receipt.actions.create!.moves[0]!.economics).toEqual({
+      purpose,
+      sourceParty,
+    });
+    if (recipient === "operator")
+      expect(receipt.actions.refund!.moves[0]!.economics).toMatchObject({
+        purpose,
+        reversalOf: "self.cashReceipt",
+      });
+    else expect(receipt.actions.refund!.moves[0]!.economics).toBeUndefined();
+  }
 });

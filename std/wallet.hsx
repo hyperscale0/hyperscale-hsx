@@ -1,5 +1,8 @@
 header wallet
 
+// Economics: Topups and withdrawals are excluded prepaid credit. Spending remains
+// unclassified because the bound payee alone does not state the purchase purpose.
+
 // Expose balance.create, activate, topup and withdraw as needed. Holder moves
 // cash only while active. Freeze blocks new topups, withdrawals and spend reserves;
 // close requires no held cash. Freeze/unfreeze use caller operation authority.
@@ -22,12 +25,12 @@ instrument balance(holder: party, spend_limit: money = 100000 SAR) {
   action topup {
     from: active, to: active, actor: { party: holder }
     input { amount: money }
-    moves input.amount from holder to self.held
+    moves input.amount from holder to self.held economics { purpose: prepaid_credit, sourceParty: holder }
   }
   action withdraw {
     from: active, to: active, actor: { party: holder }
     input { amount: money }
-    moves input.amount from self.held to holder
+    moves input.amount from self.held to holder economics { purpose: prepaid_credit, sourceParty: programOperator }
   }
   action freeze { from: active, to: frozen, }
   action unfreeze { from: frozen, to: active, }

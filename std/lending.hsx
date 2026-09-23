@@ -1,5 +1,9 @@
 header lending
 
+// Economics: Funding and commitment returns are principal. Distribution tax is
+// pass-through; own-account fee and claim allocations are internal. Mixed
+// principal/profit distributions and unbound source owners remain unclassified.
+
 // Round target is plan.principal from runtime subject.price, not its credit limit.
 // Expose round.create and close plus commitment.create and withdraw. A commitment
 // debits the bound investor's original active wallet before closesAt. Investor cap
@@ -31,7 +35,7 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
     from: open, to: funded, actor: { party: operator }
     requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
     requires self.held.balance == self.price
-    moves self.price from self.held to self.plan.capital
+    moves self.price from self.held to self.plan.capital economics { purpose: principal, sourceParty: programOperator }
     invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: fund, input: {} }]
   }
   action fail {
@@ -54,18 +58,18 @@ instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, in
     requires self.wallet.holder == self.investor
     requires self.amount >= self.round.minimumTicket
     deadline: { at: self.round.closesAt }
-    moves self.amount from self.wallet.held to self.round.held
+    moves self.amount from self.wallet.held to self.round.held economics { purpose: principal, sourceParty: programOperator }
   }
   action fund { from: committed, to: funded, actor: { parent: round } }
   action withdraw {
     from: committed, to: withdrawn, actor: { party: investor }
     requires self.round in [open]
     deadline: { at: self.round.closesAt }
-    moves self.amount from self.round.held to self.wallet.held
+    moves self.amount from self.round.held to self.wallet.held economics { purpose: principal, sourceParty: programOperator }
   }
   action refund {
     from: committed, to: refunded, actor: { parent: round }
-    moves self.amount from self.round.held to self.wallet.held
+    moves self.amount from self.round.held to self.wallet.held economics { purpose: principal, sourceParty: programOperator }
   }
 }
 
@@ -98,7 +102,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   action distribute_cash { allowZero: true,
     from: cash_ready, to: distributed, actor: { party: operator }
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
-    moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator; moves self.vat from self.held to programTax
+    moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator economics { purpose: internal, sourceParty: programOperator }; moves self.vat from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
     invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
   }
   action residual_cash { allowZero: true,
@@ -113,7 +117,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   }
   action residual_loss { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }
-    moves self.losses.balance from self.losses to self.residualLoss
+    moves self.losses.balance from self.losses to self.residualLoss economics { purpose: internal, sourceParty: programOperator }
   }
   records {
     share: {
@@ -128,7 +132,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
         from: pending, to: paid, actor: { parent: parent }
         moves self.gross from self.distribution.held to self.commitment.wallet.held
       }
-      action loss { allowZero: true, from: pending, to: paid, actor: { parent: parent }, moves self.gross from self.distribution.losses to self.commitment.loss }
+      action loss { allowZero: true, from: pending, to: paid, actor: { parent: parent }, moves self.gross from self.distribution.losses to self.commitment.loss economics { purpose: internal, sourceParty: programOperator } }
     }
   }
 }

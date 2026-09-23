@@ -246,6 +246,13 @@ maxAge 1d` requires a recent completed provider check.
 only to reservations. Fees settle with create moves, never reservations. Repeated clauses keep
 their declaration order. The JSON-like clause form remains accepted and lowers
 to the same [UDL clauses](https://github.com/hyperscale0/hyperscale-udl/blob/main/spec/README.md).
+Use `economics { purpose: earning, sourceParty: merchant }` on a move to
+classify posted money. Other purposes are `principal`, `participant_payout`,
+`internal`, `prepaid_credit`, and `pass_through`. `reversalOf: self.originalTransfer` links a
+reversal. The source party must own the source account, except when an earning
+releases the retained payer’s money from an agreement-bound instrument account
+to a company account outside the agreement. A reservation passes its economics
+to its post. Fee shorthand accepts separate economics for each expanded leg.
 They cannot add kernel instructions. `at(list, position)` reads a dated list;
 `aggregate(selection, "amount")` sums selected money; `ratio(amount, weight, total)`
 floors a weighted share. `records` declares child types. `invoke` can create a child
@@ -433,3 +440,36 @@ after the member receives the pot; paying a contribution does not advance their
 payout seat. Late contributions remain eligible while the membership is
 `active` or `received` and the circle is `active`. These guards do not promise
 scheduler retries or permit a payout larger than the available cash.
+
+## Posted economics in the money flows
+
+Held customer funding and its unspent return are `principal`. A release for the
+company's sale is `earning`. A payment from company cash to another participant
+is `participant_payout`. Claims, waivers, write-offs and own-account allocations
+are `internal`; prepaid balance topups and returns are `prepaid_credit`. Tax is
+`pass_through`, excluded from earnings and costs. Unpaid claims count as neither.
+Refunds of paid profit, company charges and commission capture the original
+transfer and use `reversalOf`, so refunds reduce the original purpose.
+
+Fee shorthand accepts separate move economics: `economics { payee: { purpose:
+earning, sourceParty: payer }, fee: { purpose: earning, sourceParty: payer },
+tax: { purpose: pass_through, sourceParty: payer } }`. These describe authored
+product fees. Automatic platform fees keep their commercial classification.
+
+Any economics block can select by a resolved party: `economics { recipient:
+recipient, company: { purpose: earning, sourceParty: payer }, participant:
+{ purpose: participant_payout, sourceParty: programOperator } }`. The compiler
+chooses `company` for `operator`, `programOperator`, or a declared party with the
+`program_operator` role; it chooses `participant` for other bound parties.
+Both branches must be supplied. A branch may be `unclassified` when no purpose
+is established. Outside financing-profit and recovery recipients refund directly
+to the customer, not the company that funded the payout; those refund branches
+remain unclassified because they cannot reverse that company payout. Std
+recovery charges use this rule to avoid counting company receipts as participant
+costs. Direct customer payments to
+outside recipients are pass-through; payments from held company cash are costs.
+
+Generic transfers and mixed principal/profit distributions remain unclassified
+when their structure does not establish a purpose. Adapter-owned premium and
+claim accounts and credit-line advances also lack an authored source party.
+Their reports remain incomplete rather than guessing a company earning or cost.

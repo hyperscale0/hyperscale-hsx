@@ -1,5 +1,9 @@
 header insurance
 
+// Economics: Company commission is earning; refunds reverse its captured transfer.
+// Outside broker commissions are pass-through. Adapter-owned premium and claim
+// accounts lack an authored source party, so their moves remain unclassified.
+
 // Expose cover.create, activate and cancel separately. Activation binds adapter;
 // each slice needs a separately created unique period and an active cover to collect.
 // Collection debits holder for insurerPremium to the insurer and commission to
@@ -39,7 +43,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
       fields {
         cover: ref<parent>, covers: ref<covers>, premium: money = premium, startsAt: date, endsAt: date
         commission: money = rate(self.premium, commission)
-        insurerPremium: money = subtract(self.premium, self.commission)
+        insurerPremium: money = subtract(self.premium, self.commission), commissionReceipt: text?
       }
       lifecycle { states: [pending, paid, active, expired, refunded], initial: pending }
       action create {
@@ -53,7 +57,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
         from: pending, to: paid, actor: { party: holder }
         requires self.cover in [active]
         moves self.insurerPremium from holder to self.cover.insurer
-        moves self.commission from holder to broker
+        moves self.commission from holder to broker capture "commissionReceipt" economics { recipient: broker, company: { purpose: earning, sourceParty: holder }, participant: { purpose: pass_through, sourceParty: holder } }
       }
       action start { from: paid, to: active, actor: clock, due: { at: self.startsAt } }
       action expire { from: active, to: expired, actor: clock, due: { at: self.endsAt } }
@@ -62,7 +66,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
         requires self.premium > "0"
         from: paid, to: refunded, actor: { parent: parent }, deadline: { at: self.startsAt }
         moves self.insurerPremium from self.cover.insurer to holder
-        moves self.commission from broker to holder
+        moves self.commission from broker to holder economics { recipient: broker, company: { purpose: earning, sourceParty: broker, reversalOf: self.commissionReceipt }, participant: { purpose: pass_through, sourceParty: broker } }
       }
     }
   }

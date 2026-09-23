@@ -450,6 +450,7 @@ class Parser {
     }
     for (const key of ["fee", "capture", "key"])
       if (this.eat(key)) values[key] = this.atom();
+    if (this.eat("economics")) values.economics = this.block();
     if (this.eat("boundary"))
       values.boundary = this.record({ adapter: this.atom() });
     return this.record(values);

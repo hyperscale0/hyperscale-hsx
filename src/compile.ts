@@ -2323,6 +2323,125 @@ export function compile(
               const key = parts.has("key")
                 ? String(data(parts.get("key")!))
                 : `move${index + 1}`;
+              const lowerEconomics = (
+                economicsExpr: Expr | undefined,
+              ): UdlAction["moves"][number]["economics"] => {
+                if (economicsExpr) {
+                  const resolved = resolve(economicsExpr);
+                  if (
+                    resolved.kind === "name" &&
+                    resolved.value === "unclassified"
+                  )
+                    return undefined;
+                  const choices = entries(asBlock(resolve(economicsExpr)));
+                  if (choices.has("recipient")) {
+                    for (const term of choices.keys())
+                      if (
+                        !["recipient", "company", "participant"].includes(term)
+                      )
+                        fail(
+                          economicsExpr,
+                          `unknown economics choice ${term}`,
+                          "use recipient, company and participant",
+                        );
+                    const recipient = String(data(choices.get("recipient")!));
+                    if (
+                      !isParty(recipient) ||
+                      !choices.has("company") ||
+                      !choices.has("participant")
+                    )
+                      fail(
+                        economicsExpr,
+                        "economics choice needs a bound recipient and both branches",
+                        "declare recipient, company and participant",
+                      );
+                    const company =
+                      recipient === "operator" ||
+                      recipient === "programOperator" ||
+                      document.parties[recipient]?.role === "program_operator";
+                    return lowerEconomics(
+                      choices.get(company ? "company" : "participant"),
+                    );
+                  }
+                }
+                const economicsParts = economicsExpr
+                  ? entries(asBlock(resolve(economicsExpr)))
+                  : undefined;
+                if (economicsParts) {
+                  for (const term of economicsParts.keys())
+                    if (
+                      !["purpose", "sourceParty", "reversalOf"].includes(term)
+                    )
+                      fail(
+                        economicsExpr!,
+                        `unknown economics term ${term}`,
+                        "use purpose, sourceParty or reversalOf",
+                      );
+                }
+                const purpose = economicsParts?.get("purpose");
+                const sourceParty = economicsParts?.get("sourceParty");
+                if (economicsParts && (!purpose || !sourceParty))
+                  fail(
+                    economicsExpr!,
+                    "economics needs purpose and sourceParty",
+                    "declare both economics fields",
+                  );
+                const purposeName = purpose ? String(data(purpose)) : undefined;
+                if (
+                  purposeName &&
+                  ![
+                    "earning",
+                    "principal",
+                    "participant_payout",
+                    "internal",
+                    "prepaid_credit",
+                    "pass_through",
+                  ].includes(purposeName)
+                )
+                  fail(
+                    purpose!,
+                    `unknown economic purpose ${purposeName}`,
+                    "choose a declared economic purpose",
+                  );
+                const sourcePartyName = sourceParty
+                  ? String(data(sourceParty))
+                  : undefined;
+                if (sourcePartyName && !isParty(sourcePartyName))
+                  fail(
+                    sourceParty!,
+                    `unknown source party ${sourcePartyName}`,
+                    "bind an authored party",
+                  );
+                return economicsParts
+                  ? {
+                      purpose: purposeName as NonNullable<
+                        UdlAction["moves"][number]["economics"]
+                      >["purpose"],
+                      sourceParty: sourcePartyName!,
+                      ...(economicsParts.has("reversalOf")
+                        ? {
+                            reversalOf: path(economicsParts.get("reversalOf")!),
+                          }
+                        : {}),
+                    }
+                  : undefined;
+              };
+              const economicsExpr = parts.get("economics");
+              const feeEconomics =
+                parts.has("fee") && economicsExpr
+                  ? entries(asBlock(resolve(economicsExpr)))
+                  : undefined;
+              if (feeEconomics)
+                for (const term of feeEconomics.keys())
+                  if (!["payee", "fee", "tax"].includes(term))
+                    fail(
+                      economicsExpr!,
+                      `unknown fee economics leg ${term}`,
+                      "declare payee, fee or tax economics separately",
+                    );
+              const economics = lowerEconomics(
+                feeEconomics ? feeEconomics.get("payee") : economicsExpr,
+              );
               if (
                 op === "internal_transfer.create" ||
                 op === "internal_transfer.reserve"
@@ -2418,6 +2537,7 @@ export function compile(
                     a.moves.push({
                       key: `${key}_${index + 1}`,
                       operation: "internal_transfer.create",
+                      ...(economics ? { economics } : {}),
                       amount: piece,
                       from: path(from),
                       to: `party.${recipient.value}`,
@@ -2440,6 +2560,7 @@ export function compile(
                 const transfer = {
                   key,
                   operation: op,
+                  ...(economics ? { economics } : {}),
                   ...(parts.has("capture")
                     ? { capture: String(data(parts.get("capture")!)) }
                     : {}),
@@ -2585,6 +2706,9 @@ export function compile(
                   });
                   a.moves.push({
                     key: key + "Fee",
+                    ...(feeEconomics?.has("fee")
+                      ? { economics: lowerEconomics(feeEconomics.get("fee")) }
+                      : {}),
                     operation: "internal_transfer.create",
                     amount: charge,
                     from: transfer.from,
@@ -2593,6 +2717,9 @@ export function compile(
                   if (vat)
                     a.moves.push({
                       key: key + "Tax",
+                      ...(feeEconomics?.has("tax")
+                        ? { economics: lowerEconomics(feeEconomics.get("tax")) }
+                        : {}),
                       operation: "internal_transfer.create",
                       amount: vat,
                       from: transfer.from,
@@ -2606,6 +2733,7 @@ export function compile(
                 a.moves.push({
                   key,
                   operation: op,
+                  ...(economics ? { economics } : {}),
                   transfer: path(parts.get("transfer")!),
                   ...(parts.has("capture")
                     ? { capture: String(data(parts.get("capture")!)) }

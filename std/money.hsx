@@ -1,5 +1,9 @@
 header money
 
+// Economics: Held funding and returns are principal. Release to the company realizes
+// earnings; release to another participant is a payout. Generic transfers, splits,
+// schedules, swaps, boundary payouts and metered fees retain no assumed purpose.
+
 // Expose each attachment's create and caller actions explicitly. A transfer or
 // split pays once; a hold exposes fund, release and refund separately. Release
 // pays payee and refund returns payer. A hold has no dispute or damage decision.
@@ -36,7 +40,7 @@ instrument hold(payer: party, payee: party, amount: money = runtime) {
   action create { }
   action fund {
     from: pending, to: funded, actor: { party: payer }
-    moves self.amount from payer to self.held
+    moves self.amount from payer to self.held economics { purpose: principal, sourceParty: payer }
   }
   action confirm {
     from: pending, to: funded
@@ -44,11 +48,11 @@ instrument hold(payer: party, payee: party, amount: money = runtime) {
   }
   action release {
     from: funded, to: released, actor: { party: payer }
-    moves self.amount from self.held to payee
+    moves self.amount from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action refund {
     from: funded, to: refunded, actor: { party: payee }
-    moves self.amount from self.held to payer
+    moves self.amount from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel { from: pending, to: cancelled }
 }
@@ -103,7 +107,7 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
   action pay {
     from: open, to: paid, actor: { party: payee }
     requires self.held.balance == self.target
-    moves self.target from self.held to payee
+    moves self.target from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
   action fail {
     from: open, to: failed, actor: clock, due: { at: self.closesAt }
@@ -116,8 +120,8 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
       lifecycle { states: [pending, paid, refunded], initial: pending }
       invariants count of { instrument: current(), reference: "pool", anchor: self.pool, states: [paid], limit: 366 } <= 366
       action create { requires self.pool in [open] }
-      action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], calculate: [{ target: remaining, op: subtract, base: { field: self.pool.target }, subtract: [{ field: self.pool.held.balance }] }], requires self.amount <= self.remaining, moves self.amount from self.payer to self.pool.held }
-      action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer }
+      action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], calculate: [{ target: remaining, op: subtract, base: { field: self.pool.target }, subtract: [{ field: self.pool.held.balance }] }], requires self.amount <= self.remaining, moves self.amount from self.payer to self.pool.held economics { purpose: principal, sourceParty: payer } }
+      action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer economics { purpose: principal, sourceParty: programOperator } }
     }
   }
 }
