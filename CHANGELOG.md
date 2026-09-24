@@ -1,3 +1,18 @@
+# HSX 5.7.0
+
+Follows UDL 4.9.0. Object `entryActions` admits enrolled customers through named
+actor-bound create actions. Product-scoped limits resolve across records with
+matching parties. `programTax` moves use an operator-owned pass-through account.
+
+Late charge creation accepts a slice reference for plans with multiple instalments.
+Financing, collections and lending samples expose repayment child actions.
+Aggregate selectors retain their selected instrument family, including child
+records, so shared limits compare the matching contracts across Builds.
+
+# HSX 5.6.1
+
+Action summaries without authored text use the action title without the instrument id.
+
 # HSX 5.6.0
 
 The compiler records the standard block origin of every instrument compiled

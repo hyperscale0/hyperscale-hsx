@@ -497,7 +497,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     receivable: account(self, claim), debt: account(borrower, claim, contra, "debt")
   }
   lifecycle { states: [proposed, assessed, collected, waived], initial: proposed }
-  action create { calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan }
+  action create { input { slice: ref<on.slice>? }, calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan }
   action assess { allowZero: true,
     from: proposed, to: assessed, actor: clock, due: { at: self.overdueAt }
     requires self.slice.principalReceivable.balance > "0"
@@ -630,6 +630,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
 
 instrument limits(per_borrower: money, borrower: party = party(person), active_plans: integer = 1) {
   familyRevision: 1
+  scope: product
   summary: "One outstanding balance ceiling per borrower."
   fields { borrower: account of borrower, limit: money = per_borrower, activePlans: integer = active_plans }
   lifecycle { states: [pending, approved], initial: pending }
@@ -639,6 +640,7 @@ instrument limits(per_borrower: money, borrower: party = party(person), active_p
 
 instrument portfolio_limit(limit: money) {
   familyRevision: 1
+  scope: product
   summary: "One shared ceiling on the principal the product may hold."
   fields { key: text = "portfolio", limit: money = limit }
   lifecycle { states: [pending, approved], initial: pending }

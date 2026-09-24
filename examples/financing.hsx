@@ -25,3 +25,8 @@ object enrolment "Enrolment" {
     expose payoff as repay_early
   }
 }
+
+expose enrolment.tuition.payment.create as create_payment
+expose enrolment.tuition.payment.pay as pay_instalment
+expose enrolment.tuition.payment.refund as refund_payment
+expose enrolment.tuition.payoff_quote.create as request_payoff_quote

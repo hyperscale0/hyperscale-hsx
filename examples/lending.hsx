@@ -1,5 +1,4 @@
 // A lending composition with limit approvals, wallet commitments and cash distribution transitions.
-// Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow.
 program community_business_lending "Community business lending"
 use lending
 use financing
@@ -25,6 +24,7 @@ object business "Business funding" {
     limits: allowance, portfolio: budget
     expose sign as sign_loan
     expose disburse as release_loan
+    expose payoff as repay_early
   }
   attach investor_balance = wallet.balance {
     expose create as create_investor_balance
@@ -49,3 +49,9 @@ object business "Business funding" {
     expose distribute_cash as distribute_returns
   }
 }
+
+expose business.loan.payment.create as create_payment
+expose business.loan.payment.pay as pay_instalment
+expose business.loan.payment.refund as refund_payment
+expose business.loan.payoff_quote.create as request_payoff_quote
+expose business.returns.share.create as create_return_share

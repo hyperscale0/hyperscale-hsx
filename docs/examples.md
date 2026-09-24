@@ -9,7 +9,7 @@ Each file is an authored program. Object creation enters no agreement; an attach
 | [Used device sales](../examples/escrow.hsx) | escrow | Buyers fund a used device purchase, then accept delivery or raise a dispute before release. |
 | [Tuition instalments](../examples/financing.hsx) | financing | A tuition lender funds a student's fees over three interest-free instalments with borrowing limits. |
 | [Device insurance](../examples/insurance.hsx) | insurance, money | A device retailer collects the purchase price and attaches cover with a claim review process. |
-| [Community business lending](../examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow. |
+| [Community business lending](../examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. |
 | [Financed car sales](../examples/library.hsx) | escrow, financing | A minimal financed car sale connects escrow to a three-instalment plan and lending limits. |
 | [Freelance marketplace](../examples/marketplace.hsx) | marketplace, escrow | Freelancers publish offers and clients place orders with funds held until work is accepted. |
 | [Tutoring studio](../examples/money.hsx) | money | A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings. |

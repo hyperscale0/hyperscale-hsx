@@ -388,17 +388,51 @@ adapters are bound, participants have funds, or the flow can finish.
 | `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                       |
 | `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate.                                                                                                                                                                                                                                                       |
 
-The financing, collections and reporting samples compose loan agreements; they
-do not supply a complete public repayment path. Insurance and travel also need
-premium-slice records and actions. Savings needs dated contribution records.
-Create aliases in these samples cover the root attachments, not every child
-record. Read each header's creation and lifecycle requirements before execution.
+A seller-owned marketplace object can declare `entryActions: [create_order]`
+when `create_order` exposes an attachment's create action with its buyer bound
+to `actor`. This admits active enrolled customers to that action. The default
+is closed. A retained buyer can read the record and run its buyer actions;
+the seller remains owner. Entry never grants access to an existing escrow.
 
-The [lending sample](examples/lending.hsx) exposes limit approvals, funding and
-commitment creation, and cash prepare/distribute actions. Its repayment and share
-child actions still lack a public execution path. It is a composition example,
-not a complete public repayment flow. Callers still need dates, agreement inputs,
-funded wallets, eligible settlements and the distribution's share records.
+`financing.limits` and `financing.portfolio_limit` declare `scope: product`.
+Create and approve the portfolio limit once per Product and the borrower limit
+once per borrower. Plans on later records resolve those shared references.
+Ordinary references remain on the current record; shared references must match
+the bound party accounts. The aggregate caps still apply across all plans.
+
+`programTax` transfers use an operator-owned cash account keyed `programTax`.
+The account primitive creates it automatically and shares it across the Product.
+Zero-tax escrow releases need no additional party setup.
+
+The financing, collections and lending samples expose payment creation, payment,
+refund and payoff quotes through the object's existing action routes. A child
+alias names the full attachment path, for example:
+
+```hsx
+expose enrolment.tuition.payment.create as create_payment
+expose enrolment.tuition.payment.pay as pay_instalment
+expose enrolment.tuition.payoff_quote.create as request_payoff_quote
+```
+
+Read the parent object's actions and follow pagination to discover child actions.
+Use the returned target, Build, digest and object revision when executing. Creation
+targets the child attachment; later actions target the child's instance ID on the
+same object. The caller must satisfy the header's actor rule. Parties bind from
+the session and object ownership. Retry the same request with the same
+Idempotency-Key to retrieve its result without moving money again.
+
+Supply payment amount and identity at creation. Pass the quote instance as the
+parent payoff's `quote` input. For a late charge on a multi-instalment plan, select
+the overdue child with the creation input `slice`. Repayment uses the declared
+allocation order and payoff rebate; aliases do not change those terms.
+
+The [lending sample](examples/lending.hsx) also exposes share creation. Callers
+still need dates, agreement inputs, funded wallets and eligible settlements.
+References without an explicit creation input require one matching agreement on
+the object. In particular, lending distributions with multiple settlements or
+commitments need authored selectors before callers can choose among them.
+Insurance and travel need premium-slice records and actions. Savings needs dated
+contribution records. Read each header's creation and lifecycle requirements.
 
 ## Checkout and reversals
 
@@ -532,7 +566,7 @@ Each file is an authored program. Object creation enters no agreement; an attach
 | [Used device sales](examples/escrow.hsx) | escrow | Buyers fund a used device purchase, then accept delivery or raise a dispute before release. |
 | [Tuition instalments](examples/financing.hsx) | financing | A tuition lender funds a student's fees over three interest-free instalments with borrowing limits. |
 | [Device insurance](examples/insurance.hsx) | insurance, money | A device retailer collects the purchase price and attaches cover with a claim review process. |
-| [Community business lending](examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. Repayment and distribution-share child actions still need an execution path; this is not a complete public repayment flow. |
+| [Community business lending](examples/lending.hsx) | lending, financing, wallet | A lending composition with limit approvals, wallet commitments and cash distribution transitions. |
 | [Financed car sales](examples/library.hsx) | escrow, financing | A minimal financed car sale connects escrow to a three-instalment plan and lending limits. |
 | [Freelance marketplace](examples/marketplace.hsx) | marketplace, escrow | Freelancers publish offers and clients place orders with funds held until work is accepted. |
 | [Tutoring studio](examples/money.hsx) | money | A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings. |

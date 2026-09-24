@@ -18,6 +18,14 @@ const attach = (body: string) => `program p "P"
 use custom
 object application "Application" { attach review = custom.review { ${body} } }`;
 
+// Mutation: append the instrument id to a generated action summary.
+test("generated action summaries use only the action title", () => {
+  const result = compile(attach(""), options);
+  expect(result.verdict).toBe("valid");
+  const actions = result.artifacts!.document.instruments[0]!.actions;
+  expect(actions.check?.summary).toBe("Check");
+});
+
 // Mutation: remove udlInstrumentSchema checking before propagation and pruning.
 test("malformed action and lifecycle shapes return diagnostics before traversal", () => {
   for (const [before, after, path] of [

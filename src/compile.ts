@@ -1488,6 +1488,7 @@ export function compile(
             "parameterDiagnostics",
             "reports",
             "revisioned",
+            "scope",
           ].includes(key) &&
           !key.startsWith("action ")
         )
@@ -2278,7 +2279,7 @@ export function compile(
         const a: UdlAction = {
           summary: slots.has("summary")
             ? String(data(slots.get("summary")!))
-            : `${title(name)} ${id}`,
+            : title(name),
           publicAction: camel(`${name}_${id}`),
           event: `${id}.${name}`,
           actor: "caller",
@@ -2839,11 +2840,43 @@ export function compile(
         inst.actions[name] = a;
         inst.actionOrder.push(name);
       }
-      for (const key of ["invariants", "reports", "revisioned"] as const)
+      for (const key of [
+        "invariants",
+        "reports",
+        "revisioned",
+        "scope",
+      ] as const)
         if (body.has(key))
           (inst as unknown as Record<string, unknown>)[key] = data(
             body.get(key)!,
           );
+      let usesTax = false;
+      for (const action of Object.values(inst.actions)) {
+        for (const move of action.moves) {
+          if (!("from" in move)) continue;
+          for (const endpoint of ["from", "to"] as const) {
+            if (move[endpoint] === "party.programTax") {
+              move[endpoint] = "self.programTaxPayable";
+              usesTax = true;
+            }
+          }
+        }
+      }
+      if (usesTax) {
+        if (inst.fields.some((field) => field.name === "programTaxPayable"))
+          fail(
+            decl,
+            "programTaxPayable is reserved for the tax account",
+            "rename the authored field",
+          );
+        inst.fields.push({
+          name: "programTaxPayable",
+          type: "account",
+          owner: "programOperator",
+          book: "cash",
+          key: "programTax",
+        });
+      }
       const shape = udlInstrumentSchema.safeParse(inst);
       if (!shape.success) {
         const issue = shape.error.issues[0]!;
@@ -2943,12 +2976,13 @@ export function compile(
         if (
           key !== "fields" &&
           key !== "columns" &&
+          key !== "entryActions" &&
           !key.startsWith("attach ")
         ) {
           fail(
             decl,
             `unknown object clause ${key}`,
-            "use fields, columns, or attach",
+            "use fields, columns, entryActions, or attach",
           );
         }
       }
@@ -3180,9 +3214,21 @@ export function compile(
         }
       }
 
+      const entryExpr = body.get("entryActions");
+      let entryActions: string[] | undefined;
+      if (entryExpr) {
+        if (entryExpr.kind !== "list" || !entryExpr.items.length)
+          fail(
+            entryExpr,
+            "entryActions needs a nonempty list",
+            "name exposed create actions bound to actor",
+          );
+        entryActions = entryExpr.items.map(text);
+      }
       document.objects.push({
         id: decl.name,
         title: decl.title,
+        ...(entryActions ? { entryActions } : {}),
         authoredFields: authoredNames,
         attachments,
         fields: authoredFields,
@@ -3225,6 +3271,31 @@ export function compile(
           .sort((a, b) => a.span.start - b.span.start)
           .map((d) => diagnostic(d, "check")),
       };
+    // Resolve selectors after every attachment and child has its family.
+    const retainSelectionFamilies = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      const record = value as Record<string, unknown>;
+      const selection = record.selection as
+        | { instrument: string | string[]; family?: UdlFamily }
+        | undefined;
+      if (selection && !selection.family) {
+        const families = [selection.instrument]
+          .flat()
+          .map(
+            (id) => document.instruments.find((item) => item.id === id)?.family,
+          );
+        const family = families[0];
+        if (
+          family &&
+          families.every(
+            (item) => canonicalJson(item) === canonicalJson(family),
+          )
+        )
+          selection.family = family;
+      }
+      for (const child of Object.values(record)) retainSelectionFamilies(child);
+    };
+    retainSelectionFamilies(document);
     // Propagate invoked requirements with the conditions on each invocation path.
     let changedInvocations = true;
     let invocationIterations = 0;
@@ -3576,6 +3647,27 @@ export function compile(
           `public action ${decl.name} is used more than once on ${parts.join(".")}`,
           "give each exposed action a distinct public name",
         );
+    }
+    for (const kind of document.objects) {
+      for (const name of kind.entryActions ?? []) {
+        const eligible = kind.attachments.some((attachment) => {
+          const create = document.instruments.find(
+            (instrument) => instrument.id === attachment.instrument,
+          )?.actions.create;
+          return (
+            create?.publicAction === name &&
+            typeof create.actor === "object" &&
+            "party" in create.actor &&
+            create.actor.party === "actor"
+          );
+        });
+        if (!eligible)
+          fail(
+            objects.get(kind.id)!,
+            `entry action ${name} must create an attachment as actor`,
+            "expose its create action and bind its acting party to actor",
+          );
+      }
     }
     const usedParties = new Set<string>();
     const collectParties = (value: unknown): void => {
