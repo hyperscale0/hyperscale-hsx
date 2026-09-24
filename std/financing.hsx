@@ -10,6 +10,8 @@ header financing
 // it tops up only the missing down payment, without advancing lender principal.
 // Disburse still collects any missing down payment, activates slices, and confirms
 // the fully funded hold. Existing escrow credit counts once toward the down payment.
+// Disburse first credits an active marketplace.reservation on the same hold,
+// so list the plan in its converters; the deposit then counts as escrow credit.
 // Borrower-directed disbursement excludes collect_down_payment. A down_payment
 // there reduces principal but does not collect cash. Price is subject metadata,
 // not the borrower limit. The escrow payer and price must match the plan.
@@ -82,7 +84,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     requires self.portfolioLimit in [approved]
     when disburse_to is funds {
       requires self.funds in [pending]
-      invoke: [{ reference: self.id, action: fund_down_payment, input: {} }]
+      invoke: [{ selection: { instrument: all(marketplace.reservation), reference: "funds", anchor: self.funds, states: [active], limit: 1 }, action: credit, input: { funds: { field: self.funds }, contribution: { field: self.downPayment } } }, { reference: self.id, action: fund_down_payment, input: {} }]
     }
     when disburse_to is borrower { moves self.principal from self.capital to self.borrower economics { purpose: principal, sourceParty: capital } }
     invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366, order: [position] }, action: activate, input: {} }]

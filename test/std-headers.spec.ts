@@ -55,7 +55,7 @@ object item "Item" {
  attach dispute = cards.dispute { transaction: transaction }
  attach listing = marketplace.listing { seller: owner }
  attach order = marketplace.order { listing: listing, buyer: actor }
- attach reservation = marketplace.reservation { listing: listing, funds: sale, plans: plan, converters: plan, buyer: actor, seller: owner }
+ attach reservation = marketplace.reservation { listing: listing, funds: sale, converters: plan, buyer: actor, seller: owner }
  attach circle = savings.circle { contribution: 300 SAR, members: 8, starts: 2027-01-01 }
  attach membership = savings.membership { circle: circle, member: actor }
  attach reports = reporting.portfolio { on: plan }

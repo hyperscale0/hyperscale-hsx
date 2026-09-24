@@ -1,3 +1,21 @@
+# HSX 5.8.0
+
+The checker names misspelled fields, parties and states at the misspelled word,
+with the nearest declared name: "`amont` is not a field or party of `deposit`.
+Did you mean `amount`?" This covers moves, actor parties, and field paths in
+`requires`, `unique ... on`, `set`, `calculate:`, `invoke`, `invariants` and the
+`at:` of `due` and `deadline`. The check runs once on the lowered program, so
+it also names a wrong segment deep in a path ("`balanse` is not a field of
+`self.held`"), `input.x` and `party.x` names, invoke instruments, actions and
+inputs, selection instruments, `where` fields and references, `ref<...>`
+targets and the list of an `at` calculation. Swapped adjacent letters count as
+one edit when picking the suggestion. A state typo in `from`, `to` or `initial` is one error
+instead of an invalid transition plus every unreachable state. A program
+instrument attached before its declaration reports each mistake once.
+
+A `ref<T>[]` binding accepts a list of sibling attachments, so `on: [plan]`
+compiles to the same program as `on: plan`.
+
 # HSX 5.7.0
 
 Follows UDL 4.9.0. Object `entryActions` admits enrolled customers through named

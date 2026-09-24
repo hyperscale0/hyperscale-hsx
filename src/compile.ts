@@ -1,4 +1,9 @@
-import { CompileFailure, fail, failWithCode } from "./diagnostics.ts";
+import {
+  CompileFailure,
+  didYouMean,
+  fail,
+  failWithCode,
+} from "./diagnostics.ts";
 import { hash as sha256 } from "fast-sha256";
 import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
@@ -21,6 +26,7 @@ import {
   type UdlField,
   type UdlInstrument,
   type UdlObjectField,
+  type UdlSelection,
   type UdlSubjectRequirement,
   type UdlValue,
 } from "@hyperscale0/udl";
@@ -398,6 +404,18 @@ export function compile(
     severity: "error",
     stage,
   });
+  // A program instrument lowers once standalone and once per attachment, so
+  // one authored mistake can fail each copy at the same place.
+  const distinct = (list: Diagnostic[]) =>
+    list.filter(
+      (d, index) =>
+        list.findIndex(
+          (other) =>
+            other.source === d.source &&
+            other.span.start === d.span.start &&
+            other.message === d.message,
+        ) === index,
+    );
   if (parsed.diagnostics.length)
     return {
       verdict: "invalid",
@@ -589,6 +607,10 @@ export function compile(
       }
     }
     const origins: CompileOriginMapEntry[] = [];
+    // Lowered objects lose their spans, so each keeps the expression that
+    // produced it for the name check after lowering.
+    const authored = new WeakMap<object, Expr>();
+    const declarations = new WeakMap<UdlInstrument, InstrumentDecl>();
     const exposures: { instrument: string; action: string; entry: Entry }[] =
       [];
     const refundBindings = new Map<
@@ -1179,14 +1201,11 @@ export function compile(
             param.value.kind === "default" ? param.value.type : param.value;
           const type =
             t.kind === "type" || t.kind === "call" ? t.name : text(t);
-          let v =
-            (supplied.has(param.key) && !attachmentInfo) || type === "enum"
-              ? actual
-              : resolve(
-                  actual,
-                  new Set(),
-                  !!attachmentInfo && type === "party",
-                );
+          const asWritten =
+            (supplied.has(param.key) && !attachmentInfo) || type === "enum";
+          let v = asWritten
+            ? actual
+            : resolve(actual, new Set(), !!attachmentInfo && type === "party");
           if (
             type === "duration" &&
             (v.kind === "text" || v.kind === "name") &&
@@ -1237,7 +1256,16 @@ export function compile(
                 ? { role: v.value as SubjectPartyRole }
                 : { party: v.value };
           } else if (type === "ref") {
-            const values = v.kind === "list" ? v.items : [v];
+            // Listed objects resolve like a single binding, so `on: [plan]`
+            // names the sibling attachment that `on: plan` names.
+            const values =
+              v.kind !== "list"
+                ? [v]
+                : asWritten
+                  ? v.items
+                  : v.items.map((item) => resolve(item));
+            if (v.kind === "list")
+              environment.set(param.key, { ...v, items: values });
             if (v.kind === "list" && (t.kind !== "type" || !t.many))
               fail(
                 v,
@@ -1587,9 +1615,11 @@ export function compile(
       };
       const val = (expr: Expr): UdlValue => {
         const v = resolve(expr);
-        return v.kind === "name" && !["true", "false"].includes(v.value)
-          ? { field: path(v) }
-          : { literal: literal(v) };
+        if (v.kind !== "name" || ["true", "false"].includes(v.value))
+          return { literal: literal(v) };
+        const value = { field: path(v) };
+        authored.set(value, expr);
+        return value;
       };
       const data = (expr: Expr): unknown => {
         if (
@@ -1646,6 +1676,7 @@ export function compile(
               if (k === "family" || k === "instrument") continue;
               result[k] = data(v);
             }
+            authored.set(result, value);
             return result;
           }
 
@@ -1674,10 +1705,14 @@ export function compile(
               };
             return null;
           }
+          authored.set(result, value);
           return result;
         }
-        if (value.kind === "list")
-          return value.items.map(data).filter((item) => item !== null);
+        if (value.kind === "list") {
+          const items = value.items.map(data).filter((item) => item !== null);
+          authored.set(items, value);
+          return items;
+        }
         if (
           value.kind === "call" &&
           value.name === "child" &&
@@ -1921,6 +1956,7 @@ export function compile(
                   `unknown calculation ${constant.name}`,
                   "use rate, sum, minimum, subtract, multiply, divide, before or after",
                 );
+              authored.set(calculations.at(-1)!, constant);
             } else if (type === "enum" && constant.kind === "name")
               f.value = constant.value;
             else if (type === "money" && constant.kind === "name")
@@ -1931,14 +1967,26 @@ export function compile(
               });
             else f.value = literal(constant, String(type));
           }
+          authored.set(f, row.value);
           result.push(f as UdlField);
         }
         return result;
       };
       fields.push(...lowerFields(asBlock(body.get("fields"))));
-      const lifecycle = data(
-        asBlock(body.get("lifecycle")),
-      ) as UdlInstrument["lifecycle"];
+      const lifecycleBlock = asBlock(body.get("lifecycle"));
+      const lifecycle = data(lifecycleBlock) as UdlInstrument["lifecycle"];
+      const states = Array.isArray(lifecycle.states) ? lifecycle.states : [];
+      const checkState = (expr: Expr, state: unknown) => {
+        if (typeof state !== "string" || !states.length) return;
+        if (states.includes(state)) return;
+        fail(
+          expr,
+          `\`${state}\` is not a state of \`${decl.name}\`.${didYouMean(state, states)}`,
+          `Use one of ${states.join(", ")}, or add \`${state}\` to \`lifecycle.states\`.`,
+        );
+      };
+      const initialExpr = entries(lifecycleBlock).get("initial");
+      if (initialExpr) checkState(initialExpr, lifecycle.initial);
       lifecycle.transitions = Object.create(
         null,
       ) as UdlInstrument["lifecycle"]["transitions"];
@@ -2288,6 +2336,7 @@ export function compile(
           moves: [],
           ...(actionSubject ? { subject: actionSubject } : {}),
         };
+        authored.set(a, row.value);
         for (const binding of boundaryBindings)
           if (
             !a.subject?.adapters.find((entry) => entry.binding === binding)
@@ -2309,12 +2358,12 @@ export function compile(
               `action ${name} needs from and to`,
               "declare its source and destination states",
             );
-          lifecycle.transitions[name] = {
-            from: (from!.kind === "list" ? from!.items : [from!]).map((e) =>
-              String(data(e)),
-            ),
-            to: String(data(to!)),
-          };
+          const sources = from!.kind === "list" ? from!.items : [from!];
+          const fromStates = sources.map((e) => String(data(e)));
+          const toState = String(data(to!));
+          sources.forEach((e, index) => checkState(e, fromStates[index]));
+          if (toState !== "preserve") checkState(to!, toState);
+          lifecycle.transitions[name] = { from: fromStates, to: toState };
         }
         for (const [key, expr] of slots) {
           if (["from", "to", "input", "summary", "subject"].includes(key))
@@ -2322,6 +2371,7 @@ export function compile(
           if (key === "moves") {
             const moves = expr.kind === "list" ? expr.items : [expr];
             for (const [index, move] of moves.entries()) {
+              const lowered = a.moves.length;
               const parts = entries(asBlock(move));
               const op = parts.has("operation")
                 ? String(data(parts.get("operation")!))
@@ -2571,6 +2621,8 @@ export function compile(
                       "split percentages must sum to 100%",
                       "give the recipients exactly 100% together",
                     );
+                  for (const item of a.moves.slice(lowered))
+                    authored.set(item, move);
                   continue;
                 }
                 if (!amount || !from || !to)
@@ -2767,6 +2819,8 @@ export function compile(
                   `unknown transfer instruction ${op}`,
                   "choose create, reserve, post, or void from internal_transfer",
                 );
+              for (const item of a.moves.slice(lowered))
+                authored.set(item, move);
             }
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
@@ -2911,6 +2965,7 @@ export function compile(
         };
       }
       document.instruments.push(inst);
+      declarations.set(inst, decl);
       for (const [key, definition] of records) {
         const childAttachment = attachmentInfo
           ? {
@@ -3267,7 +3322,7 @@ export function compile(
     if (bindingDiagnostics.length)
       return {
         verdict: "invalid",
-        diagnostics: bindingDiagnostics
+        diagnostics: distinct(bindingDiagnostics)
           .sort((a, b) => a.span.start - b.span.start)
           .map((d) => diagnostic(d, "check")),
       };
@@ -3517,6 +3572,287 @@ export function compile(
           );
       }
     }
+    // Names resolve here, once tunables, attachments and derived fields are
+    // final, and each failure points at the expression that wrote the name.
+    type Located = { span: Span; source?: string };
+    type Scope = { inst: UdlInstrument; label: string; action?: UdlAction };
+    const byId = new Map(document.instruments.map((inst) => [inst.id, inst]));
+    const site = (owner: object, key: string | number, fallback: Located) => {
+      const expr = authored.get(owner);
+      if (expr?.kind === "block")
+        return expr.entries.find((entry) => entry.key === key)?.value ?? expr;
+      if (expr?.kind === "list" && Array.isArray(owner))
+        return expr.items.length === owner.length
+          ? expr.items[Number(key)]!
+          : expr;
+      return expr ?? fallback;
+    };
+    const keySite = (owner: object, key: string, fallback: Located) => {
+      const expr = authored.get(owner);
+      const entry =
+        expr?.kind === "block"
+          ? expr.entries.find((item) => item.key === key)
+          : undefined;
+      if (!entry) return fallback;
+      return {
+        ...entry,
+        span: { start: entry.span.start, end: entry.span.start + key.length },
+      };
+    };
+    const builtins = (inst: UdlInstrument) => [
+      "id",
+      "now",
+      "createdAt",
+      "productRevision",
+      "status",
+      ...(inst.subject ? ["subject"] : []),
+    ];
+    const parties = (inst: UdlInstrument) => [
+      ...Object.keys(document.parties),
+      ...(inst.subject ? subjectPartyRoles : []),
+    ];
+    const members = (field: UdlField): string[] => {
+      if (field.type === "account") return ["balance", "reserved"];
+      if (field.type !== "ref") return [];
+      const [id] = [field.target].flat();
+      const target =
+        field.targetKind === "object"
+          ? document.objects.find((object) => object.id === id)
+          : byId.get(id!);
+      if (!target) return [];
+      return [
+        ...target.fields.map((item) => item.name),
+        ...("lifecycle" in target ? builtins(target) : []),
+      ];
+    };
+    const checkParty = (name: string, at: Located, inst: UdlInstrument) => {
+      const names = parties(inst);
+      if (!names.includes(name))
+        fail(
+          at,
+          `\`${name}\` is not a declared party.${didYouMean(name, names)}`,
+          `Declare it with \`party ${name}: business\`, or name a declared party (${names.join(", ")}).`,
+        );
+    };
+    const checkInput = (
+      name: string,
+      at: Located,
+      label: string,
+      input: readonly UdlField[],
+    ) => {
+      const names = input.map((field) => field.name);
+      if (!names.includes(name))
+        fail(
+          at,
+          `\`${name}\` is not an input of \`${label}\`.${didYouMean(name, names)}`,
+          `Declare \`${name}\` in the input of \`${label}\`${names.length ? `, or use one of ${names.join(", ")}` : ""}.`,
+        );
+    };
+    const checkTarget = (id: string, at: Located, objects = false) => {
+      const ids = [
+        ...byId.keys(),
+        ...(objects ? document.objects.map((object) => object.id) : []),
+      ];
+      const noun = objects ? "instrument or object" : "instrument";
+      if (!ids.includes(id))
+        fail(
+          at,
+          `\`${id}\` is not a declared ${noun}.${didYouMean(id, ids)}`,
+          `Name a declared ${noun}.`,
+        );
+    };
+    const checkPath = (path: string, at: Located, scope: Scope): void => {
+      const { inst, action } = scope;
+      const parts = path.split(".");
+      const found = (count: number) =>
+        resolveField(
+          document,
+          inst,
+          parts.slice(0, count).join("."),
+          action?.input,
+          action,
+        );
+      // Subject paths keep their own check against the action's requirements.
+      if (found(parts.length) || parts[0] === "subject") return;
+      if (parts[0] === "party" && parts[1]) {
+        checkParty(parts[1], at, inst);
+        if (!found(2)) return;
+      }
+      if (!["self", "input", "party"].includes(parts[0]!))
+        parts.unshift("self");
+      let count = 2;
+      while (count <= parts.length && found(count)) count++;
+      if (count > parts.length) return;
+      const name = parts[count - 1]!;
+      if (count > 2) {
+        const prefix = parts.slice(0, count - 1).join(".");
+        const names = members(found(count - 1)!);
+        fail(
+          at,
+          `\`${name}\` is not a field of \`${prefix}\`.${didYouMean(name, names)}`,
+          names.length
+            ? `Use one of ${names.join(", ")}.`
+            : `\`${prefix}\` has no fields.`,
+        );
+      }
+      if (parts[0] === "input")
+        return checkInput(name, at, scope.label, action?.input ?? []);
+      const declared = declarations.get(inst)!.name;
+      const fields = inst.fields.map((field) => field.name);
+      fail(
+        at,
+        `\`${name}\` is not a field or party of \`${declared}\`.${didYouMean(name, [...fields, ...builtins(inst), ...parties(inst)])}`,
+        `Use a field declared in \`${declared}\` (${fields.join(", ")}) or a declared party (${parties(inst).join(", ")}).`,
+      );
+    };
+    const scopeOf = (inst: UdlInstrument): Scope => ({
+      inst,
+      label: declarations.get(inst)!.name,
+    });
+    const checkSelection = (
+      selection: UdlSelection,
+      at: Located,
+      scope: Scope,
+    ) => {
+      walk(selection.anchor, "anchor", site(selection, "anchor", at), scope);
+      walk(selection.where, "where", site(selection, "where", at), scope);
+      for (const id of [selection.instrument].flat()) {
+        checkTarget(id, site(selection, "instrument", at));
+        const target = scopeOf(byId.get(id)!);
+        const member = (key: string, where: Located) =>
+          checkPath(
+            key.startsWith("self.") ? key : `self.${key}`,
+            where,
+            target,
+          );
+        for (const key of Object.keys(selection.where ?? {}))
+          member(key, keySite(selection.where!, key, at));
+        member(selection.reference, site(selection, "reference", at));
+        selection.order?.forEach((key, index) =>
+          member(key, site(selection.order!, index, at)),
+        );
+        if (selection.window)
+          member(selection.window.field, site(selection.window, "field", at));
+      }
+    };
+    const checkCall = (
+      call: NonNullable<UdlAction["invoke"]>[number],
+      at: Located,
+      scope: Scope,
+    ) => {
+      const bind = "range" in call ? call.range?.bind : undefined;
+      for (const [key, value] of Object.entries(call))
+        if (key !== "input") walk(value, key, site(call, key, at), scope);
+      for (const [key, value] of Object.entries(call.input))
+        if (!("field" in value) || value.field !== bind)
+          walk(value, key, site(call.input, key, at), scope);
+      if ("instrument" in call)
+        checkTarget(call.instrument, site(call, "instrument", at));
+      const reference =
+        "reference" in call
+          ? resolveField(
+              document,
+              scope.inst,
+              call.reference,
+              scope.action?.input,
+              scope.action,
+            )
+          : undefined;
+      const ids =
+        "instrument" in call
+          ? [call.instrument]
+          : "selection" in call
+            ? [call.selection.instrument].flat()
+            : reference?.type === "ref" && reference.targetKind === "instrument"
+              ? [reference.target].flat()
+              : [];
+      for (const id of ids) {
+        const target = byId.get(id);
+        if (!target) continue;
+        const action = target.actions[call.action];
+        if (!action)
+          fail(
+            site(call, "action", at),
+            `\`${call.action}\` is not an action of \`${id}\`.${didYouMean(call.action, target.actionOrder)}`,
+            `Use one of ${target.actionOrder.join(", ")}.`,
+          );
+        for (const key of Object.keys(call.input))
+          checkInput(
+            key,
+            keySite(call.input, key, at),
+            `${id}.${call.action}`,
+            action.input,
+          );
+      }
+    };
+    const pathKeys = [
+      "field",
+      "reference",
+      "anchor",
+      "at",
+      "list",
+      "from",
+      "to",
+      "transfer",
+      "subject",
+      "instruction",
+      "installment",
+      "recipient",
+      "dueAt",
+      "fields",
+    ];
+    const walk = (
+      value: unknown,
+      key: string,
+      at: Located,
+      scope: Scope,
+    ): void => {
+      if (typeof value === "string") {
+        if (key === "party") checkParty(value, at, scope.inst);
+        if (key === "target") checkPath(`self.${value}`, at, scope);
+        if (pathKeys.includes(key)) checkPath(value, at, scope);
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value))
+        return value.forEach((item, index) =>
+          walk(item, key, site(value, index, at), scope),
+        );
+      if (key === "selection")
+        return checkSelection(value as UdlSelection, at, scope);
+      if (key === "invoke")
+        return checkCall(
+          value as NonNullable<UdlAction["invoke"]>[number],
+          at,
+          scope,
+        );
+      if (key === "set")
+        for (const name of Object.keys(value))
+          checkPath(`self.${name}`, keySite(value, name, at), scope);
+      for (const [child, item] of Object.entries(value))
+        walk(item, child, site(value, child, at), scope);
+    };
+    for (const inst of document.instruments) {
+      const decl = declarations.get(inst)!;
+      const scope = scopeOf(inst);
+      for (const field of [
+        ...inst.fields,
+        ...Object.values(inst.actions).flatMap((action) => action.input),
+      ])
+        if ("target" in field && field.target !== undefined)
+          for (const id of [field.target].flat())
+            checkTarget(id, site(field, "target", decl), true);
+      walk(inst.calculate, "calculate", decl, scope);
+      walk(inst.invariants, "invariants", decl, scope);
+      for (const [name, action] of Object.entries(inst.actions))
+        for (const [key, value] of Object.entries(action))
+          if (key !== "input" && key !== "subject")
+            walk(value, key, site(action, key, decl), {
+              inst,
+              label: `${decl.name}.${name}`,
+              action,
+            });
+    }
     const eliminatedStates = new Map<string, Set<string>>();
     // Remove branches excluded by immutable tunables before checking reference states.
     for (const inst of document.instruments) {
@@ -3754,8 +4090,8 @@ export function compile(
     if (error instanceof CompileFailure)
       return {
         verdict: "invalid",
-        diagnostics: [...bindingDiagnostics, error.diagnostic].map((d) =>
-          diagnostic(d, "check"),
+        diagnostics: distinct([...bindingDiagnostics, error.diagnostic]).map(
+          (d) => diagnostic(d, "check"),
         ),
       };
     throw error;

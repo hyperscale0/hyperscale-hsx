@@ -526,7 +526,7 @@ Bind party parameters to owner, actor, operator or declared parties. Configure d
 | money.metered | `payer: party`, `payee: party`, `unit_price: money`, `units: integer = 1`, `fee: fee = { seller: 0% }` |
 | marketplace.listing | `seller: party` |
 | marketplace.order | `listing: ref<marketplace.listing>`, `buyer: party` |
-| marketplace.reservation | `listing: ref<marketplace.listing>`, `funds: ref<escrow.hold>`, `plans: ref<financing.installments>[]`, `converters: ref[]`, `buyer: party`, `seller: party`, `expires_after: duration = 48h`, `deposit: money = 1000 SAR`, `cancellation_refund: percent = 100%`, `expiry_refund: percent = 100%`, `retained_to: party = programOperator`, `operator: party = programOperator`, `competing_quotes: enum(allowed, blocked) = allowed` |
+| marketplace.reservation | `listing: ref<marketplace.listing>`, `funds: ref<escrow.hold>`, `converters: ref[]`, `buyer: party`, `seller: party`, `expires_after: duration = 48h`, `deposit: money = 1000 SAR`, `cancellation_refund: percent = 100%`, `expiry_refund: percent = 100%`, `retained_to: party = programOperator`, `operator: party = programOperator`, `competing_quotes: enum(allowed, blocked) = allowed` |
 | escrow.hold | `payer: party = party(person)`, `payee: party = programOperator`, `accept_within: duration = 48h`, `fee: fee = { seller: 0%, tax: 0% }`, `dispute: policy = { refund_after: return_verified }` |
 | wallet.balance | `holder: party`, `spend_limit: money = 100000 SAR` |
 | wallet.spend | `wallet: ref<wallet.balance>`, `payee: party` |

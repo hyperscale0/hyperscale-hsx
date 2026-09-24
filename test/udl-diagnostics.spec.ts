@@ -16,15 +16,15 @@ test("UDL2001 preserves the duplicate-field refusal through HSX", () => {
 });
 
 // Mutation: discard semantic UDL issues when shape validation has passed.
-test("UDL2002 preserves the undeclared-actor refusal through HSX", () => {
+test("UDL2002 preserves the undeclared-parent refusal through HSX", () => {
   const source = program("").replace(
     "action create {}",
-    "action create { actor: { party: absent } }",
+    "action create { actor: { parent: absent } }",
   );
   expect(compile(source).diagnostics.map((d) => [d.code, d.message])).toEqual([
     [
       "UDL2002",
-      "$.instruments[0].actions.create: actor names an undeclared party",
+      "$.instruments[0].actions.create: actor names an undeclared parent",
     ],
   ]);
 });
@@ -46,9 +46,13 @@ test("UDL2010 refuses a recursive action instead of entering cost recursion", ()
   expect(result.artifacts).toBeUndefined();
 });
 
-// Mutation: emit unresolved reference targets after field lowering.
-test("UDL5001 preserves the missing-reference refusal through HSX", () => {
-  const result = compile(program("fields { parent: ref<absent> }"));
+// Mutation: discard UDL field-type issues after field lowering.
+test("UDL5001 preserves the field-type refusal through HSX", () => {
+  const result = compile(
+    program(
+      "fields { note: text }\n action late { from: open, to: open, deadline: { at: self.note } }",
+    ),
+  );
   expect(result.diagnostics.map((d) => d.code)).toEqual(["UDL5001"]);
 });
 

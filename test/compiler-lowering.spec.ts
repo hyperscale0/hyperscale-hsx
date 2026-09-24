@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
 import { headerManifest } from "../src/headers.ts";
 import { runCli } from "../src/cli.ts";
@@ -78,8 +79,8 @@ test("a scalar lifecycle reports its source instead of throwing", () => {
   ]);
 });
 
-// Mutation: prune all unreachable actions, including misspelled source states.
-test("invalid transitions survive lowering for the UDL3001 refusal", () => {
+// Mutation: drop the state check, or prune actions with misspelled source states.
+test("a misspelled source state is refused at the state name", () => {
   const changed = header.replace("from: open", "from: typo");
   const result = compile(
     'program p "P"\nuse custom\nreview = custom.review {}',
@@ -88,8 +89,13 @@ test("invalid transitions survive lowering for the UDL3001 refusal", () => {
     },
   );
   expect(result.diagnostics.map((d) => [d.code, d.message])).toEqual([
-    ["UDL3001", "$.instruments[0]: invalid transition check"],
+    ["HSX1001", "`typo` is not a state of `review`."],
   ]);
+  const diagnostic = result.diagnostics[0]!;
+  expect(diagnostic.source).toBe("custom");
+  expect(changed.slice(diagnostic.span.start, diagnostic.span.end)).toBe(
+    "typo",
+  );
 });
 
 // Mutation: run lifecycle pruning even when no constant removes an action.
@@ -315,4 +321,36 @@ test("family selections reject non-name targets before family lookup", () => {
   expect(result.diagnostics.map((d) => [d.code, d.message])).toEqual([
     ["HSX1001", "instrument target needs a name"],
   ]);
+});
+
+const serviced = readFileSync(
+  new URL("../examples/serviced.hsx", import.meta.url),
+  "utf8",
+);
+
+// Mutation: leave list items of a ref<T>[] binding unresolved. `[plan]` then
+// fails as the wrong object type because `plan` never names the sibling.
+test("a ref<T>[] binding accepts a list of sibling attachments", () => {
+  const single = compile(serviced);
+  const listed = compile(
+    serviced.replace("on: plan, grace", "on: [plan], grace"),
+  );
+  expect(listed.diagnostics).toEqual([]);
+  expect(listed.artifacts!.document).toEqual(single.artifacts!.document);
+});
+
+// Mutation: skip the target comparison for listed references.
+test("a ref<T>[] binding refuses a listed attachment of another type", () => {
+  const source = serviced.replace("on: plan, grace", "on: [limits], grace");
+  const result = compile(source);
+  expect(result.diagnostics).toHaveLength(1);
+  const diagnostic = result.diagnostics[0]!;
+  expect(diagnostic).toMatchObject({
+    code: "HSX1001",
+    message: "on has the wrong object type",
+    fix: "use an object of type financing.installments",
+  });
+  expect(source.slice(diagnostic.span.start, diagnostic.span.end)).toBe(
+    "limits",
+  );
 });

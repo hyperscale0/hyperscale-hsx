@@ -9,8 +9,8 @@ header marketplace
 // verify_return and refund aliases. Refund needs disputed -> return_verified,
 // with payee evidence, then returns the full price to payer; accept pays payee.
 // A reservation holds its own deposit. Activate requires an active listing and
-// no placed order. Convert must wire the declared converters to invoke credit;
-// naming a converter alone does not add that invocation. Credit consumes the
+// no placed order. Only a declared converter may invoke credit. A financing
+// plan on the same hold credits it when the lender disburses. Credit consumes the
 // deposit once, credits at most the contribution, and returns excess to buyer.
 // Expose cancel, seller_cancel or operator_cancel for the intended actors.
 // Buyer cancel and expiry use configured refund percentages; seller/operator
@@ -64,7 +64,7 @@ instrument order(listing: ref<marketplace.listing>, buyer: party) {
   action cancel { from: [quoted, placed], to: cancelled, actor: { party: buyer } }
 }
 
-instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold>, plans: ref<financing.installments>[], converters: ref[], buyer: party, seller: party, expires_after: duration = 48h, deposit: money = 1000 SAR, cancellation_refund: percent = 100%, expiry_refund: percent = 100%, retained_to: party = programOperator, operator: party = programOperator, competing_quotes: enum(allowed, blocked) = allowed) {
+instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold>, converters: ref[], buyer: party, seller: party, expires_after: duration = 48h, deposit: money = 1000 SAR, cancellation_refund: percent = 100%, expiry_refund: percent = 100%, retained_to: party = programOperator, operator: party = programOperator, competing_quotes: enum(allowed, blocked) = allowed) {
   revisioned: true
   summary: "Exclusive timed listing hold with explicit deposit credit and refund."
   fields {
@@ -81,12 +81,6 @@ instrument reservation(listing: ref<marketplace.listing>, funds: ref<escrow.hold
     requires self.listing in [active]; requires self.price == self.listing.price
     requires count of { instrument: all(marketplace.order), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } == 0
     moves self.deposit from self.buyer to self.held economics { purpose: principal, sourceParty: buyer }
-  }
-  action convert_financed {
-    from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
-    input { plan: ref<plans> }
-    requires input.plan.funds == self.funds; requires input.plan.borrower == self.buyer
-    invoke: [{ reference: input.plan, action: disburse, input: {} }]
   }
   action convert_cash {
     from: active, to: active, actor: { party: buyer }, deadline: { at: self.expiresAt }
