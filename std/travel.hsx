@@ -81,11 +81,11 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
     from: paid, to: refunded, actor: clock, due: { at: self.confirmBy }
     moves self.price from self.held to buyer economics { purpose: principal, sourceParty: programOperator }
   }
-  action cancel_early { allowZero: true, requires self.price > "0";
+  action cancel_early { allowZero: true, purpose: option, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, deadline: { at: self.earlyAt }
     moves self.held.balance from self.held to buyer economics { purpose: principal, sourceParty: programOperator }
   }
-  action cancel_middle { allowZero: true, requires self.price > "0";
+  action cancel_middle { allowZero: true, purpose: option, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, due: { at: self.earlyAt }, deadline: { at: self.lateAt }
     calculate: [
       { target: refund, op: "subtract", base: { field: self.held.balance }, subtract: [{ field: self.deposit }] }
@@ -98,7 +98,7 @@ instrument booking(package: ref<travel.package>, buyer: party, supplier: party, 
     moves self.retainedTax from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
     moves self.retainedNet from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: buyer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
   }
-  action cancel_late { allowZero: true, requires self.price > "0";
+  action cancel_late { allowZero: true, purpose: option, requires self.price > "0";
     from: [deposit_paid, paid], to: cancelled, actor: { party: buyer }, due: { at: self.lateAt }
     calculate: [
       { target: retainedMargin, op: "subtract", base: { field: self.held.balance }, subtract: [{ field: self.latePenalty }] }

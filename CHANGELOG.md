@@ -1,3 +1,9 @@
+# HSX 5.6.0
+
+The compiler records the standard block origin of every instrument compiled
+from a bundled std header: block key, record path and header digest. Travel
+booking cancellations declare `purpose: option`. Follows UDL 4.8.0.
+
 # HSX 5.5.0
 
 Std money moves declare posted economic purposes. Fee legs and recipient choices

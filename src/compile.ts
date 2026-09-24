@@ -56,6 +56,7 @@ export interface CompileDiagnostic extends Diagnostic {
 export interface CompileOriginMapEntry {
   path: string;
   span: Span & { line: number; column: number };
+  standardBlock?: { key: string; recordPath: string; headerDigest: string };
 }
 export interface AdapterBindingTarget {
   adapter: ProviderAdapter;
@@ -428,6 +429,10 @@ export function compile(
       );
     const templates = new Map<string, InstrumentDecl>();
     const declarationSources = new Map<InstrumentDecl, string>();
+    const standardOrigins = new Map<
+      InstrumentDecl,
+      NonNullable<CompileOriginMapEntry["standardBlock"]>
+    >();
     const requirementOrigins = new Map<
       UdlSubjectRequirement,
       { source: string; span: Span; message: string }
@@ -447,6 +452,13 @@ export function compile(
       if (!content)
         fail(use, `unknown header ${use.name}`, "choose a published header");
       sources.set(use.name, content);
+      const bundled = bundledStandardLibrary.source(use.name);
+      const headerDigest =
+        bundled === content
+          ? Array.from(sha256(new TextEncoder().encode(content)), (byte) =>
+              byte.toString(16).padStart(2, "0"),
+            ).join("")
+          : undefined;
       let header;
       try {
         header = parseHeader(content, use.name);
@@ -475,6 +487,14 @@ export function compile(
           );
         templates.set(prefix, parentDecl);
         declarationSources.set(parentDecl, use.name);
+        if (headerDigest) {
+          const [, root, ...record] = prefix.split(".");
+          standardOrigins.set(parentDecl, {
+            key: `${use.name}.${root}`,
+            recordPath: record.join("."),
+            headerDigest,
+          });
+        }
         const recs = entries(asBlock(entries(parentDecl.body).get("records")));
         for (const [recName, recBlock] of recs) {
           const recDecl: InstrumentDecl = {
@@ -663,6 +683,7 @@ export function compile(
         exportPath: string;
         revision?: number | undefined;
       },
+      standardOrigin?: NonNullable<CompileOriginMapEntry["standardBlock"]>,
     ) => {
       const resolveFamilyInstruments = (
         family: UdlFamily,
@@ -2847,6 +2868,7 @@ export function compile(
       origins.push({
         path: `$.instruments[${document.instruments.length}]`,
         span: { ...origin, ...lineColAt(source, origin.start) },
+        ...(standardOrigin ? { standardBlock: standardOrigin } : {}),
       });
       if (familyDeclaration && familyDeclaration.revision !== undefined) {
         inst.family = {
@@ -2904,6 +2926,14 @@ export function compile(
           enums,
           childAttachment,
           childFamily,
+          standardOrigin
+            ? {
+                ...standardOrigin,
+                recordPath: [standardOrigin.recordPath, key]
+                  .filter(Boolean)
+                  .join("."),
+              }
+            : undefined,
         );
       }
     };
@@ -3035,6 +3065,7 @@ export function compile(
               attachments,
             },
             templateFamily ? { ...templateFamily } : undefined,
+            standardOrigins.get(template),
           );
         } catch (error) {
           if (!(error instanceof CompileFailure)) throw error;
@@ -3180,6 +3211,7 @@ export function compile(
           new Map(),
           undefined,
           templateFamily ? { ...templateFamily } : undefined,
+          standardOrigins.get(template),
         );
       }
       if (decl.kind === "object") {
