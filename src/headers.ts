@@ -16,7 +16,6 @@ export const HEADER_NAMES = [
   "lending",
   "insurance",
   "collections",
-  "travel",
   "cards",
   "savings",
   "reporting",

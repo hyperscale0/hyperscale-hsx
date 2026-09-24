@@ -1,5 +1,0 @@
-# HSX
-
-- [Language](docs/README.md)
-- [Headers](docs/headers.md)
-- [Samples](docs/examples.md)

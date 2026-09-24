@@ -6,7 +6,6 @@ use money
 use escrow
 use financing
 use insurance
-use travel
 use lending
 use wallet
 use cards
@@ -21,9 +20,7 @@ object item "Item" {
   attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
   attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
   attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
-  attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }
-  attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: book }
-  attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, cover: cov }
+  attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: sale }
   attach clm = insurance.claim { cover: cov, inspector: inspector }
   attach sale = escrow.hold { payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
@@ -99,6 +96,5 @@ test("standard library money-moving, releasing, forgiving or refunding actions b
   });
   expect(find("item_auth", "approve")).toEqual({ party: "programOperator" });
   expect(find("item_disp", "win")).toEqual({ party: "programOperator" });
-  expect(find("item_book", "confirm")).toEqual({ party: "operator" });
   expect(find("item_case", "assign")).toEqual({ party: "operator" });
 });

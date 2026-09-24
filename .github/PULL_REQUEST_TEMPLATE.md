@@ -19,7 +19,7 @@ bun test
 - [ ] A grammar, checker, or lowering change comes with a fixture under `test/fixtures/`. A change without a fixture is a change nobody can defend later.
 - [ ] A change to emitted UDL updates its canonical fixture and keeps the UDL package's format law.
 - [ ] A user-visible change is in `CHANGELOG.md` under Unreleased.
-- [ ] New syntax updates its compiler vocabulary source, then `bun run docs:build` and `bun run docs:check` pass.
+- [ ] New syntax updates its compiler vocabulary source and `docs/README.md`.
 
 Before the merge the maintainer who asked for this change sends the CLA;
 nothing merges until it is signed. CONTRIBUTING.md says why.

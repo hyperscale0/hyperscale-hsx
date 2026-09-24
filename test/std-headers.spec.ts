@@ -10,7 +10,6 @@ use escrow
 use marketplace
 use financing
 use insurance
-use travel
 use lending
 use wallet
 use cards
@@ -29,9 +28,7 @@ object item "Item" {
  attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
  attach payout = money.payout { payer: actor, payee: owner, adapter: "fixture", max_age: 1d }
  attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
- attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }
- attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "insurer", covers: book }
- attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, cover: cov }
+ attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "insurer", covers: sale }
  attach claim = insurance.claim { cover: cov, inspector: inspector }
  attach sale = escrow.hold { payer: actor, payee: owner }
  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }

@@ -2,8 +2,7 @@ import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { refusal, rental } from "./fixtures/name-diagnostics.ts";
 
-const parties =
-  "programOperator, programTax, programFines, programCosts, renter";
+const parties = "programOperator, programTax, renter";
 const fields = "renter, held, amount, lateFee, dueAt, refund";
 const states = "pending, funded, returned, cancelled";
 

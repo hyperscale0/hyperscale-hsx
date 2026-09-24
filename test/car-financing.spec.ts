@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { compile as compileHsx } from "../src/compile.ts";
 
-// Read the owned std source; the committed bundle is regenerated from it.
+// Read the std source, not the generated bundle.
 const compile = (source: string) =>
   compileHsx(source, {
     standardLibrary: {

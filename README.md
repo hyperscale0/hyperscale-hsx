@@ -21,8 +21,8 @@ Start with the [first program and rental guide](docs/README.md). Save the
 It holds 1,000 SAR, charges a one-time 50 SAR late fee, and returns the remainder.
 The guide explains the fixed business binding and the host needed to execute it.
 
-The [header inventory](docs/headers.md) lists available instruments and tunables.
-The [sample index](docs/examples.md) includes both complete action paths and
+`npx hsx headers` prints every std instrument and its tunables from the bundled
+headers. The [samples](examples/) include both complete action paths and
 compositions that still need child-record actions or adapter bindings. A compile
 pass does not prove that a flow is publicly executable or funded.
 
@@ -56,6 +56,5 @@ Run `bun bin/hsx.ts check examples/rental-deposit.hsx` to use the source CLI.
 
 Edit prose in `docs/README.md`, programs in `examples/`, and header comments in
 `std/`. Run `bun run generate` after changing these inputs. It emits the header
-and example bundles, reference indexes and model-readable files. Do not edit
-`docs/headers.md`, `docs/examples.md`, `llms.txt` or `llms-full.txt` by hand.
+and example bundles.
 `bun run build` also builds the browser playground.

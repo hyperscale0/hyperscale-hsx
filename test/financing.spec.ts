@@ -8,7 +8,7 @@ const source = readFileSync(
   new URL("../examples/library.hsx", import.meta.url),
   "utf8",
 );
-// Read the owned std source; L21 regenerates the committed bundle.
+// Read the std source, not the generated bundle.
 const compile = (source: string) =>
   compileHsx(source, {
     standardLibrary: {
@@ -83,7 +83,6 @@ use money
 use escrow
 use financing
 use insurance
-use travel
 use lending
 use wallet
 party supplier: business
@@ -91,9 +90,7 @@ party inspector: staff role claim_inspector
 party investor: business
 object item "Item" {
   attach pay = money.transfer { payer: actor, payee: owner, amount: 750 SAR }
-  attach pack = travel.package { price: 1000 SAR, supplier_cost: 700 SAR, departure: 2027-01-01 }
-  attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: book }
-  attach book = travel.booking { package: pack, buyer: actor, supplier: supplier, cover: cov }
+  attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: sale }
   attach clm = insurance.claim { cover: cov, inspector: inspector }
   attach sale = escrow.hold { payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }

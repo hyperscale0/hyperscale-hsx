@@ -1,6 +1,6 @@
 # Contributing to HSX
 
-Read [the language](docs/README.md) and [header inventory](docs/headers.md).
+Read [the language](docs/README.md) and the headers in [`std/`](std/).
 The published package does not import private platform code. The frontend parses typed
 programs and headers; `compile.ts` binds references and lowers generic arithmetic
 and moves. Business behavior belongs in `std` headers. Programs declare object

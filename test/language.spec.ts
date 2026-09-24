@@ -250,19 +250,6 @@ payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d,
   ]);
 });
 
-test("removed external account mode refuses instead of becoming a key", () => {
-  const result = compile(`program external_test "External"
-party payer: person
-instrument record {
- fields { destination: account(payer, cash, external) }
- lifecycle { states: [open], initial: open }
- action create {}
-}`);
-  expect(result.diagnostics.map((d) => d.message)).toContain(
-    "external account mode was removed",
-  );
-});
-
 const boundaryEvidence = `program boundary_evidence "Boundary evidence"
 instrument record {
  fields { receipt: text, amount: money }

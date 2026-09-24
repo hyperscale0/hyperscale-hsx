@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "5.8.0",
+  "version": "6.0.0",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -63,18 +63,17 @@
     "build": "bun run generate && tsc -p tsconfig.build.json && tsc -p playground/tsconfig.json && bun scripts/build-playground.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "bun test test",
-    "docs:build": "bun scripts/docs.ts",
     "postpack": "bun scripts/pack-exports.ts restore",
     "prepack": "bun run build && bun scripts/pack-exports.ts apply",
     "std:bundle": "bun scripts/bundle-std.ts",
-    "generate": "bun run std:bundle && bun run examples:bundle && bun run docs:build",
+    "generate": "bun run std:bundle && bun run examples:bundle",
     "prepare": "bun run std:bundle && bun run examples:bundle",
     "check": "bun run typecheck && tsc -p playground/tsconfig.json && bun test test",
     "examples:bundle": "bun scripts/bundle-examples.ts"
   },
   "dependencies": {
-    "@hyperscale0/adl": "1.0.0-beta.10",
-    "@hyperscale0/udl": "4.9.0",
+    "@hyperscale0/adl": "1.0.0-beta.11",
+    "@hyperscale0/udl": "5.0.0",
     "fast-sha256": "1.3.0"
   },
   "devDependencies": {

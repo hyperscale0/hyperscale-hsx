@@ -157,8 +157,7 @@ and basis points. Fee and tax calculations round down. Split percentages sum to
 100%; the last declared recipient receives the rounding remainder. Finite
 schedules use positions 1 through n and put the division remainder in position 1.
 Tax binds `programTax`. Fees default to `programOperator`. Fine, recovery and
-residual destinations are party tunables. Unused `programFines` and `programCosts`
-bindings are omitted.
+residual destinations are party tunables.
 
 Attached actions are private unless the attachment exposes them with
 `expose fund as sell`. Exposure grants no authority. Clock and parent actions
@@ -179,8 +178,7 @@ A missing binding refuses before money moves. Reference paths such as
 
 `account(buyer, claim, contra, "debt")` declares the borrower's claim contra account.
 Provider confirmation belongs on a reserved move with `boundary adapter`,
-followed by instruction-bound evidence and a post or void. External account
-mode is not supported.
+followed by instruction-bound evidence and a post or void.
 Outstanding debt is an account balance. The library pairs cash repayment with
 claim reduction and represents receipts as immutable child records. Cash and loss
 shares round down; the declared residual account receives leftover minor units.
@@ -364,7 +362,7 @@ The compiler API is `compile(source)`. On success, `result.verdict` is `valid`
 and `result.artifacts` contains `document`, `costManifest` and `originMap`.
 On refusal, inspect `result.diagnostics`; no artifact is returned.
 
-The [header inventory](headers.md) is generated from the declarations. The
+`hsx headers` prints the instrument inventory from the declarations. The
 [object example](../examples/library.hsx) shows authenticated role bindings.
 The [playground](../playground/index.html) compiles locally in the browser.
 
@@ -374,19 +372,18 @@ Read the instrument's states, time gates and moves before promising a money
 outcome. A compiler pass does not prove that required actions are exposed,
 adapters are bound, participants have funds, or the flow can finish.
 
-| Instrument                                 | Behavior                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `financing.installments`                   | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income.                                                                                                                                                                                                             |
-| `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                                                                                                                                    |
-| `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                                                                                                                                 |
-| `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                                         |
-| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                             |
-| `travel.booking`                           | From `deposit_paid` or `paid`, early cancellation returns the full held balance, middle returns held balance minus deposit, and late has no buyer refund transfer. State, time and balance requirements still apply. A deposit-only early cancellation refunds the deposit; a deposit-only middle cancellation refunds zero. |
-| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                                                                                                                                   |
-| `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                           |
-| `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                                   |
-| `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                       |
-| `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate.                                                                                                                                                                                                                                                       |
+| Instrument                                 | Behavior                                                                                                                                                                                                         |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `financing.installments`                   | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income.                                                                                                 |
+| `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                        |
+| `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                     |
+| `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                             |
+| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol. |
+| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                       |
+| `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                               |
+| `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                       |
+| `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                           |
+| `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate.                                                                                                                                           |
 
 A seller-owned marketplace object can declare `entryActions: [create_order]`
 when `create_order` exposes an attachment's create action with its buyer bound
@@ -431,7 +428,7 @@ still need dates, agreement inputs, funded wallets and eligible settlements.
 References without an explicit creation input require one matching agreement on
 the object. In particular, lending distributions with multiple settlements or
 commitments need authored selectors before callers can choose among them.
-Insurance and travel need premium-slice records and actions. Savings needs dated
+Insurance needs premium-slice records and actions. Savings needs dated
 contribution records. Read each header's creation and lifecycle requirements.
 
 ## Checkout and reversals

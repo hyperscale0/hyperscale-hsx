@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-/**
- * The `hsx` executable. Everything it does lives in `runCli`; this file only
- * binds that function to the real filesystem and the real streams.
- */
-
 import { readFile, writeFile } from "node:fs/promises";
 import { runCli } from "../src/cli.ts";
 

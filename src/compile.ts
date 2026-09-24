@@ -549,8 +549,6 @@ export function compile(
       parties: Object.assign(Object.create(null) as UdlDocument["parties"], {
         programOperator: { kind: "business", role: "program_operator" },
         programTax: { kind: "business", role: "tax_payable" },
-        programFines: { kind: "business", role: "fine_payable" },
-        programCosts: { kind: "business", role: "cost_recovery" },
       }),
       objects: [],
       instruments: [],
@@ -1846,12 +1844,6 @@ export function compile(
               f.book = t.args[1] ? text(t.args[1]) : "cash";
               if (t.args[2]) {
                 const mode = text(t.args[2]);
-                if (mode === "external")
-                  fail(
-                    t,
-                    "external account mode was removed",
-                    "use a reservation and instruction-bound evidence",
-                  );
                 if (mode === "contra") f.contra = true;
                 else f.key = mode;
               }
@@ -4005,19 +3997,6 @@ export function compile(
           );
       }
     }
-    const usedParties = new Set<string>();
-    const collectParties = (value: unknown): void => {
-      if (typeof value === "string") {
-        usedParties.add(value);
-        if (value.startsWith("party.")) usedParties.add(value.split(".")[1]!);
-      } else if (Array.isArray(value)) value.forEach(collectParties);
-      else if (value && typeof value === "object")
-        Object.values(value).forEach(collectParties);
-    };
-    collectParties(document.instruments);
-    for (const party of ["programFines", "programCosts"])
-      if (!usedParties.has(party) && !names.has(party))
-        delete document.parties[party];
     const validated = validateUdl(document);
     if (!validated.ok)
       return {

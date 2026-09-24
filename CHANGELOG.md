@@ -1,3 +1,17 @@
+# HSX 6.0.0
+
+Breaking: the `travel` std header is gone, with its `travel.package` and
+`travel.booking` instruments and the travel agency sample. Programs that
+`use travel` no longer compile; build a booking from `escrow.hold` and an
+authored instrument instead. `reporting.portfolio` drops the
+`origination_cohorts` and `bureau_facility` report definitions, which refused
+every request. The compiler no longer declares `programFines` or `programCosts`;
+`late_charge` routes fines and recovery through its `fines_to` and `costs_to`
+party tunables. `account(owner, cash, external)` is an ordinary keyed account
+instead of a refusal. The package stops generating the header and sample
+index pages and the two llms text files; `hsx headers` prints the instrument
+inventory.
+
 # HSX 5.8.0
 
 The checker names misspelled fields, parties and states at the misspelled word,

@@ -120,7 +120,7 @@ test("a misspelled selection names the instrument or field", () => {
     at: "plac",
     message:
       "`plac` is not a field or party of `ledger`. Did you mean `place`?",
-    fix: `Use a field declared in \`ledger\` (${ledgerFields}) or a declared party (programOperator, programTax, programFines, programCosts, buyer).`,
+    fix: `Use a field declared in \`ledger\` (${ledgerFields}) or a declared party (programOperator, programTax, buyer).`,
   });
   expect(
     refusal('reference: "owner"', 'reference: "ownr"', ledger),
