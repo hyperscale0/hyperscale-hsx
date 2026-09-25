@@ -12,6 +12,7 @@ object lesson "Lesson" {
   attach payment = money.transfer {
     expose create as create_payment
     payer: actor, payee: operator, amount: 150 SAR
+    economics pay { purpose: earning, sourceParty: actor }
     expose pay as pay_for_lesson
     expose cancel as cancel_payment
   }

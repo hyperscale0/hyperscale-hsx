@@ -291,6 +291,8 @@ class Parser {
         continue;
       }
       if (key === "action" && !this.at(":")) key += " " + this.identifier();
+      if (key === "economics" && !this.at(":") && !this.at("{"))
+        key += " " + this.path();
       if (key === "when") {
         const tunable = this.identifier();
         const relation = this.eat("has") ? "has" : "is";

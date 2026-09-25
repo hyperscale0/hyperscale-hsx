@@ -16,6 +16,7 @@ object membership "Membership" {
   attach visit = wallet.spend {
     expose create as create_visit
     wallet: balance, payee: operator
+    economics pay { purpose: earning, sourceParty: owner }
     expose reserve as reserve_visit
     expose pay as charge_visit
     expose cancel as cancel_visit

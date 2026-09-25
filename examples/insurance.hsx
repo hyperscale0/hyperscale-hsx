@@ -10,6 +10,7 @@ object device "Insured device" {
   attach purchase = money.transfer {
     expose create as create_purchase
     payer: owner, payee: operator
+    economics pay { purpose: earning, sourceParty: owner }
     expose pay as pay_for_device
   }
   // Bind device_insurer to an ADL adapter before creating cover. Premiums net of commission go to its account.

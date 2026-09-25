@@ -474,6 +474,28 @@ scheduler retries or permit a payout larger than the available cash.
 
 ## Posted economics in the money flows
 
+An attachment can declare the purpose of an imported action's money:
+
+```hsx
+attach visit = wallet.spend {
+  wallet: balance, payee: operator
+  economics pay { purpose: earning, sourceParty: owner }
+  expose pay as charge_visit
+}
+```
+
+Name the original action, before its public alias. If it has several moves,
+select a move key, for example `economics pay.move1 { ... }`. The compiler
+refuses an unknown action or move, a repeated selection, a void, or economics
+that conflict with the instrument or its reservation. Cash purposes require
+cash accounts. `sourceParty` resolves a party parameter, a subject role or a
+declared business. The attachment retains this binding even when only economics
+uses it. The credited account supplies the destination participant.
+
+The compiler writes the declaration into that attachment's UDL move. Imported
+instruments stay generic. New Builds carry the purpose; existing agreements
+and postings keep their retained Build and classification.
+
 Held customer funding and its unspent return are `principal`. A release for the
 company's sale is `earning`. A payment from company cash to another participant
 is `participant_payout`. Claims, waivers, write-offs and own-account allocations
@@ -487,7 +509,7 @@ earning, sourceParty: payer }, fee: { purpose: earning, sourceParty: payer },
 tax: { purpose: pass_through, sourceParty: payer } }`. These describe authored
 product fees. Automatic platform fees keep their commercial classification.
 
-Any economics block can select by a resolved party: `economics { recipient:
+A move's economics block can select by a resolved party: `economics { recipient:
 recipient, company: { purpose: earning, sourceParty: payer }, participant:
 { purpose: participant_payout, sourceParty: programOperator } }`. The compiler
 chooses `company` for `operator`, `programOperator`, or a declared party with the

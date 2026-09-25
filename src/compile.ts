@@ -37,6 +37,7 @@ import {
 } from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
+import { applyAttachmentEconomics } from "./attachment-economics.ts";
 import { parseHeader } from "./header-source.ts";
 import {
   lineColAt,
@@ -696,6 +697,7 @@ export function compile(
         exposed: Map<string, string>;
         parties: Record<string, AttachmentPartyBinding>;
         attachments: UdlObjectAttachment[];
+        economics: Entry[];
         child?: boolean;
       },
       familyDeclaration?: {
@@ -2886,6 +2888,14 @@ export function compile(
         inst.actions[name] = a;
         inst.actionOrder.push(name);
       }
+      if (attachmentInfo && !attachmentInfo.child)
+        applyAttachmentEconomics(
+          document,
+          inst,
+          attachmentInfo.parties,
+          attachmentInfo.economics,
+          data,
+        );
       for (const key of [
         "invariants",
         "reports",
@@ -3077,10 +3087,13 @@ export function compile(
         const renames = new Map<string, string>();
         const renameEntries = new Map<string, Entry>();
         const exposed = new Map<string, string>();
+        const economics: Entry[] = [];
         const tunableEntries: Entry[] = [];
 
         for (const row of attachmentBlock.entries) {
-          if (row.key === "rename") {
+          if (row.key.startsWith("economics ")) {
+            economics.push(row);
+          } else if (row.key === "rename") {
             for (const r of asBlock(row.value).entries) {
               if (renames.has(r.key))
                 fail(
@@ -3144,6 +3157,7 @@ export function compile(
               exposed,
               parties,
               attachments,
+              economics,
             },
             templateFamily ? { ...templateFamily } : undefined,
             standardOrigins.get(template),
