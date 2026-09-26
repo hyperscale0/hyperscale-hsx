@@ -12,6 +12,7 @@ import {
   sameObjectField,
   subjectPartyRoles,
   RESERVED_OBJECT_NAMES,
+  UDL_FORMAT_VERSION,
   type UdlObjectAttachment,
   type AttachmentPartyBinding,
   type SubjectPartyRole,
@@ -542,7 +543,7 @@ export function compile(
         );
     }
     const document: UdlDocument = {
-      udl: 4,
+      udl: UDL_FORMAT_VERSION,
       version: 1,
       product: program.name,
       title: program.title,

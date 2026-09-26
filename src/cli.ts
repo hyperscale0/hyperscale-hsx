@@ -1,10 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { headerManifest } from "./headers.ts";
-import { HSX_VERSION } from "./version.ts";
 import { compile } from "./compile.ts";
 import { format } from "./format.ts";
-import { serializeUdl } from "@hyperscale0/udl";
+import { serializeUdl, UDL_FORMAT_VERSION } from "@hyperscale0/udl";
 const usage =
   "hsx build|format|cost <file> [--out path]\nhsx check <file>\nhsx headers --json";
 const standardLibrary = {
@@ -38,8 +37,18 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
     return 0;
   }
   if (command === "--version") {
-    io.out(`${HSX_VERSION} (UDL 4)`);
-    return 0;
+    // src/cli.ts in a checkout, dist/src/cli.js in the published package.
+    for (const base of ["../", "../../"]) {
+      const manifest = new URL(`${base}package.json`, import.meta.url);
+      if (!existsSync(manifest)) continue;
+      const { version } = JSON.parse(readFileSync(manifest, "utf8")) as {
+        version: string;
+      };
+      io.out(`${version} (UDL ${UDL_FORMAT_VERSION})`);
+      return 0;
+    }
+    io.err("hsx: package.json not found");
+    return 1;
   }
   if (
     !command ||

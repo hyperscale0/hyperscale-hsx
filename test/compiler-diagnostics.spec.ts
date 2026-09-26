@@ -60,7 +60,7 @@ test("HSX1004 rejects a source larger than 256 KiB before lexing", () => {
 
 // Mutation: remove the JSON boundary diagnostic.
 test("HSX1014 explains that serialized UDL is not authoring input", () => {
-  const source = ' \n {"udl":4}';
+  const source = ' \n {"udl":1}';
   expect(compile(source).diagnostics).toMatchObject([
     {
       code: "HSX1014",

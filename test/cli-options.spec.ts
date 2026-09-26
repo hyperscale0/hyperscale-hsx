@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
+import { UDL_FORMAT_VERSION } from "@hyperscale0/udl";
 import { runCli } from "../src/cli.ts";
 
 // Mutation: restore the ignored flags or accept --out on check.
@@ -43,4 +45,20 @@ test("CLI writes a requested output file", async () => {
   expect(code).toBe(0);
   expect(writes).toEqual([["formatted.hsx", 'program p "P"\n']]);
   expect(output).toEqual([]);
+});
+
+// Mutation: drop the package version or the UDL format from the output.
+test("CLI --version prints the package version and the UDL format", async () => {
+  const output: string[] = [];
+  const code = await runCli(["--version"], {
+    out: (line) => output.push(line),
+    err: (line) => output.push(line),
+    readFile: async () => "",
+    writeFile: async () => {},
+  });
+  const { version } = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version: string };
+  expect(code).toBe(0);
+  expect(output).toEqual([`${version} (UDL ${UDL_FORMAT_VERSION})`]);
 });

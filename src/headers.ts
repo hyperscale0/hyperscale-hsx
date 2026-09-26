@@ -27,7 +27,7 @@ export function headerManifest(
   names: readonly string[] = HEADER_NAMES,
 ) {
   return {
-    version: 4,
+    version: 1,
     headers: names.map((name) => {
       const source = library.source(name);
       if (!source) throw new Error(`Missing standard header ${name}`);

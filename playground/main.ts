@@ -49,7 +49,7 @@ function render() {
   const result = compile(source.value);
   status.textContent =
     result.verdict === "valid"
-      ? "Valid UDL 4"
+      ? "Valid UDL 1"
       : "Correct the diagnostics below";
   output.textContent = result.artifacts
     ? JSON.stringify(result.artifacts.document, null, 2)

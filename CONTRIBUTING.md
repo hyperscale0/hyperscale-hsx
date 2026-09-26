@@ -10,8 +10,8 @@ when the action runs; object creation may omit every metadata field.
 
 Run `bun run check` for generation, types, builds and package tests.
 Change a rule with one example that distinguishes admitted and refused programs.
-Keep the object-discovery fixture aligned with its authored source. Earlier
-UDL formats have no migration reader. Instrument creation stays internal.
+Keep the object-discovery fixture aligned with its authored source.
+Instrument creation stays internal.
 
 Report security defects through [SECURITY.md](SECURITY.md).
 Accepted contributions require [the CLA](CLA.md).
