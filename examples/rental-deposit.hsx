@@ -45,6 +45,8 @@ object rental "Equipment rental" {
   fields { equipment: text }
   columns: [equipment, dueAt]
   attach security = deposit {
+    // dueAt is a column, so it stays shared object metadata.
+    rename { dueAt: dueAt }
     expose create as agree_rental
     expose fund as pay_deposit
     expose return_on_time as return_equipment

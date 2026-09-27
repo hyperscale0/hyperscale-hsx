@@ -7,8 +7,13 @@ const standardLibrary = {
   source: (name: string) =>
     readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
 };
-function refusal(source: string, message: string, fix: string) {
-  const result = compile(source, { standardLibrary });
+function refusal(
+  source: string,
+  message: string,
+  fix: string,
+  library = standardLibrary,
+) {
+  const result = compile(source, { standardLibrary: library });
   expect(result.verdict).toBe("invalid");
   const diagnostic = result.diagnostics.find(
     (item) => item.message === message,
@@ -271,7 +276,15 @@ object membership "Membership" {
 });
 
 // Mutation: remove stranded accounts or action-path evidence from the finance prover.
+// The operator's settle_refund leaves return_verified whatever the policy says,
+// so this escrow drops it to strand the moved refund.
 test("refund refusal carries the funded path and owned account with its UDL code", () => {
+  const unsettled = {
+    source: (name: string) =>
+      standardLibrary
+        .source(name)
+        .replace(/  action settle_return \{[\s\S]*?(?=  action refund \{)/, ""),
+  };
   const draft = `program returns "Returns"
 use escrow
 object rental "Rental" {
@@ -281,6 +294,7 @@ object rental "Rental" {
     draft,
     "`deposit` can reach `return_verified` with money in `held`, but no action leaves that state and disposes of the balance.",
     "Restore `refund_after: return_verified`, or move `self.held.balance` out in `verify_return`, or add an action from `return_verified` that does.",
+    unsettled,
   );
   expect(diagnostic.code).toBe("UDL4001");
   expect(diagnostic.related?.[0]?.message).toContain(
@@ -292,9 +306,10 @@ object rental "Rental" {
   expect(
     compile(
       draft.replace("refund_after: delivered", "refund_after: return_verified"),
-      { standardLibrary },
+      { standardLibrary: unsettled },
     ).diagnostics,
   ).toEqual([]);
+  expect(compile(draft, { standardLibrary }).diagnostics).toEqual([]);
 });
 
 // Mutation: restore field-removal advice or change the eight-column boundary.

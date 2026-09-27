@@ -7,7 +7,9 @@ header wallet
 // Expose balance.create, activate, topup and withdraw as needed. Holder moves
 // cash only while active. Freeze blocks new topups, withdrawals and spend reserves;
 // close requires no held cash. Only the Product operator freezes or unfreezes.
-// A separate spend record checks its amount against spendLimit at creation.
+// The holder closes the wallet, or the Product operator with operator_close.
+// Only the wallet holder creates a spend record, which checks its amount against
+// spendLimit; bind the spend holder to the balance holder.
 // Expose reserve, pay and cancel for the bound payee. Reserve requires an active
 // wallet before expiresAt; pay posts the whole reservation, cancel/expiry void it.
 // Existing reservations may still post after the wallet freezes. There is no
@@ -25,7 +27,7 @@ instrument balance(holder: party, spend_limit: money = 100000 SAR, topup_fee: pe
   summary: "A holder's reusable balance with an immutable per-spend ceiling."
   fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit, topupFee: money?, topupCredit: money? }
   lifecycle { states: [pending, active, frozen, closed], initial: pending }
-  action create { }
+  action create { actor: { party: holder } }
   action activate { from: pending, to: active, actor: { party: holder } }
   action topup {
     allowZero: true, requires input.amount > "0"
@@ -45,15 +47,18 @@ instrument balance(holder: party, spend_limit: money = 100000 SAR, topup_fee: pe
   }
   action freeze { from: active, to: frozen, actor: { party: programOperator } }
   action unfreeze { from: frozen, to: active, actor: { party: programOperator } }
-  action close { from: [pending, active], to: closed, requires self.held.balance == "0" }
+  action close { from: [pending, active], to: closed, actor: { party: holder }, requires self.held.balance == "0" }
+  action operator_close { from: [pending, active], to: closed, actor: { party: programOperator }, requires self.held.balance == "0" }
 }
 
-instrument spend(wallet: ref<wallet.balance>, payee: party) {
+instrument spend(wallet: ref<wallet.balance>, payee: party, holder: party = party(person)) {
   summary: "Reserve one wallet spend, then post or void the same reservation."
-  fields { wallet: ref<wallet>, amount: money, expiresAt: date, reservation: text? }
+  fields { wallet: ref<wallet>, holder: account of holder, amount: money, expiresAt: date, reservation: text? }
   lifecycle { states: [pending, reserved, paid, cancelled, expired], initial: pending }
   action create {
+    actor: { party: holder }
     requires self.wallet in [active]
+    requires self.wallet.holder == self.holder
     requires self.amount <= self.wallet.spendLimit
   }
   action reserve {

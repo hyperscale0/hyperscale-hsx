@@ -147,6 +147,19 @@ Creation accepts `{}`. Every normalized field, including adapter requirements,
 is optional at creation. Only a named action requires its subject metadata.
 Use `attach` inside the object block to configure its financial instruments.
 
+A required instrument field with no fixed value is a local creation value by
+default. It becomes create `input` on that agreement and never an object field,
+so two agreements on one object keep separate amounts and a wallet spend never
+prefills a later fee. Only a rename such as `rename { dueAt: dueAt }` shares
+it as record metadata: the value then comes from the object field as a create
+subject requirement. An authored object field of the same name does not share
+it; write `rename { price: price }` when the agreement should read that field.
+Later actions still read `self.amount` from the agreement either way. An
+attachment whose create needs input must expose `create`, or compilation fails,
+because a public action on a fresh attachment creates it first with no input.
+A rename binds only fields of the attached instrument itself; renaming a record
+field such as `insurance.cover`'s slice `premium` reports `subject_field_unknown`.
+
 ## Headers and tunables
 
 The header defines the available policies. The company chooses percentages, amounts, durations,
@@ -266,7 +279,9 @@ maxAge 1d` requires a recent completed provider check.
 `moves post self.receipt` posts it and `moves void self.receipt` releases it.
 `moves amount from payer shares shares` expands a declared split. Optional `fee`,
 `capture`, `key` and `boundary` modifiers describe a move. `boundary` applies
-only to reservations. Fees settle with create moves, never reservations. Repeated clauses keep
+only to reservations. Fees settle with create moves, never reservations. A fee move
+also derives `<action>_<move>_debit`, the payer's whole debit: amount plus fee and
+tax when the buyer pays, the amount alone when the seller pays. Repeated clauses keep
 their declaration order. The JSON-like clause form remains accepted and lowers
 to the same [UDL clauses](https://github.com/hyperscale0/hyperscale-udl/blob/main/spec/README.md).
 Use `economics { purpose: earning, sourceParty: merchant }` on a move to
@@ -407,21 +422,21 @@ Read the instrument's states, time gates and moves before promising a money
 outcome. A compiler pass does not prove that required actions are exposed,
 adapters are bound, participants have funds, or the flow can finish.
 
-| Instrument                                 | Behavior                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `financing.installments`                   | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income.                                                                                                                                                                                                  |
-| `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                                                                                                                         |
-| `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                                                                                                                      |
-| `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                              |
-| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                  |
-| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                                                                                                                        |
-| `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                |
-| `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                        |
-| `escrow.hold`                              | `deliver_within` (default `14d`) starts at funding. After it passes without delivery, an exposed `refund_undelivered` lets the payer take the whole held price back. Nothing runs it automatically.                                                                                                               |
-| `wallet.balance`                           | `topup_fee` (default `0%`) takes a floored percentage of each top-up for the Company. At `1%`, a 100.00 top-up credits 99.00 and earns 1.00.                                                                                                                                                                      |
-| `booking.reservation`                      | The balance is payable only from `deposit_paid`, so a cancelled booking never takes it. `middle_forfeit` and `late_forfeit` default to `0%`, so every cancellation returns all held money until the author sets them. At departure the clock completes a paid booking and lapses an unpaid one on `late_forfeit`. |
-| `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                            |
-| `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate.                                                                                                                                                                                                                                            |
+| Instrument                                 | Behavior                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `financing.installments`                   | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income.                                                                                                                                                                                                                         |
+| `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                                                                                                                                                |
+| `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                                                                                                                                             |
+| `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                                                     |
+| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                                         |
+| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                                                                                                                                               |
+| `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                                       |
+| `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                                               |
+| `escrow.hold`                              | `deliver_within` (default `14d`) starts at funding. After it passes without delivery, an exposed `refund_undelivered` lets the payer take the whole held price back. Nothing runs it automatically.                                                                                                                                      |
+| `wallet.balance`                           | `topup_fee` (default `0%`) takes a floored percentage of each top-up for the Company. At `1%`, a 100.00 top-up credits 99.00 and earns 1.00.                                                                                                                                                                                             |
+| `booking.reservation`                      | The balance is payable only from `deposit_paid`, so a cancelled booking never takes it. `middle_forfeit` and `late_forfeit` default to `0%`, so every cancellation returns all held money until the author sets them. At departure the clock completes a paid booking and lapses an unpaid one on `late_forfeit`.                        |
+| `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                                   |
+| `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate. Bind `person` to the cardholder's `holder`, such as `person: actor`; create refuses any other party. The person freezes, unfreezes and cancels; the issuer uses `issuer_freeze`, `issuer_unfreeze` and `issuer_cancel`, and only `issuer_unfreeze` lifts a block. |
 
 A seller-owned marketplace object can declare `entryActions: [create_order]`
 when `create_order` exposes an attachment's create action with its buyer bound
@@ -431,6 +446,14 @@ the seller remains owner. Entry never grants access to an existing escrow.
 Without entry actions, the company runs a two-customer sale from its Product
 key: create the record with `onBehalfOf` naming the seller, then run the buyer's
 steps with `onBehalfOf` naming the buyer.
+
+The same rule admits the other std creates whose starting party can be a
+customer: `financing.limits` and `financing.installments` (borrower),
+`insurance.cover` (holder), `wallet.balance` (holder) and `savings.membership`
+(member). Several customers can each start one on the same record. A plan,
+commitment or other reference resolves the sibling that binds the same
+accounts to the parties both share, so each customer's plan finds its own
+escrow and each investor's commitment finds their own wallet.
 
 `financing.limits` and `financing.portfolio_limit` declare `scope: product`.
 Create and approve the portfolio limit once per Product and the borrower limit
@@ -443,8 +466,10 @@ The account primitive creates it automatically and shares it across the Product.
 Zero-tax escrow releases need no additional party setup.
 
 The financing, collections and lending samples expose payment creation, payment,
-refund and payoff quotes through the object's existing action routes. A child
-alias names the full attachment path, for example:
+refund and payoff quotes through the object's existing action routes. Record
+actions are private: the parent still runs them, but a caller sees one only
+after the program exposes it. A child alias names the full attachment path, for
+example:
 
 ```hsx
 expose enrolment.tuition.payment.create as create_payment
@@ -466,9 +491,10 @@ allocation order and payoff rebate; aliases do not change those terms.
 
 The [lending sample](../examples/lending.hsx) also exposes share creation. Callers
 still need dates, agreement inputs, funded wallets and eligible settlements.
-References without an explicit creation input require one matching agreement on
-the object. In particular, lending distributions with multiple settlements or
-commitments need authored selectors before callers can choose among them.
+Every agreement reference is an optional creation input on an exposed create.
+With one matching agreement on the object the engine picks it; with several,
+such as a plan's slices or a lending round's settlements, the caller passes the
+chosen instance ID under the reference's name.
 Insurance needs premium-slice records and actions. Savings needs dated
 contribution records. Read each header's creation and lifecycle requirements.
 
@@ -531,7 +557,7 @@ An attachment can declare the purpose of an imported action's money:
 
 ```hsx
 attach visit = wallet.spend {
-  wallet: balance, payee: operator
+  wallet: balance, payee: operator, holder: owner
   economics pay { purpose: earning, sourceParty: owner }
   expose pay as charge_visit
 }

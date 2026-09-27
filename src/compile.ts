@@ -457,6 +457,9 @@ export function compile(
       UdlSubjectRequirement,
       { source: string; span: Span; message: string }
     >();
+    // Instruments that lost a std action to an empty all() parent. Their
+    // lifecycles drop the states only that action reached.
+    const trimmed = new Set<string>();
     const used = new Set<string>();
     for (const use of program.decls.filter((d) => d.kind === "use")) {
       if (used.has(use.name))
@@ -551,6 +554,15 @@ export function compile(
     const assignments = new Map<string, AssignmentDecl>();
     const attachmentSubjects = new Map<string, string>();
     const names = new Set<string>();
+    // A record's create turns public only through a program-level expose,
+    // which applies after lowering, so creation input needs the list first.
+    const exposedCreates = new Set(
+      program.decls.flatMap((decl) =>
+        decl.kind === "expose" && decl.target.endsWith(".create")
+          ? [decl.target.split(".").slice(0, -1).join("_")]
+          : [],
+      ),
+    );
     for (const decl of program.decls) {
       if (decl.kind === "expose" || decl.kind === "hide" || decl.kind === "use")
         continue;
@@ -2832,6 +2844,15 @@ export function compile(
                       } as Omit<UdlCalculation, "target">)
                     : undefined;
                   const charges = vat ? [charge, vat] : [charge];
+                  // A payer's limit reads this: a buyer pays the charges on
+                  // top, a seller pays them out of the amount.
+                  derived("debit", "Payer debit", {
+                    op: "sum",
+                    values:
+                      paidBy === "buyer"
+                        ? [transfer.amount, ...charges]
+                        : [transfer.amount],
+                  } as Omit<UdlCalculation, "target">);
                   const net =
                     paidBy === "seller"
                       ? derived("net", "Amount after fee", {
@@ -2908,7 +2929,7 @@ export function compile(
         }
         if (actionFeeCalculations.length)
           a.calculate = [...(a.calculate ?? []), ...actionFeeCalculations];
-        if (attachmentInfo && !attachmentInfo.child) {
+        if (attachmentInfo) {
           if (attachmentInfo.exposed.has(name)) {
             if (automatic(a.actor))
               fail(
@@ -2975,6 +2996,13 @@ export function compile(
             message: `${id}.${name}.subject.${requirement.field.name}`,
           });
         }
+        // A parent list may name a list parameter such as `[parent, on]`.
+        if (
+          typeof a.actor === "object" &&
+          "parent" in a.actor &&
+          Array.isArray(a.actor.parent)
+        )
+          a.actor.parent = a.actor.parent.flat();
         // A parent actor over an empty all() names no instrument that could
         // invoke the action. A std action then does not exist in this program;
         // in user code the all() is a mistake.
@@ -2993,6 +3021,7 @@ export function compile(
             );
           }
           delete lifecycle.transitions[name];
+          trimmed.add(id);
           continue;
         }
         inst.actions[name] = a;
@@ -3282,8 +3311,7 @@ export function compile(
           .slice(firstAttachedInstrument)
           .filter(
             (instrument) =>
-              instrument.id === instId ||
-              instrument.actions.create?.publicAction,
+              instrument.id === instId || exposedCreates.has(instrument.id),
           )) {
           if (!createdInst.actions.create) continue;
           const owned = new Set(
@@ -3296,9 +3324,15 @@ export function compile(
           }
           const create = createdInst.actions.create;
           for (const field of createdInst.fields) {
+            // The engine resolves a lone candidate itself; with several (a
+            // plan's slices) the caller names one, as late_charge does.
+            if (field.type === "ref" && field.targetKind === "instrument") {
+              if (!create.input.some((input) => input.name === field.name))
+                create.input.push({ ...field, optional: true });
+              continue;
+            }
             if (
               field.type === "account" ||
-              (field.type === "ref" && field.targetKind === "instrument") ||
               (field.type === "list" &&
                 field.item === "ref" &&
                 field.targetKind === "instrument") ||
@@ -3308,8 +3342,7 @@ export function compile(
               create.input.some((input) => input.name === field.name)
             )
               continue;
-            create.subject ??= { requirements: [], adapters: [] };
-            const existing = create.subject.requirements.find(
+            const existing = create.subject?.requirements.find(
               (item) => item.field.name === field.name,
             );
             if (existing) {
@@ -3322,11 +3355,16 @@ export function compile(
                 );
               continue;
             }
+            // A creation value belongs to this agreement. Only a rename shares
+            // it as object metadata; a matching authored field name does not,
+            // so two agreements never read each other's amount.
             const objectField = renames.get(field.name);
-            const requirement = {
-              field,
-              ...(objectField ? { objectField } : {}),
-            };
+            if (!objectField) {
+              create.input.push({ ...field });
+              continue;
+            }
+            const requirement = { field, objectField };
+            create.subject ??= { requirements: [], adapters: [] };
             create.subject.requirements.push(requirement);
             requirementOrigins.set(requirement, {
               source: declarationSources.get(template) ?? "program",
@@ -3345,6 +3383,20 @@ export function compile(
             );
           if (!found) {
             const renameEntry = renameEntries.get(oldName) ?? entry;
+            const record = document.instruments
+              .slice(firstAttachedInstrument)
+              .find(
+                (instrument) =>
+                  instrument.id.startsWith(`${instId}_`) &&
+                  instrument.fields.some((field) => field.name === oldName),
+              );
+            if (record)
+              failWithCode(
+                renameEntry,
+                "subject_field_unknown",
+                `rename source '${oldName}' belongs to the ${record.id.slice(instId.length + 1)} record of ${targetTemplate}; rename binds only fields of ${targetTemplate} itself`,
+                `remove this rename; supply ${oldName} as input when the record is created, or set it as a tunable where the header offers one`,
+              );
             const declared = attachedInst
               ? Object.values(attachedInst.actions).flatMap(
                   (action) =>
@@ -3889,9 +3941,21 @@ export function compile(
             targets.some((target) => kin(target, candidate)),
         );
       });
-    // A count over no matchable member is zero.
+    // A count over no matchable member is zero, in a requirement or a calculation.
     for (const inst of document.instruments)
-      for (const action of Object.values(inst.actions))
+      for (const action of Object.values(inst.actions)) {
+        if (action.calculate)
+          action.calculate = action.calculate.map((calculation) =>
+            calculation.op === "aggregate" &&
+            calculation.measure === "count" &&
+            !matchable(calculation.selection, inst, action).length
+              ? {
+                  target: calculation.target,
+                  op: "sum",
+                  values: [{ literal: 0 }],
+                }
+              : calculation,
+          );
         action.requires = action.requires.map((requirement) =>
           requirement.kind === "aggregate" &&
           requirement.measure === "count" &&
@@ -3904,6 +3968,7 @@ export function compile(
               }
             : requirement,
         );
+      }
     const checkSelection = (
       selection: UdlSelection,
       at: Located,
@@ -4076,7 +4141,7 @@ export function compile(
         )
       )
         continue;
-      let specialized = false;
+      let specialized = trimmed.has(inst.id);
       for (const [key, action] of Object.entries(inst.actions)) {
         const constant = (value: import("@hyperscale0/udl").UdlValue) => {
           if ("literal" in value) return value.literal;
@@ -4194,6 +4259,28 @@ export function compile(
           "give each exposed action a distinct public name",
         );
     }
+    // A public action on a fresh attachment creates it first with no input
+    // (in the engine executor), so creation that needs input must be public.
+    for (const kind of document.objects)
+      for (const attachment of kind.attachments) {
+        if (attachment.parent) continue;
+        const instrument = byId.get(attachment.instrument)!;
+        const create = instrument.actions.create;
+        const needed = create?.input.filter((field) => !field.optional) ?? [];
+        const entry = Object.values(instrument.actions).find(
+          (action) => action.publicAction,
+        );
+        if (!needed.length || create!.publicAction || !entry) continue;
+        fail(
+          objects
+            .get(kind.id)!
+            .body.entries.find((row) =>
+              new RegExp(`^attach\\s+${attachment.name}\\s*=`).test(row.key),
+            ) ?? objects.get(kind.id)!,
+          `${attachment.name} starts from ${entry.publicAction}, but its create needs ${needed.map((field) => field.name).join(", ")} and is not exposed`,
+          `expose create on ${attachment.name} so the caller supplies ${needed.length === 1 ? "it" : "them"}, or rename { ${needed[0]!.name}: ${needed[0]!.name} } to read object metadata`,
+        );
+      }
     for (const kind of document.objects) {
       for (const name of kind.entryActions ?? []) {
         const eligible = kind.attachments.some((attachment) => {

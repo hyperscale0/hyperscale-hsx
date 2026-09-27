@@ -5,12 +5,17 @@ header lending
 // principal/profit distributions and unbound source owners remain unclassified.
 
 // Round target is plan.principal from runtime subject.price, not its credit limit.
-// Expose round.create and close plus commitment.create and withdraw. A commitment
+// The operator opens the round and closes it before closesAt. Expose
+// round.create and close plus commitment.create and withdraw. A commitment
 // debits the bound investor's original active wallet before closesAt. Investor cap
-// aggregates by investor across wallets. Failure refunds those original wallets.
+// aggregates by investor across wallets. A round still open at closesAt fails,
+// even when fully committed, and refunds those original wallets.
 // Closing needs the exact target; it funds plan.capital and does not disburse the
 // loan. Expose plan.disburse separately after signing and limit approval.
-// Distribution.create needs a recorded, unconsumed settlement matching the plan.
+// Distribution.create needs a recorded settlement matching the plan. Only the
+// payout consumes it: distribute_cash or distribute_loss claims the settlement
+// and marks it distributed, so the plan's unwind_paid keeps that profit, while an
+// abandoned distribution leaves the settlement refundable.
 // Prepare cash or loss first, then create shares against funded commitments of
 // that round. Distribution needs pending share weights equal to the round target.
 // Cash fee is a percentage of retained profit, VAT a percentage of that fee.
@@ -30,7 +35,7 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
     held: account of self
   }
   lifecycle { states: [open, funded, failed], initial: open }
-  action create { requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.borrower }
+  action create { actor: { party: operator }, requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.borrower }
   action close {
     from: open, to: funded, actor: { party: operator }
     requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
@@ -40,7 +45,6 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
   }
   action fail {
     from: open, to: failed, actor: clock, due: { at: self.closesAt }
-    requires self.held.balance < self.price
     invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: refund, input: {} }]
   }
 }
@@ -81,7 +85,9 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     held: account of self, losses: account(self, claim), residualLoss: account(residual_to, claim, "loss")
   }
   lifecycle { states: [pending, cash_ready, loss_ready, distributed], initial: pending }
-  action create { requires self.round in [funded]; requires self.source in [recorded]; requires self.source.plan == self.round.plan; requires unique "settlement_consumption" on [self.source.plan, self.source.identity] }
+  action create {
+    requires self.round in [funded]; requires self.source in [recorded]; requires self.source.plan == self.round.plan
+  }
   action prepare_cash {
     from: pending, to: cash_ready
     requires self.mode == "cash"; requires self.source.kind == "cash"; requires self.source in [recorded]
@@ -101,9 +107,10 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   }
   action distribute_cash { allowZero: true,
     from: cash_ready, to: distributed, actor: { party: operator }
+    requires self.source in [recorded]; requires unique "settlement_consumption" on [self.source.plan, self.source.identity]
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator economics { purpose: internal, sourceParty: programOperator }; moves self.vat from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
-    invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
+    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
   }
   action residual_cash { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }
@@ -111,9 +118,10 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   }
   action distribute_loss { allowZero: true,
     from: loss_ready, to: distributed, actor: { party: operator }
+    requires self.source in [recorded]; requires unique "settlement_consumption" on [self.source.plan, self.source.identity]
     requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
     moves self.net from self.source.lossAccount to self.losses
-    invoke: [{ selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
+    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
   }
   action residual_loss { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }

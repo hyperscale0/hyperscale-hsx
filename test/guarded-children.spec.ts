@@ -113,8 +113,15 @@ test("WITNESS-GUARD-CONTEXT resolves known self and input values and compares mo
   ).toEqual([]);
 });
 
-// WITNESS-CHILD-ATTACHMENT: restore the empty child expose map with child public-action deletion.
-test("WITNESS-CHILD-ATTACHMENT projects child servicing with an explicit attachment parent", () => {
+// WITNESS-CHILD-ATTACHMENT: keep generated public names on child actions (R125-224).
+test("WITNESS-CHILD-ATTACHMENT keeps child servicing private until the program exposes it", () => {
+  const discover = (source: string) =>
+    projectObjectDiscovery(project(source).document, {
+      productBuildId: "guarded",
+      digest: "",
+    }).kinds[0]!.actions.filter(
+      (action) => action.instrument === "car_review_child",
+    );
   const { document } = project();
   expect(document.objects[0]!.attachments).toContainEqual({
     name: "review_child",
@@ -122,15 +129,12 @@ test("WITNESS-CHILD-ATTACHMENT projects child servicing with an explicit attachm
     instrument: "car_review_child",
     parties: {},
   });
-  const actions = projectObjectDiscovery(document, {
-    productBuildId: "guarded",
-    digest: "",
-  }).kinds[0]!.actions;
-  const finish = actions.find(
-    (action) =>
-      action.instrument === "car_review_child" && action.action === "finish",
+  expect(discover(programme())).toEqual([]);
+  const actions = discover(
+    `${programme()}\nexpose car.review.child.finish as finish_child`,
   );
-  expect(finish).toBeDefined();
+  const finish = actions.find((action) => action.action === "finish");
+  expect(finish?.name).toBe("finish_child");
   expect(finish!.target).toEqual({
     kind: "attachment",
     attachment: "review_child",
@@ -178,6 +182,8 @@ test("WITNESS-GUARD-WRITES does not suppress a branch from a value overwritten b
   const { document, action } = project(
     programme("self.enabled")
       .replace("enabled: boolean = false", "enabled: boolean")
+      // A runtime field shares object metadata only through a rename.
+      .replace("expose check", "rename { enabled: enabled } expose check")
       .replace(
         "action check {",
         "action check { set: { enabled: { literal: true } }",

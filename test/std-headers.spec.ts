@@ -28,6 +28,7 @@ object item "Item" {
  attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
  attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
  attach payout = money.payout { payer: actor, payee: owner, adapter: "fixture", max_age: 1d }
+ attach mandate = money.mandate { payer: actor, payee: owner }
  attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
  attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "insurer", covers: sale }
  attach claim = insurance.claim { cover: cov, inspector: inspector }
@@ -43,12 +44,12 @@ object item "Item" {
  attach contact = collections.contact { case: case, agency: supplier }
  attach reminder = collections.reminder { on: plan }
  attach wallet = wallet.balance { holder: investor }
- attach spend = wallet.spend { wallet: wallet, payee: supplier }
+ attach spend = wallet.spend { wallet: wallet, payee: supplier, holder: investor }
  attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }
  attach commitment = lending.commitment { round: round, wallet: wallet, investor: investor }
  attach distribution = lending.distribution { round: round, receipt: plan.settlement }
  attach cardholder = cards.cardholder { holder: actor }
- attach card = cards.card { holder: cardholder, spend_limit: 5000 SAR }
+ attach card = cards.card { holder: cardholder, person: actor, spend_limit: 5000 SAR }
  attach authorization = cards.authorization { card: card, merchant: supplier }
  attach transaction = cards.transaction { authorization: authorization }
  attach dispute = cards.dispute { transaction: transaction }
@@ -100,7 +101,7 @@ party supplier: business
 object item "Item" {
  attach sale = escrow.hold { payer: actor, payee: owner }
  attach cardholder = cards.cardholder { holder: actor }
- attach card = cards.card { holder: cardholder, spend_limit: 5000 SAR }
+ attach card = cards.card { holder: cardholder, person: actor, spend_limit: 5000 SAR }
  attach authorization = cards.authorization { card: card, merchant: supplier }
  attach transaction = cards.transaction { authorization: authorization }
  attach dispute = cards.dispute { transaction: transaction }

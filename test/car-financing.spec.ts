@@ -48,7 +48,7 @@ object facility "Credit facility" {
     borrower: operator, adapter: "funding_bank", limit: 50000000 SAR, expires: 2028-12-31
     expose activate as activate_facility
   }
-  attach draw = financing.advance { line: line, expose draw as draw_capital }
+  attach draw = financing.advance { line: line, expose create as request_draw, expose draw as draw_capital }
 }
 object car "Car" {
   ${carFields}

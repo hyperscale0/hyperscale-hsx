@@ -2,7 +2,10 @@ header cards
 
 // Activate holder and card before creating and approving an authorization.
 // Only the Product operator activates, suspends or resumes a cardholder; the
-// holder freezes, unfreezes and cancels their own card.
+// cardholder or the Product operator closes it. The card's person, bound to the
+// cardholder's holder, freezes, unfreezes and cancels their own card. The issuer
+// freezes it with issuer_freeze into blocked, which only issuer_unfreeze lifts,
+// and cancels it with issuer_cancel.
 // Expose authorization.create, approve and capture; expose decline and reverse
 // separately if callers need those paths. Issuer declines only from pending;
 // merchant captures or reverses an approved reservation. Expiry voids approved
@@ -26,18 +29,22 @@ instrument cardholder(holder: party) {
   action activate { from: pending, to: active, actor: { party: programOperator } }
   action suspend { from: active, to: suspended, actor: { party: programOperator } }
   action resume { from: suspended, to: active, actor: { party: programOperator } }
-  action close { from: [active, suspended], to: closed }
+  action close { from: [active, suspended], to: closed, actor: { party: holder } }
+  action operator_close { from: [active, suspended], to: closed, actor: { party: programOperator } }
 }
 
-instrument card(holder: ref<cards.cardholder>, spend_limit: money) {
+instrument card(holder: ref<cards.cardholder>, spend_limit: money, issuer: party = programOperator, person: party = party(person)) {
   summary: "A card with a per-spend ceiling that can be activated, frozen or cancelled."
-  fields { holder: ref<holder>, spendLimit: money = spend_limit }
-  lifecycle { states: [issued, active, frozen, cancelled], initial: issued }
-  action create { requires self.holder in [active] }
+  fields { holder: ref<holder>, person: account of person, spendLimit: money = spend_limit }
+  lifecycle { states: [issued, active, frozen, blocked, cancelled], initial: issued }
+  action create { requires self.holder in [active]; requires self.holder.holder == self.person }
   action activate { from: issued, to: active, requires self.holder in [active] }
-  action freeze { from: active, to: frozen }
-  action unfreeze { from: frozen, to: active, requires self.holder in [active] }
-  action cancel { from: [issued, active, frozen], to: cancelled }
+  action freeze { from: active, to: frozen, actor: { party: person } }
+  action unfreeze { from: frozen, to: active, actor: { party: person }, requires self.holder in [active] }
+  action issuer_freeze { from: [active, frozen], to: blocked, actor: { party: issuer } }
+  action issuer_unfreeze { from: [frozen, blocked], to: active, actor: { party: issuer }, requires self.holder in [active] }
+  action cancel { from: [issued, active, frozen, blocked], to: cancelled, actor: { party: person } }
+  action issuer_cancel { from: [issued, active, frozen, blocked], to: cancelled, actor: { party: issuer } }
 }
 
 instrument authorization(card: ref<cards.card>, merchant: party, issuer: party = programOperator) {

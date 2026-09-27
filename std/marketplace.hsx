@@ -4,7 +4,8 @@ header marketplace
 // earning for the company or passes the buyer's cash through to a bound outside recipient.
 
 // Listing, order and reservation are separate agreements. Expose their create
-// and decision actions individually. Order fulfillment does not move escrow cash.
+// and decision actions individually. Order fulfillment does not move escrow cash;
+// only the fulfiller marks it, the Product operator unless the seller is bound.
 // Pair an order with escrow.hold and expose its fund, deliver, accept, dispute,
 // verify_return and refund aliases. Refund needs disputed -> return_verified,
 // with payee evidence, then returns the full price to payer; accept pays payee.
@@ -34,7 +35,7 @@ instrument listing(seller: party) {
   action sell { from: active, to: sold, actor: { party: seller }, requires count of { instrument: all(marketplace.reservation), reference: "listing", anchor: self.id, states: [active], limit: 366 } == 0 }
 }
 
-instrument order(listing: ref<marketplace.listing>, buyer: party) {
+instrument order(listing: ref<marketplace.listing>, buyer: party, fulfiller: party = programOperator) {
   revisioned: true
   summary: "A buyer's order for one listing at its declared price."
   fields { listing: ref<listing>, buyer: account of buyer, price: money, reservations: integer?, ownReservations: integer?, blockingQuotes: integer?, ownBlockingQuotes: integer? }
@@ -60,7 +61,7 @@ instrument order(listing: ref<marketplace.listing>, buyer: party) {
     requires count of { instrument: current(), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } <= 1
   }
   invariants count of { instrument: current(), reference: "listing", anchor: self.listing, states: [placed, fulfilled], limit: 366 } <= 1
-  action fulfill { from: placed, to: fulfilled }
+  action fulfill { from: placed, to: fulfilled, actor: { party: fulfiller } }
   action cancel { from: [quoted, placed], to: cancelled, actor: { party: buyer } }
 }
 

@@ -17,6 +17,7 @@ header savings
 // Late and out-of-order collection is admitted while membership is active or
 // received and circle is active. Clock admission does not promise scheduler retry.
 // Circle.close needs every membership received and an empty held account.
+// Only the Product operator disbands a forming circle.
 // Circle creation collects circleDates, one date per member for contributions and payouts.
 
 // Cost: circle.create declares one owned account. Each contribution payment
@@ -37,14 +38,14 @@ instrument circle(contribution: money, members: integer(1, 60), starts: date, me
     requires count of { instrument: memberships, reference: "circle", anchor: self.id, states: [received], limit: 60 } == self.members
     requires self.held.balance == "0"
   }
-  action disband { from: forming, to: disbanded }
+  action disband { from: forming, to: disbanded, actor: { party: programOperator } }
 }
 
 instrument membership(circle: ref<savings.circle>, member: party) {
   summary: "A member contributes on the circle calendar and receives the pot in the assigned seat."
   fields { circle: ref<circle>, member: account of member, seat: integer(1, 60), preceding: integer = subtract(self.seat, 1), receivesAt: date = at(self.circle.circleDates, self.seat), contribution: money = self.circle.contribution, total: money = self.circle.pot }
   lifecycle { states: [joined, active, received, withdrawn], initial: joined }
-  action create { requires self.seat <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.seat]; requires unique "circle_member" on [self.circle, self.member] }
+  action create { actor: { party: member }, requires self.seat <= self.circle.members; requires self.circle in [forming]; requires unique "circle_seat" on [self.circle, self.seat]; requires unique "circle_member" on [self.circle, self.member] }
   action activate {
     from: joined, to: active
     requires self.circle in [active]

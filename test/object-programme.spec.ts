@@ -245,12 +245,12 @@ object car "Car" {
 
 const creationSource = `program p "P"
 object car "Car" {
-  attach review = review { expose check as check, expose approve as approve }
+  attach review = review { rename { note: note }, expose check as check, expose approve as approve }
 }
 instrument review() {
   fields { note: text }
   lifecycle { states: [pending, checked, approved], initial: pending }
-  action create { input { token: text } }
+  action create { input { token: text? } }
   action check { from: pending, to: checked, subject { note: text } }
   action approve { from: checked, to: approved }
 }`;

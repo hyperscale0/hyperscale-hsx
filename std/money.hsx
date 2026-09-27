@@ -7,15 +7,20 @@ header money
 // Expose each attachment's create and caller actions explicitly. A transfer or
 // split pays once; a hold exposes fund, release and refund separately. Release
 // pays payee and refund returns payer. A hold has no dispute or damage decision.
-// A schedule needs count unique occurrence records before activation; each due
-// occurrence pays only while the schedule is active. A due time promises no retry.
+// The payee proposes a schedule, which creates its count occurrences, and only
+// the payer activates or cancels it. Each due occurrence pays only while the
+// schedule is active. A due time promises no retry.
 // A pool accepts whole contributions only up to its remaining target and at most
 // 366 paid records. Expose pay to release the exact target. Clock failure refunds
 // original contributors; excess acceptance and partial contribution are absent.
 // A swap reserves both legs before exchange or voids reservations on expiry.
 // Payout instruct reserves across the selected adapter; confirm/reject require
 // matching terminal instruction evidence. An acknowledgement cannot settle it.
-// Metered bill charges a unique usage identity at the fixed unit price.
+// Metered bill charges a unique usage identity at the fixed unit price, only
+// under an active mandate the payer created: bills stop at its expiresAt, and at
+// most 366 billed events across every metered attachment on the mandate may sum
+// their payer debit, buyer fee and tax included, to its limit. The payer revokes
+// it to stop billing. Only the payee cancels its own unbilled usage.
 
 // Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
 // fund, release and refund each declare one transfer. Schedules and pools add bounded
@@ -70,16 +75,16 @@ instrument schedule(payer: party, payee: party, amount: money = runtime, count: 
   summary: "A finite schedule whose dated pieces sum exactly to the declared total."
   fields { amount: money = amount, count: integer = count, dates: list(date, count) }
   lifecycle { states: [draft, active, complete, cancelled], initial: draft }
-  action create {}
-  action activate {
-    from: draft, to: active
-    requires count of { instrument: occurrence, reference: "schedule", anchor: self.id, states: [pending], limit: 366 } == self.count
+  action create {
+    actor: { party: payee }
+    invoke: [{ range: { count: { literal: count }, maximum: count, bind: position }, instrument: occurrence, action: create, input: { schedule: { field: self.id }, position: { field: position } } }]
   }
+  action activate { from: draft, to: active, actor: { party: payer } }
   action complete {
     from: active, to: complete
     requires count of { instrument: occurrence, reference: "schedule", anchor: self.id, states: [pending], limit: 366 } == 0
   }
-  action cancel { from: [draft, active], to: cancelled }
+  action cancel { from: [draft, active], to: cancelled, actor: { party: payer } }
   records {
     occurrence: {
       fields {
@@ -92,7 +97,7 @@ instrument schedule(payer: party, payee: party, amount: money = runtime, count: 
         amount: money = sum(self.base, self.adjustment)
       }
       lifecycle { states: [pending, paid, cancelled], initial: pending }
-      action create { requires self.schedule in [draft]; requires unique "scheduled_position" on [self.schedule, self.position] }
+      action create { actor: { parent: parent }, input { schedule: ref<parent>, position: integer(1, count) }, requires unique "scheduled_position" on [self.schedule, self.position] }
       action pay { allowZero: true, from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.schedule in [active], moves self.amount from payer to payee }
       action cancel { from: pending, to: cancelled, requires self.schedule in [cancelled] }
     }
@@ -163,11 +168,20 @@ instrument payout(payer: party, payee: party, adapter: text, max_age: duration, 
   }
 }
 
-instrument metered(payer: party, payee: party, unit_price: money, units: integer = 1, fee: fee = { seller: 0% }) {
+instrument mandate(payer: party, payee: party) {
+  summary: "A payer's permission for one payee to charge up to a total until it expires."
+  fields { payer: account of payer, payee: account of payee, limit: money, expiresAt: date }
+  lifecycle { states: [active, revoked], initial: active }
+  action create { actor: { party: payer }, requires self.limit > "0" }
+  action revoke { from: active, to: revoked, actor: { party: payer } }
+}
+
+instrument metered(payer: party, payee: party, unit_price: money, units: integer = 1, fee: fee = { seller: 0% }, mandate: ref<money.mandate> = object(money.mandate)) {
   summary: "A unique usage event priced once at the fixed unit price."
-  fields { usageIdentity: text, unitPrice: money = unit_price, units: integer = units, amount: money = multiply(self.unitPrice, self.units) }
+  fields { usageIdentity: text, mandate: ref<mandate>, payer: account of payer, payee: account of payee, unitPrice: money = unit_price, units: integer = units, amount: money = multiply(self.unitPrice, self.units) }
   lifecycle { states: [recorded, billed, cancelled], initial: recorded }
-  action create { requires unique "usage_event" on [self.usageIdentity] }
-  action bill { allowZero: true, requires self.amount > "0"; from: recorded, to: billed, actor: { party: payee }, moves self.amount from payer to payee fee fee }
-  action cancel { from: recorded, to: cancelled }
+  invariants sum "bill_move1_debit" of { instrument: all(money.metered), reference: "mandate", anchor: self.mandate, states: [billed], limit: 366 } <= self.mandate.limit
+  action create { requires unique "usage_event" on [self.usageIdentity]; requires self.mandate.payer == self.payer; requires self.mandate.payee == self.payee }
+  action bill { allowZero: true, requires self.amount > "0"; from: recorded, to: billed, actor: { party: payee }, deadline: { at: self.mandate.expiresAt }, requires self.mandate in [active], moves self.amount from payer to payee fee fee }
+  action cancel { from: recorded, to: cancelled, actor: { party: payee } }
 }
