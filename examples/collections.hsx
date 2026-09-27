@@ -2,6 +2,10 @@
 program business_collections "Small business collections"
 use collections
 use financing
+// agency is a business this program declares, so plan needs {"partyBindings":{"agency":"<partyId>"}}.
+// That partyId is an organization customer's: create the Product from this source without the recovery
+// and contact attachments, add the customer with customer.create, activate its access, open its
+// customer_balance account, then compose this source with the binding.
 party agency: business
 
 object facility "Business loan" {

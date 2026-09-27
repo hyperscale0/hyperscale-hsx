@@ -1039,6 +1039,29 @@ export function compile(
         (!!attachmentInfo &&
           subjectPartyRoles.includes(name as SubjectPartyRole));
       const resolvedParties = new Set<string>();
+      // A party of a sibling attachment this one references, such as the
+      // borrower of `self.plan`, binds here the way it binds there.
+      const reachedParty = (
+        name: string,
+      ): AttachmentPartyBinding | undefined => {
+        if (!attachmentInfo) return;
+        const targets = fields.flatMap((field) =>
+          field.type === "ref" && field.targetKind === "instrument"
+            ? [field.target].flat()
+            : [],
+        );
+        const bindings = attachmentInfo.attachments.flatMap((attachment) =>
+          targets.some(
+            (target) =>
+              target === attachment.instrument ||
+              target.startsWith(`${attachment.instrument}_`),
+          ) && attachment.parties[name]
+            ? [attachment.parties[name]]
+            : [],
+        );
+        const distinct = new Set(bindings.map((item) => JSON.stringify(item)));
+        return distinct.size === 1 ? bindings[0] : undefined;
+      };
       const resolve = (
         expr: Expr,
         seen = new Set<string>(),
@@ -1098,6 +1121,18 @@ export function compile(
               attachmentSubjects.has(name)
                 ? name.slice(attachmentInfo.subjectKindId.length + 1)
                 : `${name} (program)`;
+            const elsewhere = [...assignments.values()]
+              .filter(
+                (assignment) =>
+                  assignment.target === type &&
+                  attachmentSubjects.has(assignment.name) &&
+                  attachmentSubjects.get(assignment.name) !==
+                    attachmentInfo.subjectKindId,
+              )
+              .map((assignment) => {
+                const subject = attachmentSubjects.get(assignment.name)!;
+                return `\`${subject}.${assignment.name.slice(subject.length + 1)}\``;
+              });
             const target = templates.get(type);
             const required =
               target?.parameters
@@ -1116,7 +1151,7 @@ export function compile(
               }`,
               matches.length
                 ? `Bind \`${parameter}\` explicitly to one of: ${matches.map(local).join(", ")}.`
-                : `Declare a ${parameter} attachment and bind \`${parameter}: allowance\`. Choose ${required.map((name) => (name.startsWith("per_") ? `its ${name.slice(4).replaceAll("_", " ")} limit` : `\`${name}\``)).join(", ") || "its required bindings"} explicitly.`,
+                : `Attach \`${type}\` to \`${attachmentInfo.subjectKindId}\` and bind \`${parameter}\` to that attachment's name. Choose ${required.map((name) => (name.startsWith("per_") ? `its ${name.slice(4).replaceAll("_", " ")} limit` : `\`${name}\``)).join(", ") || "its required bindings"} explicitly.${elsewhere.length ? ` ${elsewhere.join(", ")} ${elsewhere.length === 1 ? "is" : "are"} on another object, which this binding cannot reach.` : ""}`,
             );
           }
           if (expr.name !== "all" && matches.length !== 1)
@@ -1555,6 +1590,28 @@ export function compile(
             value: `${id}_${key}`,
             span: origin,
           });
+      // A subject role only has money here when this attachment binds it.
+      const moneyPath = (expr: Expr): string => {
+        const lowered = path(expr);
+        const role = lowered.slice("party.".length) as SubjectPartyRole;
+        if (
+          attachmentInfo &&
+          lowered.startsWith("party.") &&
+          subjectPartyRoles.includes(role) &&
+          !Object.values(attachmentInfo.parties).some(
+            (binding) => "role" in binding && binding.role === role,
+          )
+        )
+          failWithCode(
+            expr,
+            "subject_party_unbound",
+            `\`${role}\` has no money account in \`${decl.name}\``,
+            role === "operator"
+              ? "Use `programOperator` for the company's own account."
+              : `Add a party parameter to \`${decl.name}\` and bind it to \`${role}\` where you attach it.`,
+          );
+        return lowered;
+      };
       const fields: UdlField[] = [];
       const calculations: UdlCalculation[] = [];
       let currentAction: UdlAction | undefined;
@@ -2472,9 +2529,18 @@ export function compile(
                     `unknown economic purpose ${purposeName}`,
                     "choose a declared economic purpose",
                   );
-                const sourcePartyName = sourceParty
+                let sourcePartyName = sourceParty
                   ? String(data(sourceParty))
                   : undefined;
+                const reached =
+                  sourcePartyName && !isParty(sourcePartyName)
+                    ? reachedParty(sourcePartyName)
+                    : undefined;
+                if (reached) {
+                  attachmentInfo!.parties[sourcePartyName!] = reached;
+                  sourcePartyName =
+                    "role" in reached ? reached.role : reached.party;
+                }
                 if (sourcePartyName && !isParty(sourcePartyName))
                   fail(
                     sourceParty!,
@@ -2608,7 +2674,7 @@ export function compile(
                       operation: "internal_transfer.create",
                       ...(economics ? { economics } : {}),
                       amount: piece,
-                      from: path(from),
+                      from: moneyPath(from),
                       to: `party.${recipient.value}`,
                     });
                   }
@@ -2636,8 +2702,8 @@ export function compile(
                     ? { capture: String(data(parts.get("capture")!)) }
                     : {}),
                   amount: val(amount!),
-                  from: path(from!),
-                  to: path(to!),
+                  from: moneyPath(from!),
+                  to: moneyPath(to!),
                 };
                 const fee = parts.get("fee");
                 if (!fee)
@@ -2908,6 +2974,26 @@ export function compile(
             span: entry?.span ?? row.span,
             message: `${id}.${name}.subject.${requirement.field.name}`,
           });
+        }
+        // A parent actor over an empty all() names no instrument that could
+        // invoke the action. A std action then does not exist in this program;
+        // in user code the all() is a mistake.
+        if (
+          typeof a.actor === "object" &&
+          "parent" in a.actor &&
+          Array.isArray(a.actor.parent) &&
+          !a.actor.parent.length
+        ) {
+          if ((declarationSources.get(decl) ?? "program") === "program") {
+            const parent = entries(asBlock(slots.get("actor"))).get("parent");
+            fail(
+              parent ?? row,
+              `${parent?.kind === "call" ? `${parent.name}(${text(parent.args[0]!)})` : `the parent actor of ${name}`} matches no instrument`,
+              "name an instrument this program declares or attaches",
+            );
+          }
+          delete lifecycle.transitions[name];
+          continue;
         }
         inst.actions[name] = a;
         inst.actionOrder.push(name);
@@ -3746,7 +3832,7 @@ export function compile(
     // A family member drops an optional reference field its binding left
     // unset (a borrower-funded plan has no `funds`), so it cannot match and
     // leaves the selection. The header must still declare the field.
-    const matchable = (selection: UdlSelection) => {
+    const declaredMembers = (selection: UdlSelection) => {
       const members = [selection.instrument].flat();
       const header = selection.family
         ? templates.get(
@@ -3764,13 +3850,52 @@ export function compile(
         resolveField(document, byId.get(id)!, `self.${selection.reference}`),
       );
     };
+    // A member whose reference points at another attachment of the anchor's
+    // own template (the plan funding another object's escrow) cannot match
+    // either, so each object only selects what can reference it.
+    const kin = (a: string, b: string) => {
+      const left = byId.get(a);
+      const right = byId.get(b);
+      return (
+        !!left && !!right && declarations.get(left) === declarations.get(right)
+      );
+    };
+    const matchable = (
+      selection: UdlSelection,
+      inst: UdlInstrument,
+      action?: UdlAction,
+    ) =>
+      declaredMembers(selection).filter((id) => {
+        const member = byId.get(id);
+        if (!member) return true;
+        const anchor = resolveField(
+          document,
+          inst,
+          selection.anchor,
+          action?.input,
+          action,
+        );
+        const reference = resolveField(
+          document,
+          member,
+          `self.${selection.reference}`,
+        );
+        if (anchor?.type !== "ref" || reference?.type !== "ref") return true;
+        const targets = [anchor.target].flat();
+        const candidates = [reference.target].flat();
+        return !candidates.every(
+          (candidate) =>
+            !targets.includes(candidate) &&
+            targets.some((target) => kin(target, candidate)),
+        );
+      });
     // A count over no matchable member is zero.
     for (const inst of document.instruments)
       for (const action of Object.values(inst.actions))
         action.requires = action.requires.map((requirement) =>
           requirement.kind === "aggregate" &&
           requirement.measure === "count" &&
-          !matchable(requirement.selection).length
+          !matchable(requirement.selection, inst, action).length
             ? {
                 kind: "compare",
                 left: { literal: 0 },
@@ -3784,9 +3909,15 @@ export function compile(
       at: Located,
       scope: Scope,
     ) => {
+      walk(
+        selection.overlaps,
+        "overlaps",
+        site(selection, "overlaps", at),
+        scope,
+      );
       walk(selection.anchor, "anchor", site(selection, "anchor", at), scope);
       walk(selection.where, "where", site(selection, "where", at), scope);
-      const members = matchable(selection);
+      const members = matchable(selection, scope.inst, scope.action);
       if (
         members.length &&
         members.length < [selection.instrument].flat().length
@@ -3807,6 +3938,9 @@ export function compile(
         selection.order?.forEach((key, index) =>
           member(key, site(selection.order!, index, at)),
         );
+        if (selection.overlaps)
+          for (const key of ["start", "end"] as const)
+            member(selection.overlaps[key], site(selection.overlaps, key, at));
         if (selection.window)
           member(selection.window.field, site(selection.window, "field", at));
       }
@@ -4112,13 +4246,15 @@ export function compile(
                       ),
                   ),
               );
+            const reaching = stranded.actions.at(-1);
+            const drain = `move ${stranded.accounts.map((account) => `\`self.${account}.balance\``).join(" and ")} out in ${reaching ? `\`${reaching}\`` : "the action that reaches it"}, or add an action from \`${stranded.state}\` that does`;
             return diagnostic(
               {
                 code: i.code,
                 message: `\`${attachment?.name ?? instrument.id}\` can reach \`${stranded.state}\` with money in ${stranded.accounts.map((account) => `\`${account}\``).join(", ")}, but no action leaves that state and disposes of the balance.`,
                 fix: binding
-                  ? `Restore \`${binding.parameter}: ${stranded.state}\`, or author a complete refund path for every reachable funded state.`
-                  : "Author a complete refund path for every reachable funded state.",
+                  ? `Restore \`${binding.parameter}: ${stranded.state}\`, or ${drain}.`
+                  : `${drain[0]!.toUpperCase()}${drain.slice(1)}.`,
                 span: binding?.span ?? origin?.span ?? program.span,
                 related: stranded.accounts.map((account) => ({
                   source: "program",

@@ -54,7 +54,10 @@ function render() {
   output.textContent = result.artifacts
     ? JSON.stringify(result.artifacts.document, null, 2)
     : result.diagnostics
-        .map((d) => `${d.line}:${d.column} ${d.message}. ${d.fix}`)
+        .map(
+          (d) =>
+            `${d.line}:${d.column} ${d.message.replace(/\.$/, "")}. ${d.fix}`,
+        )
         .join("\n");
 }
 tokens.addEventListener("pointerover", (event) => {

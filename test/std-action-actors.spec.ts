@@ -97,4 +97,16 @@ test("standard library money-moving, releasing, forgiving or refunding actions b
   expect(find("item_auth", "approve")).toEqual({ party: "programOperator" });
   expect(find("item_disp", "win")).toEqual({ party: "programOperator" });
   expect(find("item_case", "assign")).toEqual({ party: "operator" });
+  // Mutation: drop the actor from any of these. A customer or seller could
+  // then approve credit or lift an operator's freeze or suspension.
+  for (const [id, action] of [
+    ["item_limits", "approve"],
+    ["item_ceiling", "approve"],
+    ["item_cardholder", "activate"],
+    ["item_cardholder", "suspend"],
+    ["item_cardholder", "resume"],
+    ["item_inv_wallet", "freeze"],
+    ["item_inv_wallet", "unfreeze"],
+  ])
+    expect(find(id!, action!)).toEqual({ party: "programOperator" });
 });

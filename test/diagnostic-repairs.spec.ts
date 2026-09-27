@@ -255,7 +255,7 @@ object membership "Membership" {
   refusal(
     draft,
     "Attachment `plan` needs a `limits` binding. No `financing.limits` attachment exists on `membership`.",
-    "Declare a limits attachment and bind `limits: allowance`. Choose its borrower limit explicitly.",
+    "Attach `financing.limits` to `membership` and bind `limits` to that attachment's name. Choose its borrower limit explicitly.",
   );
   const multiple = draft.replace(
     "attach ceiling",
@@ -280,7 +280,7 @@ object rental "Rental" {
   const { diagnostic } = refusal(
     draft,
     "`deposit` can reach `return_verified` with money in `held`, but no action leaves that state and disposes of the balance.",
-    "Restore `refund_after: return_verified`, or author a complete refund path for every reachable funded state.",
+    "Restore `refund_after: return_verified`, or move `self.held.balance` out in `verify_return`, or add an action from `return_verified` that does.",
   );
   expect(diagnostic.code).toBe("UDL4001");
   expect(diagnostic.related?.[0]?.message).toContain(

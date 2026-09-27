@@ -4,15 +4,14 @@
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "transfer.internal.count",
-      "transfer.internal.volume_sar"
+      "transfer.internal.count"
     ],
-    "effectiveTableDigest": "2d53121d200de2cb7567113ebf5bc0ce9377e7089fd4697f4b694bd557e32063",
+    "effectiveTableDigest": "e58f5c33766a44254880f328f1f9fb886b63d510bf3dfa0f9fb529a0638d74c6",
     "fixed": {
       "activationBaseMinor": "500000",
-      "activationPerPointMinor": "100000",
+      "activationPerPointMinor": "10000",
       "monthlyBaseMinor": "100000",
-      "monthlyPerPointMinor": "20000",
+      "monthlyPerPointMinor": "2000",
       "weights": {
         "aggregate_invariant": 2,
         "flow": 1,
@@ -69,7 +68,7 @@
         "bps": 0,
         "meter": "account.active_month",
         "payer": "product",
-        "perEventMinor": "27500",
+        "perEventMinor": "500",
         "settlement": "invoice",
         "signature": "meters.account.active_month"
       },
@@ -77,18 +76,25 @@
         "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
-        "perEventMinor": "150",
+        "perEventMinor": "25",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 6,
+        "bps": 0,
         "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "75",
-        "settlement": "per_event",
-        "signature": "moves.transfer.internal",
-        "volumeMeter": "transfer.internal.volume_sar"
+        "payer": "product",
+        "perEventMinor": "25",
+        "settlement": "invoice",
+        "signature": "meters.transfer.internal.count"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "moves.transfer.internal"
       },
       {
         "bps": 0,
@@ -155,22 +161,21 @@
         "signature": "unwinds.void"
       }
     ],
-    "version": "2026-09-02.1"
+    "version": "2026-09-27.1"
   },
   {
     "currency": "USD",
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "transfer.internal.count",
-      "transfer.internal.volume_usd"
+      "transfer.internal.count"
     ],
-    "effectiveTableDigest": "44fa81226359fcafa8bd66b70c2311ee999c9bae66ff59c85ccb14d7d68126a9",
+    "effectiveTableDigest": "f2845819ad077745ed5d0af924b33f34210b20da703522e78aa2629d9be5040e",
     "fixed": {
       "activationBaseMinor": "133300",
-      "activationPerPointMinor": "26700",
+      "activationPerPointMinor": "2700",
       "monthlyBaseMinor": "26700",
-      "monthlyPerPointMinor": "5300",
+      "monthlyPerPointMinor": "500",
       "weights": {
         "aggregate_invariant": 2,
         "flow": 1,
@@ -227,7 +232,7 @@
         "bps": 0,
         "meter": "account.active_month",
         "payer": "product",
-        "perEventMinor": "7333",
+        "perEventMinor": "133",
         "settlement": "invoice",
         "signature": "meters.account.active_month"
       },
@@ -235,18 +240,25 @@
         "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
-        "perEventMinor": "40",
+        "perEventMinor": "7",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 6,
+        "bps": 0,
         "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "20",
-        "settlement": "per_event",
-        "signature": "moves.transfer.internal",
-        "volumeMeter": "transfer.internal.volume_usd"
+        "payer": "product",
+        "perEventMinor": "7",
+        "settlement": "invoice",
+        "signature": "meters.transfer.internal.count"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "moves.transfer.internal"
       },
       {
         "bps": 0,
@@ -313,22 +325,21 @@
         "signature": "unwinds.void"
       }
     ],
-    "version": "2026-09-02.1"
+    "version": "2026-09-27.1"
   },
   {
     "currency": "EUR",
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "transfer.internal.count",
-      "transfer.internal.volume_eur"
+      "transfer.internal.count"
     ],
-    "effectiveTableDigest": "613d900e38f98a6bf3934e7940ff4d06c76f1dddc695c79ee3b5ee1ad45b8636",
+    "effectiveTableDigest": "f741132e1aa38a860d855a83f20f12c0ec8a7ec5379117c407799e2012e63335",
     "fixed": {
       "activationBaseMinor": "125000",
-      "activationPerPointMinor": "25000",
+      "activationPerPointMinor": "2500",
       "monthlyBaseMinor": "25000",
-      "monthlyPerPointMinor": "5000",
+      "monthlyPerPointMinor": "500",
       "weights": {
         "aggregate_invariant": 2,
         "flow": 1,
@@ -385,7 +396,7 @@
         "bps": 0,
         "meter": "account.active_month",
         "payer": "product",
-        "perEventMinor": "6875",
+        "perEventMinor": "125",
         "settlement": "invoice",
         "signature": "meters.account.active_month"
       },
@@ -393,18 +404,25 @@
         "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
-        "perEventMinor": "38",
+        "perEventMinor": "6",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 6,
+        "bps": 0,
         "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "19",
-        "settlement": "per_event",
-        "signature": "moves.transfer.internal",
-        "volumeMeter": "transfer.internal.volume_eur"
+        "payer": "product",
+        "perEventMinor": "6",
+        "settlement": "invoice",
+        "signature": "meters.transfer.internal.count"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "moves.transfer.internal"
       },
       {
         "bps": 0,
@@ -471,22 +489,21 @@
         "signature": "unwinds.void"
       }
     ],
-    "version": "2026-09-02.1"
+    "version": "2026-09-27.1"
   },
   {
     "currency": "GBP",
     "declaredMeters": [
       "account.active_month",
       "instrument.event.count",
-      "transfer.internal.count",
-      "transfer.internal.volume_gbp"
+      "transfer.internal.count"
     ],
-    "effectiveTableDigest": "11ff399b5078ba8ba544a518d5483fced9da63da9c7b1cc2124fea1f17a5b01c",
+    "effectiveTableDigest": "12ed3fa44010e80ae20c114d7dd94f277686225c040576a8bb96d12a0fe5333a",
     "fixed": {
       "activationBaseMinor": "104200",
-      "activationPerPointMinor": "20800",
+      "activationPerPointMinor": "2100",
       "monthlyBaseMinor": "20800",
-      "monthlyPerPointMinor": "4200",
+      "monthlyPerPointMinor": "400",
       "weights": {
         "aggregate_invariant": 2,
         "flow": 1,
@@ -543,7 +560,7 @@
         "bps": 0,
         "meter": "account.active_month",
         "payer": "product",
-        "perEventMinor": "5729",
+        "perEventMinor": "104",
         "settlement": "invoice",
         "signature": "meters.account.active_month"
       },
@@ -551,18 +568,25 @@
         "bps": 0,
         "meter": "instrument.event.count",
         "payer": "product",
-        "perEventMinor": "31",
+        "perEventMinor": "5",
         "settlement": "invoice",
         "signature": "meters.instrument.event.count"
       },
       {
-        "bps": 6,
+        "bps": 0,
         "meter": "transfer.internal.count",
-        "payer": "end_customer",
-        "perEventMinor": "16",
-        "settlement": "per_event",
-        "signature": "moves.transfer.internal",
-        "volumeMeter": "transfer.internal.volume_gbp"
+        "payer": "product",
+        "perEventMinor": "5",
+        "settlement": "invoice",
+        "signature": "meters.transfer.internal.count"
+      },
+      {
+        "bps": 0,
+        "meter": "instrument.event.count",
+        "payer": "product",
+        "perEventMinor": "0",
+        "settlement": "invoice",
+        "signature": "moves.transfer.internal"
       },
       {
         "bps": 0,
@@ -629,6 +653,6 @@
         "signature": "unwinds.void"
       }
     ],
-    "version": "2026-09-02.1"
+    "version": "2026-09-27.1"
   }
 ]

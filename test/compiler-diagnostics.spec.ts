@@ -229,3 +229,18 @@ test("object fields interpret duration literals only under a duration type", () 
     { name: "delay", type: "duration", value: 86400000 },
   ]);
 });
+
+// Mutation: drop an empty-parent action in user code too. A misspelt all()
+// would silently delete the author's action instead of naming the mistake.
+test("a user parent actor over an all() that matches nothing is a named diagnostic", () => {
+  const result = compile(
+    instrument(
+      "action close { from: open, to: open, actor: { parent: all(escrow.hld) } }",
+    ),
+  );
+  expect(result.verdict).toBe("invalid");
+  expect(result.diagnostics[0]).toMatchObject({
+    code: "HSX1001",
+    message: "all(escrow.hld) matches no instrument",
+  });
+});

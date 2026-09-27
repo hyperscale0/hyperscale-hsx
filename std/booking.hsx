@@ -21,7 +21,7 @@ header booking
 // cancellation and completion move the held balance. Run hsx cost for the
 // composed counts.
 
-instrument reservation(customer: party = party(person), operator: party = programOperator, early_until: duration = 30d, late_from: duration = 15d, balance_due: duration = 14d, middle_forfeit: percent = 0%, late_forfeit: percent = 0%) {
+instrument reservation(customer: party = party(person), operator: party = programOperator, early_until: duration = 30d, late_from: duration = 15d, balance_due: duration = 15d, middle_forfeit: percent = 0%, late_forfeit: percent = 0%) {
   revisioned: true
   summary: "Take a deposit and a balance for a dated booking, with cancellation windows before departure."
   fields {

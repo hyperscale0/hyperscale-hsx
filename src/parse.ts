@@ -471,13 +471,16 @@ class Parser {
       this.fail("expression nesting exceeds 32", "reduce nested values");
     const start = this.peek().span.start;
     let value = this.atom();
-    if (this.eat("cap"))
+    // `cap:` starts the next entry, so a field may still be named cap.
+    if (this.at("cap") && this.tokens[this.index + 1]?.text !== ":") {
+      this.take();
       value = {
         kind: "capped",
         rate: value,
         cap: this.atom(),
         span: this.span(start),
       };
+    }
     if (this.eat("="))
       value = {
         kind: "default",

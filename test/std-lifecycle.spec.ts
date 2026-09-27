@@ -7,7 +7,8 @@ const example = (name: string) =>
 
 // Mutation unverified-return: change escrow.refund from return_verified to disputed.
 // Mutation stuck-funded: drop funded from escrow.refund, so an undelivered hold has no exit.
-// Mutation lender-cash-refund: drop the live-plan guard from escrow.refund.
+// Mutation lender-cash-refund: drop the live-plan guard from escrow.refund, or
+// leave written_off out of either refund's guard.
 test("a seller refunds before delivery, or after verifying a return", () => {
   const sale = instrument(financing, "purchase_sale");
   expect(sale.actions.verify_return).toMatchObject({
@@ -33,17 +34,47 @@ test("a seller refunds before delivery, or after verifying a return", () => {
       },
     ],
   });
-  expect(sale.actions.refund!.requires).toContainEqual(
-    expect.objectContaining({
-      kind: "aggregate",
-      selection: expect.objectContaining({
-        instrument: ["purchase_plan"],
-        reference: "funds",
-        states: ["signed", "active", "paid"],
+  // Only a cancelled plan has returned its principal to capital, so a new
+  // installments state blocks both refunds until someone decides otherwise.
+  const funding = instrument(financing, "purchase_plan").lifecycle.states;
+  for (const name of ["refund", "refund_undelivered"])
+    expect(sale.actions[name]!.requires).toContainEqual(
+      expect.objectContaining({
+        kind: "aggregate",
+        selection: expect.objectContaining({
+          instrument: ["purchase_plan"],
+          reference: "funds",
+          states: funding.filter((state) => state !== "cancelled"),
+        }),
+        value: { literal: 0 },
       }),
-      value: { literal: 0 },
-    }),
+    );
+});
+
+// Mutation empty-parent: keep an action whose parent actor is an empty all().
+// An escrow-only program then fails to compile, since a parent list needs a member.
+test("only a financed hold has the plan-run unwind", () => {
+  const sale = instrument(financing, "purchase_sale");
+  expect(sale.actions.unwind_financed!.actor).toEqual({
+    parent: ["purchase_plan"],
+  });
+  expect(sale.lifecycle.transitions.unwind_financed).toEqual({
+    from: ["funded", "return_verified"],
+    to: "refunded",
+  });
+  const plain = instrument(
+    `program shop "Shop"
+use escrow
+object order "Order" {
+ attach sale = escrow.hold { payer: actor, payee: owner }
+}`,
+    "order_sale",
   );
+  expect(sale.actions.confirm!.actor).toEqual({ parent: ["purchase_plan"] });
+  expect(plain.actions.confirm).toBeUndefined();
+  expect(plain.actions.unwind_financed).toBeUndefined();
+  expect(plain.lifecycle.transitions.unwind_financed).toBeUndefined();
+  expect(plain.actionOrder).not.toContain("unwind_financed");
 });
 
 // Mutation post-approval-denial: add approved to insurance.claim.deny from-states.

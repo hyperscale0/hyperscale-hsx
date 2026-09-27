@@ -13,7 +13,8 @@ object device "Insured device" {
     expose pay as pay_for_device
   }
   // conformance_boundary is the sandbox insurer adapter; swap in the insurer's registered adapter to go live.
-  // Premiums net of commission go to its account. claim_limit is the sum insured, set per cover at creation.
+  // Premiums net of commission go to its account. The default broker is the retailer, which keeps the commission.
+  // claim_limit is the sum insured, set per cover at creation.
   attach protection = insurance.cover {
     expose create as create_protection
     holder: owner, adapter: "conformance_boundary", commission: 10%, covers: purchase

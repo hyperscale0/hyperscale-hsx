@@ -1,6 +1,10 @@
 // A company issues expense cards to employees and reserves each supplier payment before capture.
 program team_expense_cards "Team expense cards"
 use cards
+// supplier is a business this program declares, so plan needs {"partyBindings":{"supplier":"<partyId>"}}.
+// That partyId is an organization customer's: create the Product from this source without the payment
+// and receipt attachments, add the customer with customer.create, activate its access, open its
+// customer_balance account, then compose this source with the binding.
 party supplier: business
 
 object employee "Employee card" {

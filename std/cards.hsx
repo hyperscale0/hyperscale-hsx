@@ -1,6 +1,8 @@
 header cards
 
 // Activate holder and card before creating and approving an authorization.
+// Only the Product operator activates, suspends or resumes a cardholder; the
+// holder freezes, unfreezes and cancels their own card.
 // Expose authorization.create, approve and capture; expose decline and reverse
 // separately if callers need those paths. Issuer declines only from pending;
 // merchant captures or reverses an approved reservation. Expiry voids approved
@@ -21,9 +23,9 @@ instrument cardholder(holder: party) {
   fields { holder: account of holder }
   lifecycle { states: [pending, active, suspended, closed], initial: pending }
   action create {}
-  action activate { from: pending, to: active }
-  action suspend { from: active, to: suspended }
-  action resume { from: suspended, to: active }
+  action activate { from: pending, to: active, actor: { party: programOperator } }
+  action suspend { from: active, to: suspended, actor: { party: programOperator } }
+  action resume { from: suspended, to: active, actor: { party: programOperator } }
   action close { from: [active, suspended], to: closed }
 }
 
