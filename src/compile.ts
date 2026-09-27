@@ -2694,6 +2694,7 @@ export function compile(
                   const prefix = `${name}_${key}`;
                   const derived = (
                     suffix: string,
+                    label: string,
                     calculation: Omit<UdlCalculation, "target">,
                   ): UdlValue => {
                     const target = prefix + "_" + suffix;
@@ -2703,19 +2704,27 @@ export function compile(
                         `generated fee field ${target} conflicts with a field`,
                         "rename the authored field or move key",
                       );
-                    fields.push({ name: target, type: "money" });
+                    fields.push({ name: target, type: "money", label });
                     calculations.push({
                       ...calculation,
                       target,
                     } as UdlCalculation);
                     return { field: `self.${target}` };
                   };
-                  const gross = derived("feeGross", {
-                    op: "rate",
-                    base: transfer.amount,
-                    bps: { literal: literal(rate) },
-                    rounding: "floor",
-                  } as Omit<UdlCalculation, "target">);
+                  // Labels come from the source keys: seller or buyer, cap, tax.
+                  const feeLabel = `${paidBy === "seller" ? "Seller" : "Buyer"} fee`;
+                  const gross = derived(
+                    "feeGross",
+                    quoted.kind === "capped"
+                      ? `${feeLabel} before cap`
+                      : feeLabel,
+                    {
+                      op: "rate",
+                      base: transfer.amount,
+                      bps: { literal: literal(rate) },
+                      rounding: "floor",
+                    } as Omit<UdlCalculation, "target">,
+                  );
                   let charge = gross;
                   if (quoted.kind === "capped") {
                     if (quoted.cap.kind !== "money")
@@ -2724,7 +2733,7 @@ export function compile(
                         "fee cap needs money",
                         "write an amount such as 750 SAR",
                       );
-                    charge = derived("fee", {
+                    charge = derived("fee", feeLabel, {
                       op: "minimum",
                       values: [gross, { literal: literal(quoted.cap) }],
                     } as Omit<UdlCalculation, "target">);
@@ -2737,7 +2746,7 @@ export function compile(
                       "write tax: 15%",
                     );
                   const vat = tax
-                    ? derived("tax", {
+                    ? derived("tax", "Fee tax", {
                         op: "rate",
                         base: charge,
                         bps: { literal: literal(tax) },
@@ -2747,7 +2756,7 @@ export function compile(
                   const charges = vat ? [charge, vat] : [charge];
                   const net =
                     paidBy === "seller"
-                      ? derived("net", {
+                      ? derived("net", "Amount after fee", {
                           op: "subtract",
                           base: transfer.amount,
                           subtract: charges,
