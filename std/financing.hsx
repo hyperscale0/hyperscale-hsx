@@ -2,9 +2,14 @@ header financing
 
 // Economics: Principal advances and repayments are excluded from earnings. Claims, waivers,
 // write-offs and allocations are internal. Paid profit and company charges are
-// earnings; receipt refunds reverse captured cash. Outside recovery recipients
-// receive payouts from held company cash, or pass-through direct customer cash.
+// earnings; receipt refunds reverse captured cash. Borrower cash paid to outside
+// capital or recovery recipients passes through, whether held first or paid direct.
 
+// Pricing is required. amortizing reads profit_rate as an annual rate on the
+// declining balance: equal monthly instalments, the last absorbing rounding.
+// flat_total reads it as one charge on principal for the whole term (murabaha,
+// fixed-fee pay-later). 12,000 at 18% over 12 months costs 13,201.95 amortizing
+// and 14,160 flat_total.
 // Expose create and sign on installments, then collect_down_payment as checkout
 // for disburse_to: funds. Checkout requires a signed plan and pending escrow;
 // it tops up only the missing down payment, without advancing lender principal.
@@ -12,13 +17,22 @@ header financing
 // the fully funded hold. Existing escrow credit counts once toward the down payment.
 // Disburse first credits an active marketplace.reservation on the same hold,
 // so list the plan in its converters; the deposit then counts as escrow credit.
-// Borrower-directed disbursement excludes collect_down_payment. A down_payment
+// disburse_to: seller pays principal to the seller party at activation (pay later
+// with the merchant paid on day one). For a return, capital refunds each paid
+// payment to the borrower, then runs unwind: it takes principal back to capital and
+// cancels open slices with their claims. Seller mode debits the seller; funds mode
+// needs the hold in return_verified and debits the hold, after which the payee's
+// escrow refund returns only the down payment. Escrow refund refuses while a live
+// plan funds the hold. Unwind needs no assessed or collected late charges; waive
+// them first.
+// Borrower- and seller-directed disbursement exclude collect_down_payment. A down_payment
 // there reduces principal but does not collect cash. Price is subject metadata,
 // not the borrower limit. The escrow payer and price must match the plan.
 // Expose escrow cancel to return checkout cash if financing is abandoned; plan
 // void alone cancels the agreement and does not refund its separate escrow.
 // Approve borrower and portfolio limits before disbursement. Create builds the
-// dated slice records; payments need a separate payment record and pay action.
+// dated slice records from future, strictly increasing dates; disbursement
+// refuses once a slice is due. Payments need a separate payment record and pay action.
 // Expose parent payoff separately and create a current, unexpired payoff_quote.
 // Expose late_charge.create as propose_assessment before the clock can assess;
 // provide matching plan, slice and borrower. Fine is fixed money, not a percentage.
@@ -33,12 +47,17 @@ header financing
 // bounded invocations across slices and assessments. Month and charge limits affect
 // the bound. Run hsx cost on the selected policies; profit is not a platform tariff.
 
-instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3, profit: percent, disburse_to: enum(funds, borrower) = funds, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref<escrow.hold>?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
+instrument installments(months: integer(1, 366), pricing: enum(amortizing, flat_total), profit_rate: percent, charge_limit: integer(1, 3) = 3, disburse_to: enum(funds, borrower, seller) = funds, seller: party?, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref<escrow.hold>?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
   dependencies {
     funds {
       selector: disburse_to, is: funds
       message: "Attachment `{attachment}` disburses into a hold, but `funds` is not bound."
-      fix: "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: borrower` only if the borrower should receive the money directly."
+      fix: "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly."
+    }
+    seller {
+      selector: disburse_to, is: seller
+      message: "Attachment `{attachment}` pays a seller, but `seller` is not bound."
+      fix: "Bind `seller: merchant` to the declared business that receives the principal."
     }
   }
   revisioned: true
@@ -52,8 +71,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
     price: money = subject.price
     downPayment: money = rate(self.price, down_payment)
     principal: money = subtract(self.price, self.downPayment)
-    profit: money = rate(self.principal, profit)
-    total: money = sum(self.principal, self.profit)
+    flatProfit: money?
   }
   lifecycle { states: [quoted, signed, active, paid, written_off, cancelled], initial: quoted }
   invariants count of { instrument: all(financing.installments), reference: "borrowerLimit", anchor: self.borrowerLimit, states: [active], limit: 366 } <= self.borrowerLimit.activePlans
@@ -62,8 +80,9 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
   action create {
     subject { price: money }
     requires self.borrowerLimit.borrower == self.borrower
+    when pricing is flat_total { calculate: [{ target: flatProfit, op: rate, base: { field: self.principal }, bps: { literal: profit_rate }, rounding: floor }] }
     when disburse_to is funds { requires self.borrower == self.funds.payer; requires self.price == self.funds.price }
-    invoke: [{ range: { count: { literal: months }, maximum: months, bind: position }, instrument: slice, action: create, input: { plan: { field: self.id }, borrowerLimit: { field: self.borrowerLimit }, portfolioLimit: { field: self.portfolioLimit }, position: { field: position } } }]
+    invoke: [{ range: { count: { literal: months }, maximum: months, bind: position }, instrument: slice, action: create, input: { plan: { field: self.id }, borrowerLimit: { field: self.borrowerLimit }, portfolioLimit: { field: self.portfolioLimit }, position: { field: position } } }, { selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: months, where: { first: { literal: 0 } } }, action: check_order, input: {} }]
   }
   action sign {
     from: quoted, to: signed, actor: { party: borrower }, input { signedOffer: text, affordabilityReference: text }
@@ -72,6 +91,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
   action collect_down_payment { allowZero: true,
     from: signed, to: signed, actor: { party: borrower }
     when disburse_to is borrower { requires true == false }
+    when disburse_to is seller { requires true == false }
     when disburse_to is funds {
       requires self.funds in [pending]
       calculate: [{ target: downPaymentCredit, op: minimum, values: [{ field: self.funds.held.balance }, { field: self.downPayment }] }, { target: downPaymentRemaining, op: subtract, base: { field: self.downPayment }, subtract: [{ field: self.downPaymentCredit }] }]
@@ -87,6 +107,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       invoke: [{ selection: { instrument: all(marketplace.reservation), reference: "funds", anchor: self.funds, states: [active], limit: 1 }, action: credit, input: { funds: { field: self.funds }, contribution: { field: self.downPayment } } }, { reference: self.id, action: fund_down_payment, input: {} }]
     }
     when disburse_to is borrower { moves self.principal from self.capital to self.borrower economics { purpose: principal, sourceParty: capital } }
+    when disburse_to is seller { moves self.principal from self.capital to seller economics { purpose: principal, sourceParty: capital } }
     invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: 366, order: [position] }, action: activate, input: {} }]
     when disburse_to is funds { invoke: [{ reference: self.funds, action: confirm, input: {} }] }
   }
@@ -136,6 +157,17 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
   }
   action cancel { from: quoted, to: cancelled }
   action void { from: signed, to: cancelled, actor: { party: borrower } }
+  action unwind { allowZero: true,
+    from: active, to: cancelled, actor: { party: capital }
+    when disburse_to is borrower { requires true == false }
+    when disburse_to is funds { requires self.funds in [return_verified] }
+    requires count of { instrument: payment, reference: "plan", anchor: self.id, states: [paid], limit: 366 } == 0
+    requires count of { instrument: all(financing.late_charge), reference: "plan", anchor: self.id, states: [assessed, collected], limit: 366 } == 0
+    requires count of { instrument: all(financing.late_charge.cost), reference: "plan", anchor: self.id, states: [assessed, collected], limit: 366 } == 0
+    when disburse_to is funds { moves self.principal from self.funds.held to self.capital economics { purpose: principal, sourceParty: capital } }
+    when disburse_to is seller { moves self.principal from seller to self.capital economics { purpose: principal, sourceParty: seller } }
+    invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [pending, due], limit: 366, order: [position] }, action: cancel, input: {} }]
+  }
   records {
     write_off_request: {
       fields { plan: ref<parent>, overdueSlice: ref<slice> }
@@ -251,31 +283,48 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       revisioned: true
       fields {
         plan: ref<parent>, borrowerLimit: ref<limits>, portfolioLimit: ref<portfolio>, position: integer(1, months)
-        originalDueAt: date = at(self.plan.dates, self.position), dueAt: date?, nextDueAt: date?, previousDueAt: date?, previousPosition: integer?, previousDate: date?, extensionLimit: date = after(self.originalDueAt, max_extension), lossEligibleAt: date?
-        principalBase: money = divide(self.plan.principal, months)
-        principalAllocated: money = multiply(self.principalBase, months)
-        principalRemainder: money = subtract(self.plan.principal, self.principalAllocated)
-        profitBase: money = divide(self.plan.profit, months)
-        profitAllocated: money = multiply(self.profitBase, months)
-        profitRemainder: money = subtract(self.plan.profit, self.profitAllocated)
+        originalDueAt: date = at(self.plan.dates, self.position), dueAt: date?, nextDueAt: date?, previousDueAt: date?, prior: integer = subtract(self.position, 1), previousPosition: integer = sum(self.prior, self.first), previousDate: date = at(self.plan.dates, self.previousPosition), extensionLimit: date = after(self.originalDueAt, max_extension), lossEligibleAt: date?
         first: integer = divide(1, self.position)
-        principalAdjustment: money = multiply(self.principalRemainder, self.first)
-        profitAdjustment: money = multiply(self.profitRemainder, self.first)
-        principal: money = sum(self.principalBase, self.principalAdjustment)
-        profit: money = sum(self.profitBase, self.profitAdjustment)
+        principalBase: money?, principalAllocated: money?, principalRemainder: money?, principalAdjustment: money?
+        profitBase: money?, profitAllocated: money?, profitRemainder: money?, profitAdjustment: money?
+        principal: money, profit: money, instalment: money
         principalReceivable: account(self, claim), profitReceivable: account(self, claim), profitEarned: account(self, claim)
         payoffIdentity: text?, payoffRebate: money?, payoffProfitTotal: money?, payoffProfit: money?
-        paymentBudget: money?, principalPayment: money?, principalBasePayment: money?, principalRatio: money?, profitPayment: money?, profitBudget: money?, collectibleProfit: money?, collectibleTotal: money?, ratioDenominator: integer = sum(10000, profit)
+        paymentBudget: money?, principalPayment: money?, principalBasePayment: money?, principalRatio: money?, profitPayment: money?, profitBudget: money?, collectibleProfit: money?, collectibleTotal: money?, ratioDenominator: integer = sum(10000, profit_rate)
         debt: account(borrower, claim, contra, "debt"), loss: account(capital, claim, "loss")
       }
-      lifecycle { states: [draft, pending, due, paid, written_off], initial: draft }
+      lifecycle { states: [draft, pending, due, paid, written_off, cancelled], initial: draft }
       action create {
         actor: { parent: parent }
         input { plan: ref<parent>, borrowerLimit: ref<limits>, portfolioLimit: ref<portfolio>, position: integer(1, months) }
         set: { dueAt: { field: self.originalDueAt } }
+        when pricing is flat_total {
+          calculate: [
+            { target: principalBase, op: divide, amount: { field: self.plan.principal }, divisor: { literal: months }, rounding: floor }
+            { target: principalAllocated, op: multiply, amount: { field: self.principalBase }, units: { literal: months } }
+            { target: principalRemainder, op: subtract, base: { field: self.plan.principal }, subtract: [{ field: self.principalAllocated }] }
+            { target: principalAdjustment, op: multiply, amount: { field: self.principalRemainder }, units: { field: self.first } }
+            { target: principal, op: sum, values: [{ field: self.principalBase }, { field: self.principalAdjustment }] }
+            { target: profitBase, op: divide, amount: { field: self.plan.flatProfit }, divisor: { literal: months }, rounding: floor }
+            { target: profitAllocated, op: multiply, amount: { field: self.profitBase }, units: { literal: months } }
+            { target: profitRemainder, op: subtract, base: { field: self.plan.flatProfit }, subtract: [{ field: self.profitAllocated }] }
+            { target: profitAdjustment, op: multiply, amount: { field: self.profitRemainder }, units: { field: self.first } }
+            { target: profit, op: sum, values: [{ field: self.profitBase }, { field: self.profitAdjustment }] }
+            { target: instalment, op: sum, values: [{ field: self.principal }, { field: self.profit }] }
+          ]
+        }
+        when pricing is amortizing {
+          calculate: [
+            { target: principal, op: annuity, amount: { field: self.plan.principal }, rate: { literal: profit_rate }, periods: { literal: months }, position: { field: self.position }, part: principal }
+            { target: profit, op: annuity, amount: { field: self.plan.principal }, rate: { literal: profit_rate }, periods: { literal: months }, position: { field: self.position }, part: interest }
+            { target: instalment, op: sum, values: [{ field: self.principal }, { field: self.profit }] }
+          ]
+        }
         invoke: [{ reference: self.id, action: refresh_loss_date, input: {} }]
         requires self.plan in [quoted]; requires unique "signed_position" on [self.plan, self.position]; requires self.borrowerLimit == self.plan.borrowerLimit; requires self.portfolioLimit == self.plan.portfolioLimit
+        requires self.originalDueAt > self.now; requires self.originalDueAt >= self.previousDate
       }
+      action check_order { from: draft, to: draft, actor: { parent: parent }, requires self.originalDueAt > self.previousDate }
       action quote_pending {
         from: pending, to: pending, actor: { parent: payoff_quote }, input { quote: ref<payoff_quote> }
         requires input.quote.plan == self.plan
@@ -310,6 +359,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       }
       action activate { allowZero: true,
         from: draft, to: pending, actor: { parent: parent }
+        requires self.dueAt > self.now
         moves self.principal from self.debt to self.principalReceivable economics { purpose: internal, sourceParty: borrower }
         moves self.profit from self.debt to self.profitReceivable economics { purpose: internal, sourceParty: borrower }
         when profit_earned is at_disbursement { moves self.profit from self.profitReceivable to self.profitEarned economics { purpose: internal, sourceParty: programOperator } }
@@ -356,7 +406,10 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         calculate: [
           { target: collectibleTotal, op: sum, values: [{ field: self.principalReceivable.balance }, { field: self.collectibleProfit }] }
           { target: paymentBudget, op: minimum, values: [{ field: input.payment.held.balance }, { field: self.collectibleTotal }] }
-          { target: principalRatio, op: ratio, amount: { field: self.paymentBudget }, numerator: { literal: 10000 }, denominator: { field: self.ratioDenominator }, rounding: floor }
+        ]
+        when pricing is flat_total { calculate: [{ target: principalRatio, op: ratio, amount: { field: self.paymentBudget }, numerator: { literal: 10000 }, denominator: { field: self.ratioDenominator }, rounding: floor }] }
+        when pricing is amortizing { calculate: [{ target: principalRatio, op: ratio, amount: { field: self.paymentBudget }, numerator: { field: self.principal }, denominator: { field: self.instalment }, rounding: floor }] }
+        calculate: [
           { target: principalBasePayment, op: minimum, values: [{ field: self.principalRatio }, { field: self.principalReceivable.balance }] }
           { target: profitBudget, op: subtract, base: { field: self.paymentBudget }, subtract: [{ field: self.principalBasePayment }] }
           { target: profitPayment, op: minimum, values: [{ field: self.profitBudget }, { field: self.collectibleProfit }] }
@@ -386,6 +439,10 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
       action write_off { allowZero: true,
         from: [pending, due], to: written_off, actor: { parent: parent }
         moves self.principalReceivable.balance from self.principalReceivable to self.loss economics { purpose: internal, sourceParty: programOperator }; moves self.profitReceivable.balance from self.profitReceivable to self.debt economics { purpose: internal, sourceParty: programOperator }; moves self.profitEarned.balance from self.profitEarned to self.loss economics { purpose: internal, sourceParty: programOperator }
+      }
+      action cancel { allowZero: true,
+        from: [pending, due], to: cancelled, actor: { parent: parent }
+        moves self.principalReceivable.balance from self.principalReceivable to self.debt economics { purpose: internal, sourceParty: programOperator }; moves self.profitReceivable.balance from self.profitReceivable to self.debt economics { purpose: internal, sourceParty: programOperator }; moves self.profitEarned.balance from self.profitEarned to self.debt economics { purpose: internal, sourceParty: programOperator }
       }
     }
     recognition: {
@@ -467,7 +524,7 @@ instrument installments(months: integer(1, 366), charge_limit: integer(1, 3) = 3
         actor: { parent: slice }
         input { slice: ref<slice>, payment: ref<payment>, limit: money }
         requires unique "profit_receipt" on [self.slice, self.payment]
-        moves self.amount from self.payment.held to self.slice.plan.profitIncome capture "cashReceipt" economics { recipient: capital, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: participant_payout, sourceParty: programOperator } }
+        moves self.amount from self.payment.held to self.slice.plan.profitIncome capture "cashReceipt" economics { recipient: capital, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: pass_through, sourceParty: programOperator } }
         when profit_earned is on_payment { moves self.amount from self.slice.profitReceivable to self.slice.debt economics { purpose: internal, sourceParty: programOperator } }
         when profit_earned is by_schedule { moves self.amount from self.slice.profitEarned to self.slice.debt economics { purpose: internal, sourceParty: programOperator } }
         when profit_earned is at_disbursement { moves self.amount from self.slice.profitEarned to self.slice.debt economics { purpose: internal, sourceParty: programOperator } }
@@ -555,7 +612,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     receipt: {
       fields { cashReceipt: text?, assessment: ref<parent>, payment: ref<on.payment>, amount: money? }
       lifecycle { states: [paid, refunded], initial: paid }
-      action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "fine_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to fines_to capture "cashReceipt" economics { recipient: fines_to, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: participant_payout, sourceParty: programOperator } }; moves self.amount from self.assessment.receivable to self.assessment.debt economics { purpose: internal, sourceParty: programOperator } }
+      action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "fine_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to fines_to capture "cashReceipt" economics { recipient: fines_to, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: pass_through, sourceParty: programOperator } }; moves self.amount from self.assessment.receivable to self.assessment.debt economics { purpose: internal, sourceParty: programOperator } }
       action refund { allowZero: true, from: paid, to: refunded, actor: { parent: parent }, moves self.amount from fines_to to self.payment.plan.borrower economics { recipient: fines_to, company: { purpose: earning, sourceParty: fines_to, reversalOf: self.cashReceipt }, participant: unclassified }; moves self.amount from self.assessment.debt to self.assessment.receivable economics { purpose: internal, sourceParty: borrower } }
     }
 
@@ -622,7 +679,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         receipt: {
           fields { cashReceipt: text?, assessment: ref<parent>, payment: ref<on.payment>, amount: money? }
           lifecycle { states: [paid, refunded], initial: paid }
-          action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "cost_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to costs_to capture "cashReceipt" economics { recipient: costs_to, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: participant_payout, sourceParty: programOperator } }; moves self.amount from self.assessment.receivable to self.assessment.debt economics { purpose: internal, sourceParty: programOperator } }
+          action create { allowZero: true, calculate: [{ target: amount, op: minimum, values: [{ field: self.payment.held.balance }, { field: self.assessment.receivable.balance }] }], actor: { parent: parent }, input { assessment: ref<parent>, payment: ref<on.payment> }, requires input.payment.plan == self.assessment.plan; requires unique "cost_receipt" on [self.assessment, self.payment]; moves self.amount from self.payment.held to costs_to capture "cashReceipt" economics { recipient: costs_to, company: { purpose: earning, sourceParty: borrower }, participant: { purpose: pass_through, sourceParty: programOperator } }; moves self.amount from self.assessment.receivable to self.assessment.debt economics { purpose: internal, sourceParty: programOperator } }
           action refund { allowZero: true, from: paid, to: refunded, actor: { parent: parent }, moves self.amount from costs_to to self.payment.plan.borrower economics { recipient: costs_to, company: { purpose: earning, sourceParty: costs_to, reversalOf: self.cashReceipt }, participant: unclassified }; moves self.amount from self.assessment.debt to self.assessment.receivable economics { purpose: internal, sourceParty: borrower } }
         }
       }

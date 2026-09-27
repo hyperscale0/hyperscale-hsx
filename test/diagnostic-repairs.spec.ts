@@ -22,12 +22,12 @@ test("missing conditional funds is one attachment error before field lowering", 
   const draft = `program lending_shop "Shop"
 use financing
 object membership "Membership" {
-  attach plan = financing.installments { months: 3, profit: 2%, borrower: actor }
+  attach plan = financing.installments { months: 3, pricing: flat_total, profit_rate: 2%, borrower: actor }
 }`;
   const { result, diagnostic } = refusal(
     draft,
     "Attachment `plan` disburses into a hold, but `funds` is not bound.",
-    "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: borrower` only if the borrower should receive the money directly.",
+    "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly.",
   );
   expect(result.diagnostics).toHaveLength(1);
   expect(draft.slice(diagnostic.span.start, diagnostic.span.end)).toContain(
@@ -48,17 +48,104 @@ object membership "Membership" {
   ).toBe(false);
 });
 
-// Mutation: restore the program-records wording. The message and usable fix fail.
-test("local parameterized instruments explain the unavailable instantiation path", () => {
-  refusal(
-    `program hiring "Hiring"
-instrument review(reviewer: party) {
- lifecycle { states: [submitted, accepted], initial: submitted }
+// Mutation: remove dependencies.seller from the header. A seller plan compiles with nobody to pay.
+test("a seller plan without a seller binding is one attachment error", () => {
+  const draft = `program pay_later "Pay later"
+use financing
+party merchant: business
+object order "Order" {
+  attach plan = financing.installments { months: 4, pricing: flat_total, profit_rate: 0%, borrower: actor, disburse_to: seller }
+}`;
+  const { result, diagnostic } = refusal(
+    draft,
+    "Attachment `plan` pays a seller, but `seller` is not bound.",
+    "Bind `seller: merchant` to the declared business that receives the principal.",
+  );
+  expect(result.diagnostics).toHaveLength(1);
+  expect(
+    compile(
+      draft.replace(
+        "disburse_to: seller",
+        "disburse_to: seller, seller: merchant",
+      ),
+      {
+        standardLibrary,
+      },
+    ).diagnostics.some((item) => item.message === diagnostic.message),
+  ).toBe(false);
+});
+
+// Mutation: let an optional party parameter bind a same-named program party.
+// Every plan in a program with a seller business would then need a seller.
+test("a program party named seller leaves the optional plan seller unset", () => {
+  const draft = `program pay_later "Pay later"
+use financing
+party seller: business
+object order "Order" {
+  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
+  attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
+  attach plan = financing.installments { months: 4, pricing: flat_total, profit_rate: 0%, borrower: actor, disburse_to: borrower, limits: limits, portfolio: ceiling }
+}`;
+  const result = compile(draft, { standardLibrary });
+  expect(result.diagnostics).toEqual([]);
+  const attachments = result.artifacts!.document.objects[0]!.attachments;
+  expect(attachments.filter((item) => "seller" in item.parties)).toEqual([]);
+  expect(
+    compile(draft.replace("disburse_to: borrower", "disburse_to: seller"), {
+      standardLibrary,
+    }).diagnostics.map((item) => item.message),
+  ).toContain("Attachment `plan` pays a seller, but `seller` is not bound.");
+});
+
+// Mutation: restore the refusal of parameterized program instruments, or lower
+// the fee calculation at instrument level. Each fails to compile this wallet.
+test("a program instrument takes party parameters and fees an input amount", () => {
+  const result = compile(`program fee_wallet "Fee wallet"
+instrument feewallet(holder: party) {
+ fields { holder: account of holder, held: account of self }
+ lifecycle { states: [pending, active], initial: pending }
  action create {}
- action accept { from: submitted, to: accepted, actor: { party: reviewer } }
+ action activate { from: pending, to: active, actor: { party: holder } }
+ action topup {
+  from: active, to: active, actor: { party: holder }
+  input { amount: money }
+  moves input.amount from holder to self.held fee { seller: 1% }
+ }
+}
+object wallet "Wallet" {
+ attach balance = feewallet { holder: owner, expose topup as top_up }
+}`);
+  expect(result.diagnostics).toEqual([]);
+  const document = result.artifacts!.document;
+  expect(document.instruments.map((item) => item.id)).toEqual([
+    "wallet_balance",
+  ]);
+  const topup = document.instruments[0]!.actions.topup!;
+  expect(topup.actor).toEqual({ party: "owner" });
+  expect(topup.calculate).toContainEqual(
+    expect.objectContaining({
+      op: "rate",
+      base: { field: "input.amount" },
+      bps: { literal: 100 },
+    }),
+  );
+  expect(topup.moves.map((move) => "to" in move && move.to)).toEqual([
+    "self.held",
+    "party.programOperator",
+  ]);
+});
+
+// Mutation: drop the subject-role branch of checkParty. The fix names a business.
+test("a subject role inside a program instrument points to a party parameter", () => {
+  refusal(
+    `program wallet "Wallet"
+instrument purse {
+ fields { held: account of self }
+ lifecycle { states: [open], initial: open }
+ action create { actor: { party: owner } }
 }`,
-    "This compiler cannot instantiate a parameterized instrument declared inside a program.",
-    "For this version, specialize the instrument with fixed bindings and remove its parameters. Custom reusable headers require a host-supplied library.",
+    "`owner` is not a declared party.",
+    "Declare a party parameter such as `holder: party` on the instrument, use it here, and bind `holder: owner` where you attach it.",
   );
 });
 
@@ -162,7 +249,7 @@ use financing
 object membership "Membership" {
  attach ceiling = financing.portfolio_limit { limit: 100000 SAR }
  attach plan = financing.installments {
-  months: 3, profit: 2%, borrower: actor, disburse_to: borrower, portfolio: ceiling
+  months: 3, pricing: flat_total, profit_rate: 2%, borrower: actor, disburse_to: borrower, portfolio: ceiling
  }
 }`;
   refusal(
@@ -224,4 +311,20 @@ object item "Item" {
   );
   const repaired = compile(draft.replace("g, h, i]", "g, h]"));
   expect(repaired.artifacts?.document.objects[0]?.fields).toHaveLength(9);
+});
+
+// Mutation: read subject rows through entries(). Repeated when branches in disburse
+// then hide the unknown tunable behind a duplicate branch error.
+test("an unknown financing tunable names itself", () => {
+  const result = compile(
+    `program loans "Loans"
+use financing
+object loan "Loan" {
+  attach plan = financing.installments { months: 12, profit: 18%, borrower: actor, disburse_to: borrower }
+}`,
+    { standardLibrary },
+  );
+  expect(result.diagnostics.map((item) => item.message)).toEqual([
+    "unknown tunable profit",
+  ]);
 });

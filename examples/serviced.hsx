@@ -11,7 +11,7 @@ object car "Car" {
  attach ceiling = financing.portfolio_limit { expose create as create_ceiling, limit: 10000000 SAR }
  attach plan = financing.installments {
   borrower: actor, capital: operator
-  months: 36, profit: 8.5%, down_payment: 10%
+  months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
   apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
   funds: sale, limits: limits, portfolio: ceiling
   expose create as finance, expose sign as sign_contract, expose payoff as payoff

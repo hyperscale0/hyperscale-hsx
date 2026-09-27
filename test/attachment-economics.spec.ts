@@ -117,7 +117,7 @@ test("an attachment cannot replace the standard instrument's economics", () => {
   const result = compile(
     workshop.replace(
       "holder: owner",
-      "holder: owner\n economics topup { purpose: earning, sourceParty: holder }",
+      "holder: owner\n economics withdraw { purpose: earning, sourceParty: holder }",
     ),
   );
   expect(result.diagnostics[0]!.message).toContain(

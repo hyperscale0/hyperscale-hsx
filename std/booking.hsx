@@ -1,0 +1,75 @@
+header booking
+
+// Economics: Deposit and balance payments and every refund are principal. Completion
+// and any forfeit are earnings for the company, or pass the customer's cash through
+// to a bound outside operator.
+
+// Expose create, pay_deposit and pay_balance for the booking path, and
+// cancel_early, cancel_middle and cancel_late for the customer. Create captures
+// subject departure, price, deposit and balance, and refuses a deposit and balance
+// that do not add up to the price. The balance is payable only after the deposit
+// and before balance_due ahead of departure, so a cancelled booking never offers
+// it. cancel_early runs until early_until before departure and returns everything
+// held. cancel_middle runs from then until late_from; cancel_late runs from then
+// until departure, even when the clock's complete runs late. They keep
+// middle_forfeit or late_forfeit of the held money and return the rest. Both
+// forfeits default to 0%, so nothing is kept unless the author sets them. At
+// departure the clock completes a paid booking and pays operator, and lapses an
+// unpaid one on cancel_late's terms, so nothing stays held after departure.
+
+// Cost: create declares one owned account. Each payment declares one transfer;
+// cancellation and completion move the held balance. Run hsx cost for the
+// composed counts.
+
+instrument reservation(customer: party = party(person), operator: party = programOperator, early_until: duration = 30d, late_from: duration = 15d, balance_due: duration = 14d, middle_forfeit: percent = 0%, late_forfeit: percent = 0%) {
+  revisioned: true
+  summary: "Take a deposit and a balance for a dated booking, with cancellation windows before departure."
+  fields {
+    customer: account of customer, operator: account of operator, held: account of self
+    departure: date, price: money = subject.price
+    deposit: money = subject.deposit, balance: money = subject.balance
+    split: money = sum(self.deposit, self.balance)
+    balanceAt: date = before(self.departure, balance_due)
+    earlyAt: date = before(self.departure, early_until)
+    lateAt: date = before(self.departure, late_from)
+    refund: money?, forfeit: money?
+  }
+  lifecycle { states: [reserved, deposit_paid, paid, completed, cancelled], initial: reserved }
+  action create {
+    subject { departure: date, price: money, deposit: money, balance: money }
+    actor: { party: customer }
+    requires self.departure > self.now
+    requires self.split == self.price
+  }
+  action pay_deposit {
+    from: reserved, to: deposit_paid, actor: { party: customer }
+    moves self.deposit from customer to self.held economics { purpose: principal, sourceParty: customer }
+  }
+  action pay_balance {
+    from: deposit_paid, to: paid, actor: { party: customer }, deadline: { at: self.balanceAt }
+    moves self.balance from customer to self.held economics { purpose: principal, sourceParty: customer }
+  }
+  action complete {
+    from: paid, to: completed, actor: clock, due: { at: self.departure }
+    moves self.held.balance from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: customer }, participant: { purpose: pass_through, sourceParty: programOperator } }
+  }
+  action cancel_early { allowZero: true,
+    from: [reserved, deposit_paid, paid], to: cancelled, actor: { party: customer }, deadline: { at: self.earlyAt }
+    moves self.held.balance from self.held to customer economics { purpose: principal, sourceParty: programOperator }
+  }
+  action cancel_middle { allowZero: true,
+    from: [reserved, deposit_paid, paid], to: cancelled, actor: { party: customer }, due: { at: self.earlyAt }, deadline: { at: self.lateAt }
+    calculate: [{ target: forfeit, op: rate, base: { field: self.held.balance }, bps: { literal: middle_forfeit }, rounding: floor }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.forfeit }] }]
+    moves self.refund from self.held to customer economics { purpose: principal, sourceParty: programOperator }; moves self.forfeit from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: customer }, participant: { purpose: pass_through, sourceParty: programOperator } }
+  }
+  action cancel_late { allowZero: true,
+    from: [reserved, deposit_paid, paid], to: cancelled, actor: { party: customer }, due: { at: self.lateAt }, deadline: { at: self.departure }
+    calculate: [{ target: forfeit, op: rate, base: { field: self.held.balance }, bps: { literal: late_forfeit }, rounding: floor }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.forfeit }] }]
+    moves self.refund from self.held to customer economics { purpose: principal, sourceParty: programOperator }; moves self.forfeit from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: customer }, participant: { purpose: pass_through, sourceParty: programOperator } }
+  }
+  action lapse { allowZero: true,
+    from: [reserved, deposit_paid], to: cancelled, actor: clock, due: { at: self.departure }
+    calculate: [{ target: forfeit, op: rate, base: { field: self.held.balance }, bps: { literal: late_forfeit }, rounding: floor }, { target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.forfeit }] }]
+    moves self.refund from self.held to customer economics { purpose: principal, sourceParty: programOperator }; moves self.forfeit from self.held to operator economics { recipient: operator, company: { purpose: earning, sourceParty: customer }, participant: { purpose: pass_through, sourceParty: programOperator } }
+  }
+}

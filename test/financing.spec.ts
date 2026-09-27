@@ -16,14 +16,14 @@ const compile = (source: string) =>
         readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
     },
   });
-test("financing range accepts the full schedule domain and costs nested children", () => {
+test("financing range accepts the full schedule domain and costs nested children and the order check", () => {
   for (const m of [1, 3, 6, 16, 17, 365, 366]) {
     const res = compile(source.replace("months: 3", `months: ${m}`));
     const doc = res.artifacts?.document;
     if (!doc) throw new Error(JSON.stringify(res.diagnostics));
     expect(
       buildUdlCostManifest(doc).actions["car_plan.create"]!.invocations,
-    ).toBe(m * 2);
+    ).toBe(m * 3);
   }
 });
 test("financing refuses schedules outside the std bound", () => {
@@ -95,7 +95,7 @@ object item "Item" {
   attach sale = escrow.hold { payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
-  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
   attach inv_wallet = wallet.balance { holder: investor }
   attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }
   attach commit = lending.commitment { round: round, wallet: inv_wallet, investor: investor }
@@ -126,4 +126,32 @@ object item "Item" {
     "loss",
     "profitIncome",
   ]);
+});
+
+test("pricing selects annuity rows or the flat split and has no default", () => {
+  const slice = (text: string) => {
+    const res = compile(text);
+    expect(res.diagnostics).toEqual([]);
+    return res.artifacts!.document.instruments.find(
+      (i) => i.id === "car_plan_slice",
+    )!;
+  };
+  const amortizing = slice(
+    source.replace("pricing: flat_total", "pricing: amortizing"),
+  );
+  expect(
+    (amortizing.actions.create!.calculate ?? []).map((c) => [c.target, c.op]),
+  ).toEqual([
+    ["principal", "annuity"],
+    ["profit", "annuity"],
+    ["instalment", "sum"],
+  ]);
+  const flat = slice(source);
+  expect(
+    (flat.actions.create!.calculate ?? []).filter((c) => c.op === "annuity"),
+  ).toEqual([]);
+  expect(
+    compile(source.replace("pricing: flat_total, ", "")).diagnostics[0]
+      ?.message,
+  ).toContain("pricing");
 });

@@ -25,7 +25,7 @@ object item "Item" {
   attach sale = escrow.hold { payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
-  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
   attach late = financing.late_charge { on: plan, borrower: actor, fines_to: operator, costs_to: operator }
   attach case = collections.case { on: plan, agency: supplier, capital: operator }
   attach inv_wallet = wallet.balance { holder: investor }

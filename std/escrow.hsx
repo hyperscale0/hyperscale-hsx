@@ -1,13 +1,21 @@
 header escrow
 
 // Economics: Funding and unspent returns are principal. Acceptance realizes earnings for
-// the company or a payout to a bound outside seller; tax is pass-through.
+// the company; the payer's cash passes through to a bound outside seller, less the
+// fee the company earns. Tax is pass-through.
 
 // Expose create, fund, deliver and accept for the purchase path. Create captures
 // subject.price; acceptance pays payee less the configured fee, not payer.
 // Expose dispute, verify_return and refund separately for the return path.
-// Payer disputes delivered goods; payee verifies return evidence from disputed;
-// payee refunds the entire held price from return_verified by default.
+// Payer disputes delivered goods; payee verifies return evidence from disputed.
+// Payee refunds the whole held balance before delivery, or from return_verified
+// by default after a dispute. While a signed, active or paid financing plan funds
+// the hold, both refunds refuse: the plan's unwind returns the lender's principal
+// first, then refund returns the rest. Unwind needs return_verified, so a
+// financed hold cannot be refunded before delivery.
+// Expose refund_undelivered to let the payer take the whole held price back once
+// deliver_within has passed since funding without delivery. It is a payer action
+// that becomes available at that time; nothing runs it automatically.
 // Acceptance expiry enters disputed, never released. Neither verify_return nor
 // refund becomes public merely because dispute is exposed. Clock actions remain
 // internal. Expose cancel for a pending hold, including a checkout-funded hold;
@@ -18,12 +26,12 @@ header escrow
 // transfer; accept expands the configured fee and tax into moves. Run hsx cost
 // on the composed program for instruction counts. The executor supplies prices.
 
-instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
+instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, deliver_within: duration = 14d, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
   revisioned: true
   summary: "Hold the subject price through delivery, acceptance and verified return."
   fields {
     payer: account of payer, payee: account of payee
-    held: account of self, deliveredAt: date?
+    held: account of self, fundedAt: date?, deliveredAt: date?
     price: money = subject.price
   }
   lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
@@ -34,11 +42,13 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
   action fund {
     from: pending, to: funded, actor: { party: payer }
     subject { price: money }
+    set: { fundedAt: { field: self.now } }
     moves self.price from payer to self.held economics { purpose: principal, sourceParty: payer }
   }
   action confirm {
     from: pending, to: funded
     requires self.held.balance == self.price
+    set: { fundedAt: { field: self.now } }
   }
   action deliver {
     from: funded, to: delivered, actor: { party: payee }
@@ -48,7 +58,7 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     from: delivered, to: released, actor: { party: payer }
     input { acceptanceReference: text }
     deadline: { at: self.deliveredAt, offset: accept_within }
-    moves self.price from self.held to payee fee fee economics { payee: { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: participant_payout, sourceParty: programOperator } }, fee: { purpose: earning, sourceParty: payer }, tax: { purpose: pass_through, sourceParty: programOperator } }
+    moves self.price from self.held to payee fee fee economics { payee: { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: programOperator } }, fee: { purpose: earning, sourceParty: payer }, tax: { purpose: pass_through, sourceParty: programOperator } }
   }
   action expire_acceptance {
     from: delivered, to: disputed, actor: clock
@@ -63,7 +73,14 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     input { returnEvidence: text }
   }
   action refund {
-    from: dispute.refund_after, to: refunded, actor: { party: payee }
+    from: [funded, dispute.refund_after], to: refunded, actor: { party: payee }
+    requires count of { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [signed, active, paid], limit: 1 } == 0
+    moves self.held.balance from self.held to payer economics { purpose: principal, sourceParty: programOperator }
+  }
+  action refund_undelivered {
+    from: funded, to: refunded, actor: { party: payer }
+    due: { at: self.fundedAt, offset: deliver_within }
+    requires count of { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [signed, active, paid], limit: 1 } == 0
     moves self.price from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel { allowZero: true,

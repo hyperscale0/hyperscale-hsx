@@ -214,7 +214,7 @@ test("CLI points header errors at the header rather than the supplied program", 
     out: () => {},
     err: (line) => errors.push(line),
     readFile: async () =>
-      'program p "P"\nuse financing\nobject item "Item" { attach plan = financing.installments { disburse_to: borrower, months: 3, profit: 2% } }',
+      'program p "P"\nuse financing\nobject item "Item" { attach plan = financing.installments { disburse_to: borrower, months: 3, pricing: flat_total, profit_rate: 2% } }',
     writeFile: async () => {},
   });
   expect(code).toBe(1);

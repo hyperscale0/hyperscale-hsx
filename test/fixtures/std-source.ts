@@ -31,7 +31,7 @@ object purchase "Purchase" {
  attach limits = financing.limits { borrower: actor, per_borrower: 10000 SAR }
  attach ceiling = financing.portfolio_limit { limit: 100000 SAR }
  attach plan = financing.installments {
-  borrower: actor, capital: operator, months: 4, profit: 0%, down_payment: 25%
+  borrower: actor, capital: operator, months: 4, pricing: flat_total, profit_rate: 0%, down_payment: 25%
   funds: sale, limits: limits, portfolio: ceiling
   expose create as finance, expose sign as sign_offer
   expose collect_down_payment as checkout, expose disburse as disburse

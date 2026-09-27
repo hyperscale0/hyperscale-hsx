@@ -4,7 +4,11 @@ header insurance
 // Outside broker commissions are pass-through. Adapter-owned premium and claim
 // accounts lack an authored source party, so their moves remain unclassified.
 
-// Expose cover.create, activate and cancel separately. Activation binds adapter;
+// Expose cover.create, activate and cancel separately. The adapter names a
+// registered boundary adapter (conformance_boundary in sandbox). covers is an
+// optional link to a sibling attachment; the attached object is already the
+// insured thing. claim_limit is the sum insured: approved and paid claims on one
+// cover never total more. Activation binds adapter;
 // each slice needs a separately created unique period and an active cover to collect.
 // Collection debits holder for insurerPremium to the insurer and commission to
 // broker as two moves. Broker defaults to programOperator; bind a declared business
@@ -23,9 +27,9 @@ header insurance
 // reserves once; pay posts once and expiry voids once. Cover cancellation adds
 // bounded slice invocations. Run hsx cost for composed counts, not provider prices.
 
-instrument cover(holder: party, adapter: text, commission: percent = 0%, broker: party = programOperator, covers: ref, premium: money = runtime) {
+instrument cover(holder: party, adapter: text, commission: percent = 0%, broker: party = programOperator, covers: ref?, premium: money = runtime, claim_limit: money = runtime) {
   summary: "Recurring cover bound to an outside insurer across an ADL boundary."
-  fields { covers: ref<covers>, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date }
+  fields { covers: ref<covers>?, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date, claimLimit: money = claim_limit }
   lifecycle { states: [pending, active, cancelled, expired], initial: pending }
   action create {}
   action activate {
@@ -41,13 +45,12 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
     slice: {
       summary: "A whole premium period, collected once and refundable only before it starts."
       fields {
-        cover: ref<parent>, covers: ref<covers>, premium: money = premium, startsAt: date, endsAt: date
+        cover: ref<parent>, premium: money = premium, startsAt: date, endsAt: date
         commission: money = rate(self.premium, commission)
         insurerPremium: money = subtract(self.premium, self.commission), commissionReceipt: text?
       }
       lifecycle { states: [pending, paid, active, expired, refunded], initial: pending }
       action create {
-        requires self.covers == self.cover.covers
         requires self.startsAt < self.endsAt
         requires unique "premium_period" on [self.cover, self.startsAt, self.endsAt]
       }
@@ -76,6 +79,7 @@ instrument claim(cover: ref<insurance.cover>, inspector: party) {
   summary: "A claim decision reserves one claim payment before settlement."
   fields { cover: ref<cover>, amount: money, expiresAt: date, evidence: text, reservation: text? }
   lifecycle { states: [submitted, approved, paid, denied, expired], initial: submitted }
+  invariants sum "amount" of { instrument: current(), reference: "cover", anchor: self.cover, states: [approved, paid], limit: 366 } <= self.cover.claimLimit
   action create { requires self.cover in [active] }
   action approve {
     from: submitted, to: approved

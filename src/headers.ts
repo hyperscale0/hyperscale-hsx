@@ -11,6 +11,7 @@ export const HEADER_NAMES = [
   "money",
   "marketplace",
   "escrow",
+  "booking",
   "wallet",
   "financing",
   "lending",

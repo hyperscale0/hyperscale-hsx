@@ -62,3 +62,18 @@ test("CLI --version prints the package version and the UDL format", async () => 
   expect(code).toBe(0);
   expect(output).toEqual([`${version} (UDL ${UDL_FORMAT_VERSION})`]);
 });
+
+// Mutation: document `npx hsx headers` without the --json it requires.
+test("the README headers command prints the manifest", async () => {
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const command = readme.match(/`npx hsx (headers[^`]*)`/)?.[1];
+  const output: string[] = [];
+  const code = await runCli(command?.split(" ") ?? [], {
+    out: (line) => output.push(line),
+    err: (line) => output.push(line),
+    readFile: async () => "",
+    writeFile: async () => {},
+  });
+  expect(code).toBe(0);
+  expect(JSON.parse(output[0] ?? "{}").headers.length).toBeGreaterThan(0);
+});

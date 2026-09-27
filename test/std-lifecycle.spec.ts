@@ -6,7 +6,9 @@ const example = (name: string) =>
   readFileSync(new URL(`../examples/${name}.hsx`, import.meta.url), "utf8");
 
 // Mutation unverified-return: change escrow.refund from return_verified to disputed.
-test("public return aliases keep seller verification before a full payer refund", () => {
+// Mutation stuck-funded: drop funded from escrow.refund, so an undelivered hold has no exit.
+// Mutation lender-cash-refund: drop the live-plan guard from escrow.refund.
+test("a seller refunds before delivery, or after verifying a return", () => {
   const sale = instrument(financing, "purchase_sale");
   expect(sale.actions.verify_return).toMatchObject({
     publicAction: "verify_return",
@@ -17,16 +19,31 @@ test("public return aliases keep seller verification before a full payer refund"
     to: "return_verified",
   });
   expect(sale.lifecycle.transitions.refund).toEqual({
-    from: ["return_verified"],
+    from: ["funded", "return_verified"],
     to: "refunded",
   });
   expect(sale.actions.refund).toMatchObject({
     publicAction: "refund_order",
     actor: { party: "owner" },
     moves: [
-      { amount: { field: "self.price" }, from: "self.held", to: "party.actor" },
+      {
+        amount: { field: "self.held.balance" },
+        from: "self.held",
+        to: "party.actor",
+      },
     ],
   });
+  expect(sale.actions.refund!.requires).toContainEqual(
+    expect.objectContaining({
+      kind: "aggregate",
+      selection: expect.objectContaining({
+        instrument: ["purchase_plan"],
+        reference: "funds",
+        states: ["signed", "active", "paid"],
+      }),
+      value: { literal: 0 },
+    }),
+  );
 });
 
 // Mutation post-approval-denial: add approved to insurance.claim.deny from-states.

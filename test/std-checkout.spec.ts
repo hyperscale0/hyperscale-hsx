@@ -129,7 +129,10 @@ test("an author exposes assessment creation before the clock assesses it", () =>
 // Mutation recognition-stale: restore the empty reschedule action.
 test("rescheduling profit recognition copies the amended slice date", () => {
   const recognition = instrument(
-    financing.replace("profit: 0%", "profit: 0%, profit_earned: by_schedule"),
+    financing.replace(
+      "profit_rate: 0%",
+      "profit_rate: 0%, profit_earned: by_schedule",
+    ),
     "purchase_plan_recognition",
   );
   expect(recognition.actions.reschedule!.calculate).toContainEqual({

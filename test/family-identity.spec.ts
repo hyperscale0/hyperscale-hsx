@@ -250,7 +250,7 @@ object contract "Contract" {
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
   attach plan = financing.installments {
     borrower: actor, capital: operator, share: 25%
-    months: 3, profit: 2.5%, funds: sale, limits: limits, portfolio: ceiling
+    months: 3, pricing: flat_total, profit_rate: 2.5%, funds: sale, limits: limits, portfolio: ceiling
     expose create as finance
   }
 }

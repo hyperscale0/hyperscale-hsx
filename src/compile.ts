@@ -534,14 +534,6 @@ export function compile(
     }
     for (const decl of program.decls)
       if (decl.kind === "instrument") templates.set(decl.name, decl);
-    for (const decl of program.decls) {
-      if (decl.kind === "instrument" && decl.parameters.length)
-        fail(
-          decl,
-          "This compiler cannot instantiate a parameterized instrument declared inside a program.",
-          "For this version, specialize the instrument with fixed bindings and remove its parameters. Custom reusable headers require a host-supplied library.",
-        );
-    }
     const document: UdlDocument = {
       udl: UDL_FORMAT_VERSION,
       version: 1,
@@ -906,8 +898,12 @@ export function compile(
         const typeName =
           type.kind === "type" || type.kind === "call" ? type.name : text(type);
         const partyParameter = attachmentInfo && typeName === "party";
+        const optional = type.kind === "type" && type.optional;
+        // An optional party stays unset unless the attachment binds it, so a
+        // program party that shares its name does not switch it on.
         const byName: Expr | undefined =
           partyParameter &&
+          !optional &&
           (subjectPartyRoles.includes(param.key as SubjectPartyRole) ||
             document.parties[param.key])
             ? { kind: "name", value: param.key, span: origin }
@@ -920,7 +916,7 @@ export function compile(
             source: declarationSources.get(decl) ?? "program",
           });
         if (!actual) {
-          if (type.kind === "type" && type.optional) continue;
+          if (optional) continue;
           parameterErrors.push({
             span: origin,
             code: partyParameter ? "subject_party_unbound" : "HSX1001",
@@ -989,7 +985,12 @@ export function compile(
           .filter((entry) => entry.key.startsWith("action "))
           .flatMap(
             (entry) =>
-              asBlock(entries(asBlock(entry.value)).get("subject")).entries,
+              // Read subject rows directly: entries() refuses repeated when branches.
+              asBlock(
+                asBlock(entry.value).entries.find(
+                  (row) => row.key === "subject",
+                )?.value,
+              ).entries,
           );
         const moneyFields = [
           ...new Set(
@@ -2286,12 +2287,12 @@ export function compile(
             };
           }
         }
-        const fromBinding = slots.get("from");
-        if (
-          fromBinding?.kind === "name" &&
-          fromBinding.value.includes(".") &&
-          slots.has("moves")
-        ) {
+        const from = slots.get("from");
+        // A policy member may sit in a state list such as `[funded, dispute.refund_after]`.
+        const fromBinding = (from?.kind === "list" ? from.items : [from]).find(
+          (item) => item?.kind === "name" && item.value.includes("."),
+        );
+        if (fromBinding?.kind === "name" && slots.has("moves")) {
           const [parameter, member] = fromBinding.value.split(".");
           const suppliedPolicy = supplied.get(parameter!);
           if (suppliedPolicy?.kind === "block") {
@@ -2332,6 +2333,7 @@ export function compile(
           ...(actionSubject ? { subject: actionSubject } : {}),
         };
         authored.set(a, row.value);
+        const actionFeeCalculations: UdlCalculation[] = [];
         for (const binding of boundaryBindings)
           if (
             !a.subject?.adapters.find((entry) => entry.binding === binding)
@@ -2692,6 +2694,11 @@ export function compile(
                       "write a percentage such as 1%",
                     );
                   const prefix = `${name}_${key}`;
+                  // Instrument calculations run at create, before any action
+                  // input exists, so a fee on an input amount runs with its action.
+                  const perAction =
+                    "field" in transfer.amount &&
+                    transfer.amount.field.startsWith("input.");
                   const derived = (
                     suffix: string,
                     label: string,
@@ -2704,8 +2711,13 @@ export function compile(
                         `generated fee field ${target} conflicts with a field`,
                         "rename the authored field or move key",
                       );
-                    fields.push({ name: target, type: "money", label });
-                    calculations.push({
+                    fields.push({
+                      name: target,
+                      type: "money",
+                      label,
+                      ...(perAction ? { optional: true } : {}),
+                    });
+                    (perAction ? actionFeeCalculations : calculations).push({
                       ...calculation,
                       target,
                     } as UdlCalculation);
@@ -2828,6 +2840,8 @@ export function compile(
             }
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
+        if (actionFeeCalculations.length)
+          a.calculate = [...(a.calculate ?? []), ...actionFeeCalculations];
         if (attachmentInfo && !attachmentInfo.child) {
           if (attachmentInfo.exposed.has(name)) {
             if (automatic(a.actor))
@@ -3307,7 +3321,9 @@ export function compile(
       });
     };
     for (const decl of program.decls) {
-      if (decl.kind === "instrument") {
+      // A parameterized program instrument is a template, like a header
+      // instrument: each attachment instantiates it with its own bindings.
+      if (decl.kind === "instrument" && !decl.parameters.length) {
         addInstrument(decl, decl.name, emptyBlock, decl.span);
       }
       if (decl.kind === "assignment") {
@@ -3647,7 +3663,9 @@ export function compile(
         fail(
           at,
           `\`${name}\` is not a declared party.${didYouMean(name, names)}`,
-          `Declare it with \`party ${name}: business\`, or name a declared party (${names.join(", ")}).`,
+          subjectPartyRoles.includes(name as SubjectPartyRole)
+            ? `Declare a party parameter such as \`holder: party\` on the instrument, use it here, and bind \`holder: ${name}\` where you attach it.`
+            : `Declare it with \`party ${name}: business\`, or name a declared party (${names.join(", ")}).`,
         );
     };
     const checkInput = (
@@ -3725,6 +3743,42 @@ export function compile(
       inst,
       label: declarations.get(inst)!.name,
     });
+    // A family member drops an optional reference field its binding left
+    // unset (a borrower-funded plan has no `funds`), so it cannot match and
+    // leaves the selection. The header must still declare the field.
+    const matchable = (selection: UdlSelection) => {
+      const members = [selection.instrument].flat();
+      const header = selection.family
+        ? templates.get(
+            `${selection.family.module}.${selection.family.exportPath}`,
+          )
+        : undefined;
+      if (
+        !header ||
+        !entries(asBlock(entries(header.body).get("fields"))).has(
+          selection.reference,
+        )
+      )
+        return members;
+      return members.filter((id) =>
+        resolveField(document, byId.get(id)!, `self.${selection.reference}`),
+      );
+    };
+    // A count over no matchable member is zero.
+    for (const inst of document.instruments)
+      for (const action of Object.values(inst.actions))
+        action.requires = action.requires.map((requirement) =>
+          requirement.kind === "aggregate" &&
+          requirement.measure === "count" &&
+          !matchable(requirement.selection).length
+            ? {
+                kind: "compare",
+                left: { literal: 0 },
+                operator: requirement.operator,
+                right: requirement.value,
+              }
+            : requirement,
+        );
     const checkSelection = (
       selection: UdlSelection,
       at: Located,
@@ -3732,6 +3786,12 @@ export function compile(
     ) => {
       walk(selection.anchor, "anchor", site(selection, "anchor", at), scope);
       walk(selection.where, "where", site(selection, "where", at), scope);
+      const members = matchable(selection);
+      if (
+        members.length &&
+        members.length < [selection.instrument].flat().length
+      )
+        selection.instrument = members;
       for (const id of [selection.instrument].flat()) {
         checkTarget(id, site(selection, "instrument", at));
         const target = scopeOf(byId.get(id)!);

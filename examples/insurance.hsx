@@ -2,7 +2,6 @@
 program device_insurance "Device insurance"
 use insurance
 use money
-party inspector: staff role claims
 
 object device "Insured device" {
   fields { model: text, serialNumber: text, purchaseDate: date }
@@ -13,16 +12,17 @@ object device "Insured device" {
     economics pay { purpose: earning, sourceParty: owner }
     expose pay as pay_for_device
   }
-  // Bind device_insurer to an ADL adapter before creating cover. Premiums net of commission go to its account.
+  // conformance_boundary is the sandbox insurer adapter; swap in the insurer's registered adapter to go live.
+  // Premiums net of commission go to its account. claim_limit is the sum insured, set per cover at creation.
   attach protection = insurance.cover {
     expose create as create_protection
-    holder: owner, adapter: "device_insurer", commission: 10%, covers: purchase
+    holder: owner, adapter: "conformance_boundary", commission: 10%, covers: purchase
     expose activate as activate_cover
     expose cancel as cancel_cover
   }
   attach claim = insurance.claim {
     expose create as create_claim
-    cover: protection, inspector: inspector
+    cover: protection, inspector: operator
     expose approve as approve_claim
     expose deny as deny_claim
     expose pay as pay_claim

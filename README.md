@@ -21,8 +21,8 @@ Start with the [first program and rental guide](docs/README.md). Save the
 It holds 1,000 SAR, charges a one-time 50 SAR late fee, and returns the remainder.
 The guide explains the fixed business binding and the host needed to execute it.
 
-`npx hsx headers` prints every std instrument and its tunables from the bundled
-headers. The [samples](examples/) include both complete action paths and
+`npx hsx headers --json` prints every std instrument and its tunables from the
+bundled headers as JSON. The [samples](examples/) include both complete action paths and
 compositions that still need child-record actions or adapter bindings. A compile
 pass does not prove that a flow is publicly executable or funded.
 

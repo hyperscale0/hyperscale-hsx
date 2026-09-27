@@ -3,7 +3,7 @@
 program equipment_rental "Equipment rental"
 party renter: business
 
-// Program-local instruments have fixed terms and parties, not tunable parameters.
+// The renter is one declared business, so this instrument takes no parameters.
 instrument deposit {
   summary: "Hold a rental deposit, then return it less any fixed late fee."
   fields {

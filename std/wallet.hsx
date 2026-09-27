@@ -1,6 +1,7 @@
 header wallet
 
-// Economics: Topups and withdrawals are excluded prepaid credit. Spending remains
+// Economics: Topups and withdrawals are excluded prepaid credit; a top-up fee is
+// Company earning. Spending remains
 // unclassified because the bound payee alone does not state the purchase purpose.
 
 // Expose balance.create, activate, topup and withdraw as needed. Holder moves
@@ -12,20 +13,30 @@ header wallet
 // Existing reservations may still post after the wallet freezes. There is no
 // daily aggregate limit, partial spend or card-network settlement in this header.
 
-// Cost: balance.create declares one owned account; topup and withdraw each
-// declare one transfer. Spend reserve, pay and cancel each declare one transfer
+// Top-up fee: topup_fee takes a floored percentage of each top-up for the Company;
+// the wallet receives the rest. At 1%, a 100.00 top-up credits 99.00 and earns 1.00.
+// The default 0% moves nothing to the Company.
+
+// Cost: balance.create declares one owned account; topup declares two transfers
+// and withdraw one. Spend reserve, pay and cancel each declare one transfer
 // instruction. These are counts, not the executor tariff.
 
-instrument balance(holder: party, spend_limit: money = 100000 SAR) {
+instrument balance(holder: party, spend_limit: money = 100000 SAR, topup_fee: percent = 0%) {
   summary: "A holder's reusable balance with an immutable per-spend ceiling."
-  fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit }
+  fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit, topupFee: money?, topupCredit: money? }
   lifecycle { states: [pending, active, frozen, closed], initial: pending }
   action create { }
   action activate { from: pending, to: active, actor: { party: holder } }
   action topup {
+    allowZero: true, requires input.amount > "0"
     from: active, to: active, actor: { party: holder }
     input { amount: money }
-    moves input.amount from holder to self.held economics { purpose: prepaid_credit, sourceParty: holder }
+    calculate: [
+      { target: topupFee, op: rate, base: { field: input.amount }, bps: { literal: topup_fee }, rounding: floor }
+      { target: topupCredit, op: subtract, base: { field: input.amount }, subtract: [{ field: self.topupFee }] }
+    ]
+    moves self.topupCredit from holder to self.held economics { purpose: prepaid_credit, sourceParty: holder }
+    moves self.topupFee from holder to programOperator economics { purpose: earning, sourceParty: holder }
   }
   action withdraw {
     from: active, to: active, actor: { party: holder }

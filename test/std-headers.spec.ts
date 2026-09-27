@@ -7,6 +7,7 @@ import { standardLibrary } from "./fixtures/std-source.ts";
 const source = `program library_audit "Library audit"
 use money
 use escrow
+use booking
 use marketplace
 use financing
 use insurance
@@ -31,9 +32,10 @@ object item "Item" {
  attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "insurer", covers: sale }
  attach claim = insurance.claim { cover: cov, inspector: inspector }
  attach sale = escrow.hold { payer: actor, payee: owner }
+ attach trip = booking.reservation { customer: actor, operator: owner }
  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
  attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
- attach plan = financing.installments { borrower: actor, capital: operator, months: 3, profit: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+ attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
  attach late = financing.late_charge { on: plan, borrower: actor }
  attach line = financing.credit_line { borrower: operator, adapter: "lender", limit: 100000 SAR, expires: 2027-01-01 }
  attach advance = financing.advance { line: line }
@@ -108,5 +110,8 @@ object item "Item" {
   const hold = result.artifacts!.document.instruments.find(
     (item) => item.id === "item_sale",
   )!;
-  expect(hold.lifecycle.transitions.refund!.from).toEqual(["return_verified"]);
+  expect(hold.lifecycle.transitions.refund!.from).toEqual([
+    "funded",
+    "return_verified",
+  ]);
 });

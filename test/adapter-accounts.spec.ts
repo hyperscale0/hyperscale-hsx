@@ -37,7 +37,7 @@ object policy "Policy" { attach funds = custody.balance { provider: "insurer" } 
 test("insurance pays and refunds insurer and broker as separate funded portions", () => {
   const result = compile(
     readFileSync(new URL("../examples/insurance.hsx", import.meta.url), "utf8")
-      .replace("party inspector:", "party broker: business\nparty inspector:")
+      .replace("use money\n", "use money\nparty broker: business\n")
       .replace("commission: 10%", "commission: 10%, broker: broker"),
     {
       standardLibrary: {
@@ -56,7 +56,7 @@ test("insurance pays and refunds insurer and broker as separate funded portions"
   if (!cover || !slice || !claim)
     throw new Error("Missing insurance agreements");
   expect(cover.fields.find((field) => field.name === "insurer")).toMatchObject({
-    owner: { adapter: "device_insurer" },
+    owner: { adapter: "conformance_boundary" },
     book: "cash",
     key: "premium",
   });

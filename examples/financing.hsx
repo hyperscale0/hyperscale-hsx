@@ -18,7 +18,7 @@ object enrolment "Enrolment" {
   attach tuition = financing.installments {
     expose create as create_tuition
     borrower: owner, capital: operator
-    months: 3, profit: 0%, disburse_to: borrower
+    months: 3, pricing: flat_total, profit_rate: 0%, disburse_to: borrower
     limits: allowance, portfolio: budget
     expose sign as sign_tuition_plan
     expose disburse as fund_tuition

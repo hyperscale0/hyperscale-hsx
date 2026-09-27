@@ -20,7 +20,7 @@ object business "Business funding" {
   attach loan = financing.installments {
     expose create as create_loan
     borrower: owner, capital: operator
-    months: 12, profit: 6%, disburse_to: borrower
+    months: 12, pricing: amortizing, profit_rate: 6%, disburse_to: borrower
     limits: allowance, portfolio: budget
     expose sign as sign_loan
     expose disburse as release_loan

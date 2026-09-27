@@ -1,7 +1,7 @@
 header money
 
 // Economics: Held funding and returns are principal. Release to the company realizes
-// earnings; release to another participant is a payout. Generic transfers, splits,
+// earnings; release to another participant passes the payer's cash through. Generic transfers, splits,
 // schedules, swaps, boundary payouts and metered fees retain no assumed purpose.
 
 // Expose each attachment's create and caller actions explicitly. A transfer or
@@ -48,7 +48,7 @@ instrument hold(payer: party, payee: party, amount: money = runtime) {
   }
   action release {
     from: funded, to: released, actor: { party: payer }
-    moves self.amount from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
+    moves self.amount from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: programOperator } }
   }
   action refund {
     from: funded, to: refunded, actor: { party: payee }
@@ -107,7 +107,7 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
   action pay {
     from: open, to: paid, actor: { party: payee }
     requires self.held.balance == self.target
-    moves self.target from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: participant_payout, sourceParty: programOperator } }
+    moves self.target from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: programOperator } }
   }
   action fail {
     from: open, to: failed, actor: clock, due: { at: self.closesAt }

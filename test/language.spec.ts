@@ -349,7 +349,7 @@ instrument bill {
 test("economics chooses a purpose from the resolved recipient", () => {
   for (const [recipient, purpose, sourceParty] of [
     ["operator", "earning", "owner"],
-    ["provider", "participant_payout", "programOperator"],
+    ["provider", "pass_through", "programOperator"],
   ] as const) {
     const result = compile(`program costs "Costs"
 use financing
@@ -358,7 +358,7 @@ object purchase "Purchase" {
  fields { price: money }
  attach limits = financing.limits { borrower: owner, per_borrower: 1000 SAR }
  attach budget = financing.portfolio_limit { limit: 10000 SAR }
- attach plan = financing.installments { borrower: owner, capital: operator, months: 3, profit: 1%, disburse_to: borrower, limits: limits, portfolio: budget }
+ attach plan = financing.installments { borrower: owner, capital: operator, months: 3, pricing: flat_total, profit_rate: 1%, disburse_to: borrower, limits: limits, portfolio: budget }
  attach charge = financing.late_charge { on: plan, borrower: owner, costs_to: ${recipient} }
 }`);
     expect(result.diagnostics).toEqual([]);
@@ -376,4 +376,23 @@ object purchase "Purchase" {
       });
     else expect(receipt.actions.refund!.moves[0]!.economics).toBeUndefined();
   }
+});
+
+// Mutation: classify a hold released to an outside seller as a company payout.
+test("escrow passes the payer's cash through to an outside seller and earns only the fee", () => {
+  const result = compile(`program market "Market"
+use escrow
+object sale "Sale" {
+ fields { price: money }
+ attach escrow = escrow.hold { payer: actor, payee: owner, fee: { seller: 10%, tax: 0% } }
+}`);
+  expect(result.diagnostics).toEqual([]);
+  const accept = result.artifacts!.document.instruments.find(
+    (i) => i.id === "sale_escrow",
+  )!.actions.accept!;
+  expect(accept.moves.map((m) => m.economics?.purpose)).toEqual([
+    "pass_through",
+    "earning",
+    "pass_through",
+  ]);
 });

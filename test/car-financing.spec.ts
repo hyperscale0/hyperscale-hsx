@@ -24,7 +24,7 @@ object car "Car" {
   attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
   attach plan = financing.installments {
     borrower: actor, capital: operator
-    months: 36, profit: 8.5%, down_payment: 10%
+    months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
     funds: sale, limits: limits, portfolio: ceiling
     expose create as finance
   }
@@ -57,7 +57,7 @@ object car "Car" {
   attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
   attach plan = financing.installments {
     borrower: actor, capital: operator
-    months: 36, profit: 8.5%, down_payment: 10%
+    months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
     funds: sale, limits: limits, portfolio: ceiling
     expose create as finance, expose sign as sign_contract, expose payoff as payoff
   }
@@ -79,7 +79,7 @@ object car "Car" {
   attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
   attach plan = financing.installments {
     borrower: actor, capital: operator
-    months: 36, profit: 8.5%, down_payment: 10%, disburse_to: borrower
+    months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%, disburse_to: borrower
     expose create as finance
   }
 }`;
