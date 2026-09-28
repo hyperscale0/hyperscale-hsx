@@ -302,7 +302,7 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
     if (currency !== "SAR")
       fail(
         expr,
-        `currency ${currency} differs from SAR`,
+        `currency ${currency} differs from the supported riyal currency`,
         "write this amount in SAR",
       );
     const result = decimal(raw!, 2, expr);
@@ -444,7 +444,7 @@ export function compile(
     if (program.currency !== "SAR")
       fail(
         program,
-        "this release supports SAR",
+        "this release supports riyals",
         "write currency SAR or omit currency",
       );
     const templates = new Map<string, InstrumentDecl>();

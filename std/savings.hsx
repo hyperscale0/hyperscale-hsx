@@ -11,7 +11,7 @@ header savings
 // A member can have received the pot with future unpaid contributions, or paid
 // a contribution while their membership still waits for its payout seat.
 // Receive counts preceding received memberships, never paid contributions.
-// Eight members at 300 SAR require 2400 SAR per payout; seven payments supply 2100,
+// Eight members at 300 riyals require 2,400 riyals per payout; seven payments supply 2,100,
 // so a full payout lacks 300 unless other cash exists. There is no reduced payout.
 // Contribution.pay has a due time and no deadline or prior-payment requirement.
 // Late and out-of-order collection is admitted while membership is active or

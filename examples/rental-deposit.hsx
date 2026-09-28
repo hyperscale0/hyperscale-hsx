@@ -1,5 +1,5 @@
-// A business rents equipment with a 1000 SAR deposit and a single 50 SAR late fee.
-// On-time return refunds 1000 SAR; late return pays the operator 50 SAR and refunds 950 SAR.
+// A business rents equipment with a 1,000 riyal deposit and a single 50 riyal late fee.
+// On-time return refunds 1,000 riyals; late return pays the operator 50 riyals and refunds 950 riyals.
 program equipment_rental "Equipment rental"
 party renter: business
 

@@ -13,7 +13,7 @@ export const KEYWORD_HELP = {
     "Parties",
   ],
   role: ["Names the responsibility a declared party has in this product."],
-  currency: ["Declares SAR, the currency supported by this compiler."],
+  currency: ["Declares riyals, the currency supported by this compiler."],
   instrument: [
     "Defines an agreement's fields, states and permitted actions.",
     "Instruments",

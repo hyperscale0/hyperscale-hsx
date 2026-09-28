@@ -24,7 +24,7 @@ header money
 
 // Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
 // fund, release and refund each declare one transfer. Schedules and pools add bounded
-// child invocations. Run hsx cost on the composed program for counts, not SAR prices.
+// child invocations. Run hsx cost on the composed program for counts, not riyal prices.
 
 instrument transfer(payer: party, payee: party, amount: money = runtime) {
   summary: "One transfer between the bound parties."

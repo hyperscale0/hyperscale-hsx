@@ -4,7 +4,7 @@ header reporting
 // create; reports use the declared report request/read roles, not a money action.
 // Aging selects active facilities and includes earned profit when deciding arrears.
 // The default-rate report measures period-end stock, not new default incidence.
-// Paid facilities are excluded and write-offs counted separately. Amounts are SAR
+// Paid facilities are excluded and write-offs counted separately. Amounts are riyal
 // minor units; declared scale and rounding govern ratios. Missing identity joins
 // or unreconciled schedule counts refuse.
 
