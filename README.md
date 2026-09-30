@@ -3,6 +3,9 @@
 HSX is a typed composition language for a company's objects, agreements and
 actions. Programs can model a repair approval, a rental deposit or a financing
 plan. The compiler produces canonical UDL for an executor. It executes no actions.
+A program declares what a company needs from its providers, such as a lender
+funding a loan or an insurer issuing a policy. Providers do the originating,
+underwriting and paying out through ADL adapters; HSX never does their job.
 This release supports SAR.
 
 ## Start here
