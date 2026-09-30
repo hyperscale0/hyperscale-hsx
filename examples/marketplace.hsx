@@ -1,34 +1,49 @@
-// Freelancers publish offers and clients place orders with funds held until work is accepted.
-program freelance_marketplace "Freelance marketplace"
+// Riyadh design market sells a 2,000 SAR restaurant menu project with delivery in seven days.
+// The company keeps 10% plus 15% VAT on its fee; the designer receives 1,770 SAR after client acceptance.
+program freelance_marketplace "Riyadh design market"
 use marketplace
 use escrow
+party designer: business
 
-object project "Project" {
+// Bind designer to the design studio. The client owns the project record.
+// Set price to 2,000 SAR and use the same field for offer, order and escrow.
+// Any VAT on the designer's work belongs on its own invoice.
+object project "Menu design project" {
   fields { brief: text, deliverable: text, price: money }
   columns: [brief, deliverable, price]
   attach offer = marketplace.listing {
-    rename { price: price }
-    expose create as create_offer
-    seller: owner
+    seller: designer
+    rename { title: deliverable, price: price }
+    expose create as draft_offer
     expose publish as publish_offer
     expose withdraw as withdraw_offer
+    expose sell as close_sold_offer
   }
   attach order = marketplace.order {
+    listing: offer, buyer: owner, fulfiller: designer
     rename { price: price }
-    expose create as create_order
-    listing: offer, buyer: actor, fulfiller: owner
+    expose create as request_design
     expose commit as place_order
     expose fulfill as finish_order
+    expose cancel as cancel_order
   }
+  // Finishing the order does not release money. Run the payment actions too.
   attach payment = escrow.hold {
+    payer: owner, payee: designer
+    fee: { seller: 10%, tax: 15% }
+    deliver_within: 7d, accept_within: 3d
+    dispute: { refund_after: return_verified }
     expose create as create_payment
-    payer: actor, payee: owner
     expose fund as fund_project
     expose deliver as submit_work
     expose accept as accept_work
     expose dispute as dispute_work
-    expose verify_return as verify_return
+    expose verify_return as verify_rejected_work
     expose refund as refund_client
-    expose cancel as cancel_payment
+    expose refund_undelivered as refund_missed_delivery
+    expose settle_release as resolve_for_designer
+    expose settle_return as resolve_for_client
+    expose settle_refund as finish_client_refund
+    expose cancel as cancel_unpaid_project
   }
 }

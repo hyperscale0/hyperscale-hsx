@@ -38,7 +38,7 @@ test("insurance pays and refunds insurer and broker as separate funded portions"
   const result = compile(
     readFileSync(new URL("../examples/insurance.hsx", import.meta.url), "utf8")
       .replace("use money\n", "use money\nparty broker: business\n")
-      .replace("commission: 10%", "commission: 10%, broker: broker"),
+      .replace("broker: operator", "broker: broker"),
     {
       standardLibrary: {
         source: (name) =>

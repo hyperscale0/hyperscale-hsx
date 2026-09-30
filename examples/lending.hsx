@@ -1,57 +1,83 @@
-// A lending composition with limit approvals, wallet commitments and cash distribution transitions.
-program community_business_lending "Community business lending"
+// Qassim bakery funding raises 30,000 SAR for ovens from investors who commit at least 1,000 SAR each.
+// An unclosed round refunds its wallets at expiry; funded loans distribute repayments or record investor losses.
+program community_business_lending "Qassim bakery funding"
 use lending
 use financing
 use wallet
 
-object business "Business funding" {
+// Set price to 30,000 SAR. The bakery owns the record; investors act as actor.
+// Company fee: 5% of collected profit, with 15% VAT on that fee, at distribution.
+// Principal and wallet loads have fee 0% and tax 0%; no service is sold there.
+object business "Bakery oven funding" {
   fields { businessName: text, purpose: text, price: money }
-  columns: [businessName, purpose, price]
+  columns: [businessName, purpose, price, fundingClosesAt]
   attach allowance = financing.limits {
-    expose create as create_allowance
     borrower: owner, per_borrower: 100000 SAR
+    expose create as request_bakery_limit
     expose approve as approve_borrower
   }
   attach budget = financing.portfolio_limit {
-    expose create as create_budget
     limit: 2000000 SAR
+    expose create as create_funding_budget
     expose approve as approve_budget
   }
+  // Twelve future monthly dates, 6% annual profit on the declining balance.
+  // Close the fully subscribed round before separately disbursing the loan.
   attach loan = financing.installments {
-    expose create as create_loan
-    borrower: owner, capital: operator
+    borrower: owner, capital: operator, share: 0%
     months: 12, pricing: amortizing, profit_rate: 6%, disburse_to: borrower
+    payoff_rebate: 100%, refund_within: 30d, write_off_after: 90d
     limits: allowance, portfolio: budget
+    expose create as quote_bakery_loan
     expose sign as sign_loan
     expose disburse as release_loan
+    expose cancel as decline_loan_quote
+    expose void as cancel_unfunded_loan
     expose payoff as repay_early
+    expose complete as close_repaid_loan
   }
   attach investor_balance = wallet.balance {
+    holder: actor, spend_limit: 7500 SAR, topup_fee: 0%
     expose create as create_investor_balance
-    holder: actor
     expose activate as open_wallet
     expose topup as add_funds
+    expose withdraw as withdraw_available_funds
+    expose close as close_empty_wallet
   }
   attach funding = lending.round {
-    borrower: owner, plan: loan
-    expose create as open_funding
-    expose close as close_funding
+    borrower: owner, plan: loan, minimum_ticket: 1000 SAR, investor_cap: 25%
+    rename { closesAt: fundingClosesAt }
+    expose create as open_funding_round
+    expose close as close_fully_funded_round
   }
   attach investment = lending.commitment {
     round: funding, wallet: investor_balance, investor: actor
-    expose create as invest
-    expose withdraw as withdraw_investment
+    expose create as commit_investment
+    expose withdraw as withdraw_before_close
   }
+  // For each recorded cash settlement, prepare once and create one share per
+  // funded commitment. The fee applies to profit, never returned principal.
   attach returns = lending.distribution {
-    expose create as create_returns
-    round: funding, receipt: loan.settlement
-    expose prepare_cash as prepare_returns
-    expose distribute_cash as distribute_returns
+    round: funding, receipt: loan.settlement, mode: cash, fee: 5%, tax: 15%
+    expose create as record_cash_settlement
+    expose prepare_cash as calculate_investor_returns
+    expose distribute_cash as pay_investor_wallets
+  }
+  // Loss distribution moves claims only. It does not debit another cash fee.
+  attach losses = lending.distribution {
+    round: funding, receipt: loan.settlement, mode: loss, fee: 0%, tax: 0%
+    expose create as record_loss_settlement
+    expose prepare_loss as calculate_investor_losses
+    expose distribute_loss as allocate_investor_losses
   }
 }
 
-expose business.loan.payment.create as create_payment
+expose business.loan.payment.create as record_repayment
 expose business.loan.payment.pay as pay_instalment
-expose business.loan.payment.refund as refund_payment
+expose business.loan.payment.refund as refund_mistaken_repayment
 expose business.loan.payoff_quote.create as request_payoff_quote
+expose business.loan.write_off_request.create as request_overdue_write_off
+expose business.loan.write_off_request.apply as approve_overdue_write_off
+expose business.loan.write_off_request.cancel as cancel_write_off_request
 expose business.returns.share.create as create_return_share
+expose business.losses.share.create as create_loss_share

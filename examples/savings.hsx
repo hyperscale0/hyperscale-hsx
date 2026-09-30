@@ -1,21 +1,31 @@
-// Six members contribute to a shared pot and receive it in their agreed calendar order.
-program neighbourhood_savings "Savings circle"
+// Al Khobar shopkeepers circle collects 500 SAR from each of six members every month.
+// Each member receives one 3,000 SAR pot in order; missed contributions remain payable and an unfunded pot waits.
+program neighbourhood_savings "Al Khobar shopkeepers circle"
 use savings
 
-object group "Savings group" {
+// Fee: 0%. Tax: 0% because this circle only returns members' principal and
+// charges no service. The organiser keeps none of the 18,000 SAR contributed.
+object group "Shopkeepers savings circle" {
   fields { groupName: text, purpose: text }
   columns: [groupName, purpose]
   attach circle = savings.circle {
-    expose create as create_circle
     contribution: 500 SAR, members: 6, starts: 2027-01-01
-    expose disband as disband_circle
-    expose close as close_circle
+    // At creation supply circleDates: the first of January through June 2027.
+    expose create as agree_circle_calendar
+    expose disband as cancel_unstarted_circle
+    expose close as close_completed_circle
   }
   attach membership = savings.membership {
-    expose create as create_membership
     circle: circle, member: actor
-    expose activate as confirm_membership
-    expose withdraw as leave_circle
+    // Assign a distinct seat from 1 to 6 to each member at creation.
+    expose create as join_circle
+    expose activate as confirm_membership_schedule
+    expose withdraw as leave_cancelled_circle
   }
-  // Contributions and each member's payout follow the declared calendar.
 }
+
+// Create periods 1 through 6 for EVERY member before activating membership.
+// The clock activates the circle when all six have joined. Then confirm each
+// membership. Contributions and payouts run on that calendar, including after
+// a member has received their pot. A missed collection is not a promised retry.
+expose group.membership.contribution.create as schedule_member_contribution

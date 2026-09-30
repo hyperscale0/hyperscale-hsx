@@ -1,25 +1,95 @@
-// A car finance company services loans with late charges, payment reminders and early repayment.
-program car_financing "Car financing"
+// Dammam delivery van finance funds a 69,000 SAR van with 10% down and 36 monthly instalments.
+// It records reminders, late charges, hardship extensions, early repayment and financed returns.
+program car_financing "Dammam delivery van finance"
 use escrow
 use financing
 use collections
-object car "Car" {
- fields { make: text, model: text, year: integer, vin: text, price: money }
- columns: [make, model, year, vin, price]
- attach sale = escrow.hold { expose create as create_sale, payer: actor, payee: operator, expose fund as purchase }
- attach limits = financing.limits { expose create as create_limits, borrower: actor, per_borrower: 250000 SAR }
- attach ceiling = financing.portfolio_limit { expose create as create_ceiling, limit: 10000000 SAR }
- attach plan = financing.installments {
-  borrower: actor, capital: operator
-  months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
-  apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
-  funds: sale, limits: limits, portfolio: ceiling
-  expose create as finance, expose sign as sign_contract, expose payoff as payoff
- }
- attach late = financing.late_charge {
-   expose create as create_late
-  on: plan, grace: 3d, fine: 50 SAR, cap: 25 SAR
-  fines_to: operator, costs_to: operator, borrower: actor
- }
- attach reminders = collections.reminder { expose create as create_reminders, on: plan, operator: operator, before_days: 3, overdue_days: 1 }
+party dealer: business
+
+// The dealer invoices 60,000 SAR plus 15% VAT. Set price to 69,000 SAR.
+// The company keeps a 1% dealer fee, 690 SAR, with 103.50 SAR VAT on that fee.
+object car "Delivery van finance" {
+  fields { make: text, model: text, year: integer, vin: text, price: money }
+  columns: [make, model, year, vin, price]
+  attach sale = escrow.hold {
+    payer: actor, payee: dealer
+    fee: { seller: 1%, tax: 15% }, deliver_within: 14d, accept_within: 3d
+    expose create as agree_van_purchase
+    expose fund as pay_cash_instead
+    expose deliver as confirm_delivery
+    expose accept as accept_van
+    expose dispute as dispute_van
+    expose verify_return as verify_returned_van
+    expose refund as refund_after_finance_unwind
+    expose refund_undelivered as refund_missing_cash_purchase
+    expose settle_release as resolve_for_dealer
+    expose settle_return as resolve_for_buyer
+    expose settle_refund as finish_buyer_refund
+    expose cancel as cancel_and_return_down_payment
+  }
+  attach limits = financing.limits {
+    borrower: actor, per_borrower: 250000 SAR
+    expose create as request_borrower_limit
+    expose approve as approve_borrower_limit
+  }
+  attach ceiling = financing.portfolio_limit {
+    limit: 10000000 SAR
+    expose create as create_lending_budget
+    expose approve as approve_lending_budget
+  }
+  // Down payment is 6,900 SAR. Capital is 62,100 SAR; total flat profit is
+  // 5,278.50 SAR. Financing service fee: 0%, tax: 0% on principal repayments.
+  // Supply 36 future monthly dates. Approve limits before collecting and funding.
+  attach plan = financing.installments {
+    borrower: actor, capital: operator, share: 0%
+    months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
+    apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
+    refund_within: 30d, payoff_quote_expiry: 1h, returned_goods: refund_all
+    max_extension: 60d, max_amendments: 2, amendment_expiry: 7d
+    funds: sale, limits: limits, portfolio: ceiling
+    expose create as finance
+    expose sign as sign_contract
+    expose collect_down_payment as pay_down_payment
+    expose disburse as fund_van_escrow
+    expose cancel as decline_finance_quote
+    expose void as cancel_signed_finance
+    expose payoff as repay_early
+    expose complete as close_repaid_finance
+    // Before an active-plan unwind, refund collected payments and fines,
+    // and waive assessed fines. Then refund any remaining escrow balance.
+    expose unwind as unwind_returned_van_finance
+    expose unwind_undelivered as unwind_missing_van_finance
+    expose unwind_paid as unwind_repaid_van_finance
+  }
+  // Create one assessment against the overdue slice. The clock assesses after
+  // three days; repayments collect it. cap bounds evidenced recovery COSTS,
+  // not the 50 SAR fine. Any charge VAT is invoiced outside this header.
+  attach late = financing.late_charge {
+    on: plan, grace: 3d, fine: 50 SAR, cap: 25 SAR
+    fines_to: operator, costs_to: operator, borrower: actor
+    expose create as record_late_assessment
+    expose cancel as cancel_proposed_assessment
+    expose refund as refund_collected_fine
+  }
+  attach reminders = collections.reminder {
+    on: plan, operator: operator, before_days: 3, overdue_days: 1
+    max_per_day: 1, send_from: 9, send_until: 18, timezone: "Asia/Riyadh"
+    expose create as schedule_instalment_reminders
+    expose dispatch as send_payment_reminder
+  }
 }
+
+expose car.plan.payment.create as record_repayment
+expose car.plan.payment.pay as pay_instalment
+expose car.plan.payment.refund as refund_mistaken_repayment
+expose car.plan.payoff_quote.create as request_payoff_quote
+expose car.plan.amendment.create as propose_hardship_extension
+expose car.plan.amendment.accept as accept_hardship_extension
+expose car.plan.amendment.decline as decline_hardship_extension
+expose car.plan.amendment.withdraw as withdraw_hardship_extension
+expose car.plan.write_off_request.create as request_overdue_write_off
+expose car.plan.write_off_request.apply as approve_overdue_write_off
+expose car.plan.write_off_request.cancel as cancel_write_off_request
+expose car.late.waiver_request.create as request_fine_waiver
+expose car.late.waiver_request.apply as approve_fine_waiver
+expose car.late.waiver_request.cancel as cancel_fine_waiver

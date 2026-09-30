@@ -1,44 +1,88 @@
-// A repair shop records inspection and approval evidence before it can complete a job.
-program repair_shop "Repair approvals"
+// Jeddah phone repair quotes 350 SAR plus 52.50 SAR VAT for a screen replacement.
+// The customer approves and funds the repair; acceptance pays the shop, while a failed repair returns all 402.50 SAR.
+program repair_shop "Jeddah phone repair"
 
-instrument assessment {
-  summary: "Inspect the repair, collect approval, then record completion."
-  fields { inspectedAt: date?, approvedAt: date? }
-  lifecycle { states: [submitted, inspected, approved, completed, rejected], initial: submitted }
-  action create {}
+// Fee: 0% beyond the repair price. The shop keeps 350 SAR and posts 15% VAT.
+instrument assessment(customer: party) {
+  summary: "Inspect, approve, hold payment and settle a screen repair."
+  fields {
+    held: account of self
+    price: money = 350 SAR
+    vat: money = rate(self.price, 15%)
+    total: money = sum(self.price, self.vat)
+    quoteExpiresAt: date
+    repairDueAt: date
+    inspectedAt: date?
+    approvedAt: date?
+  }
+  lifecycle { states: [submitted, inspected, approved, ready_for_collection, disputed, completed, refunded, rejected, expired], initial: submitted }
+  action create {
+    actor: { party: customer }
+    requires self.quoteExpiresAt > self.now
+    requires self.repairDueAt > self.quoteExpiresAt
+  }
   action inspect {
     from: submitted, to: inspected, actor: { party: programOperator }
+    deadline: { at: self.quoteExpiresAt }
     subject { inspectionNotes: text }
     set: { inspectedAt: { field: self.now } }
   }
   action approve {
-    from: inspected, to: approved, actor: { party: programOperator }
+    from: inspected, to: approved, actor: { party: customer }
+    deadline: { at: self.quoteExpiresAt }
     subject { approvalReference: text }
     set: { approvedAt: { field: self.now } }
+    moves self.total from customer to self.held
   }
-  action reject {
-    from: inspected, to: rejected, actor: { party: programOperator }
-  }
+  action reject { from: [submitted, inspected], to: rejected, actor: { party: customer } }
+  action expire { from: [submitted, inspected], to: expired, actor: clock, due: { at: self.quoteExpiresAt } }
   action complete {
-    from: approved, to: completed, actor: { party: programOperator }
+    from: approved, to: ready_for_collection, actor: { party: programOperator }
+    deadline: { at: self.repairDueAt }
     subject { completionNotes: text }
   }
-}
-
-object repair "Repair" {
-  fields { item: text, problem: text }
-  columns: [item, problem]
-  attach review = assessment {
-    expose create as create_review
-    expose inspect as inspect_repair
-    expose approve as approve_repair
-    expose reject as reject_repair
-    expose complete as complete_repair
+  action accept {
+    from: ready_for_collection, to: completed, actor: { party: customer }
+    moves self.price from self.held to programOperator
+    moves self.vat from self.held to programTax
+  }
+  action dispute {
+    from: ready_for_collection, to: disputed, actor: { party: customer }
+    subject { faultDescription: text }
+  }
+  action refund {
+    from: [approved, ready_for_collection, disputed], to: refunded, actor: { party: programOperator }
+    subject { refundReason: text }
+    moves self.held.balance from self.held to customer
+  }
+  action refund_overdue {
+    from: approved, to: refunded, actor: { party: customer }
+    due: { at: self.repairDueAt }
+    moves self.held.balance from self.held to customer
+  }
+  action accept_resolution {
+    from: disputed, to: completed, actor: { party: customer }
+    subject { resolutionReference: text }
+    moves self.price from self.held to programOperator
+    moves self.vat from self.held to programTax
   }
 }
 
-hide assessment.create
-hide assessment.inspect
-hide assessment.approve
-hide assessment.reject
-hide assessment.complete
+object repair "Screen repair" {
+  fields { item: text, serialNumber: text, problem: text }
+  columns: [item, serialNumber, problem, quoteExpiresAt, repairDueAt]
+  attach review = assessment {
+    customer: owner
+    rename { quoteExpiresAt: quoteExpiresAt, repairDueAt: repairDueAt }
+    expose create as request_repair
+    expose inspect as inspect_repair
+    expose approve as approve_and_pay
+    expose reject as decline_quote
+    expose complete as mark_ready_for_collection
+    expose accept as accept_repair
+    expose dispute as report_failed_repair
+    expose refund as refund_repair
+    expose refund_overdue as refund_missed_deadline
+    expose accept_resolution as accept_repair_resolution
+  }
+}

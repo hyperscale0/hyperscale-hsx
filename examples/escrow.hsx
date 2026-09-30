@@ -1,24 +1,31 @@
-// Buyers fund a used device purchase, then accept delivery or raise a dispute before release.
-program used_device_sales "Used device sales"
+// Khobar used laptops holds a buyer's 2,300 SAR until the laptop arrives and passes inspection.
+// Delivery has seven days; the buyer has 48 hours to accept or dispute before the operator reviews the sale.
+program used_device_sales "Khobar used laptops"
 use escrow
+party seller: business
 
-object device "Device" {
-  fields {
-    model: text
-    condition: text
-    serialNumber: text
-    price: money
-  }
-  columns: [model, condition, price]
+// Bind seller to the refurbisher. Set price to the agreed gross invoice, for
+// example 2,300 SAR. The company keeps 5%, 115 SAR, plus 15% VAT on that fee.
+// Seller receives 2,167.75 SAR. Any VAT on the laptop is on the seller's invoice.
+object device "Laptop purchase" {
+  fields { model: text, condition: text, serialNumber: text, price: money }
+  columns: [model, condition, serialNumber, price]
   attach sale = escrow.hold {
-    expose create as create_sale
-    payer: actor, payee: owner
-    expose fund as pay_for_device
+    payer: owner, payee: seller
+    fee: { seller: 5%, tax: 15% }
+    deliver_within: 7d, accept_within: 48h
+    dispute: { refund_after: return_verified }
+    expose create as agree_purchase
+    expose fund as pay_for_laptop
     expose deliver as confirm_delivery
-    expose accept as accept_device
+    expose accept as accept_laptop
     expose dispute as report_problem
-    expose verify_return as verify_return
+    expose verify_return as verify_returned_laptop
     expose refund as refund_buyer
-    expose cancel as cancel_sale
+    expose refund_undelivered as refund_missing_delivery
+    expose settle_release as resolve_in_seller_favour
+    expose settle_return as resolve_in_buyer_favour
+    expose settle_refund as finish_buyer_refund
+    expose cancel as cancel_unpaid_purchase
   }
 }

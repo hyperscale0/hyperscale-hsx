@@ -1,24 +1,36 @@
-// Members prepay for workshop visits and the studio reserves each spend before charging it.
-program workshop_credits "Workshop credits"
+// Madinah pottery studio lets members prepay for visits at 172.50 SAR each.
+// A reserved visit can be charged, cancelled or released at expiry; unused credit can be withdrawn.
+program workshop_credits "Madinah pottery studio"
 use wallet
 
-object membership "Membership" {
+// Top-up fee: 0%. Loading and withdrawing credit have tax 0% here because
+// they do not sell a visit. Each visit is 150 SAR plus 15% VAT, invoiced by
+// the studio outside wallet.spend, which posts the gross amount to the studio.
+object membership "Pottery membership" {
   fields { memberName: text, membershipNumber: text }
   columns: [memberName, membershipNumber]
   attach balance = wallet.balance {
+    holder: owner, spend_limit: 172.50 SAR, topup_fee: 0%
     expose create as create_balance
-    holder: owner
     expose activate as open_balance
+    // For example, top up 690 SAR for four visits.
     expose topup as add_credit
-    expose withdraw as withdraw_credit
-    expose close as close_balance
+    expose withdraw as withdraw_unused_credit
+    expose freeze as freeze_balance
+    expose unfreeze as restore_balance
+    expose close as close_empty_balance
+    expose operator_close as close_empty_membership
   }
+  // Supply amount: 172.50 SAR and expiresAt: the booked visit time.
+  // Each spend has its own inputs; a second visit cannot inherit the first.
   attach visit = wallet.spend {
-    expose create as create_visit
     wallet: balance, payee: operator, holder: owner
     economics pay { purpose: earning, sourceParty: owner }
-    expose reserve as reserve_visit
+    expose create as book_visit
+    expose reserve as reserve_visit_credit
     expose pay as charge_visit
-    expose cancel as cancel_visit
+    expose cancel as cancel_reserved_visit
   }
+  // Expiry returns a reservation to the wallet. A paid spend has no refund
+  // action in this header; resolve cancellations before charging the visit.
 }

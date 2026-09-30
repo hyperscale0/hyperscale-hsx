@@ -1,19 +1,54 @@
-// A tutoring studio collects a fixed fee for each lesson and can cancel unpaid bookings.
-program tutoring_studio "Tutoring studio"
+// Riyadh tutoring studio charges 172.50 SAR for a private Arabic lesson.
+// A paid booking can be refunded before the lesson or if the tutor cannot teach.
+program tutoring_studio "Riyadh tutoring studio"
 use money
 
-object lesson "Lesson" {
-  fields {
-    student: text
-    tutor: text
-    startsAt: date
+// The customer is the object's owner. Fee: 0% on top of the lesson price.
+// The studio invoices 150 SAR plus 15% VAT, 22.50 SAR, outside this transfer.
+// money.transfer sends the gross price to the studio without splitting VAT.
+instrument lesson_booking(payment: ref<money.transfer>, student: party) {
+  summary: "Confirm a paid lesson, record teaching or refund the student."
+  fields { payment: ref<payment>, startsAt: date }
+  lifecycle { states: [booked, taught, refunded], initial: booked }
+  action create {
+    actor: { party: student }
+    requires self.payment in [paid]
+    requires unique "paid_lesson" on [self.payment]
+    requires self.startsAt > self.now
   }
+  action teach {
+    from: booked, to: taught, actor: { party: programOperator }
+    due: { at: self.startsAt }
+    subject { lessonNotes: text }
+  }
+  action cancel {
+    from: booked, to: refunded, actor: { party: student }
+    deadline: { at: self.startsAt }
+    moves self.payment.amount from programOperator to student
+  }
+  action tutor_unavailable {
+    from: booked, to: refunded, actor: { party: programOperator }
+    subject { cancellationReason: text }
+    moves self.payment.amount from programOperator to student
+  }
+}
+
+object lesson "Arabic lesson" {
+  fields { student: text, tutor: text, startsAt: date }
   columns: [student, tutor, startsAt]
   attach payment = money.transfer {
+    payer: owner, payee: operator, amount: 172.50 SAR
+    economics pay { purpose: earning, sourceParty: owner }
     expose create as create_payment
-    payer: actor, payee: operator, amount: 150 SAR
-    economics pay { purpose: earning, sourceParty: actor }
     expose pay as pay_for_lesson
-    expose cancel as cancel_payment
+    expose cancel as cancel_unpaid_lesson
+  }
+  attach booking = lesson_booking {
+    payment: payment, student: owner
+    rename { startsAt: startsAt }
+    expose create as confirm_paid_lesson
+    expose teach as record_lesson_taught
+    expose cancel as cancel_and_refund_lesson
+    expose tutor_unavailable as refund_cancelled_lesson
   }
 }

@@ -33,6 +33,11 @@ test("financing refuses schedules outside the std bound", () => {
     ).toBe("invalid");
 });
 test("all financing enum policy combinations compile", () => {
+  // The example exposes escrow returns; borrower-directed plans exclude them.
+  const policySource = source.replace(
+    /^    expose unwind(?:_undelivered|_paid)? as .*\n/gm,
+    "",
+  );
   for (const d of ["funds", "borrower"])
     for (const p of ["on_payment", "by_schedule", "at_disbursement"])
       for (const a of [
@@ -44,7 +49,7 @@ test("all financing enum policy combinations compile", () => {
           for (const f of ["carry", "require_waiver"])
             expect(
               compile(
-                source.replace(
+                policySource.replace(
                   "months: 3",
                   `months: 3, disburse_to: ${d}, profit_earned: ${p}, apply: ${a}, allow_overdue: ${o}, assessed_fines: ${f}`,
                 ),
@@ -56,8 +61,8 @@ test("late-charge waterfall needs the bounded ceiling while ordinary actions ret
   const witness = source
     .replace("months: 3", "months: 366")
     .replace(
-      /\}\s*$/,
-      `\n attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, borrower: actor }\n}`,
+      /(?=  attach plan = financing\.installments)/,
+      `  attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, borrower: actor }\n`,
     );
   const result = compile(witness);
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));

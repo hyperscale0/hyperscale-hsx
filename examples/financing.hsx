@@ -1,32 +1,52 @@
-// A tuition lender funds a student's fees over three interest-free instalments with borrowing limits.
-program tuition_instalments "Tuition instalments"
+// Riyadh language academy finance pays 6,900 SAR tuition to the academy at enrolment.
+// The student repays three monthly instalments of 2,300 SAR with no financing profit or late fee.
+program tuition_instalments "Riyadh language academy finance"
 use financing
+party academy: business
 
-object enrolment "Enrolment" {
+// Bind academy to the training business. Its 6,000 SAR course plus 15% VAT
+// is invoiced outside this plan. Set price to the gross 6,900 SAR invoice.
+// Financing fee: 0%, tax: 0% on principal repayments; no separate service is sold.
+object enrolment "Language course finance" {
   fields { student: text, course: text, price: money }
   columns: [student, course, price]
   attach allowance = financing.limits {
-    expose create as create_allowance
     borrower: owner, per_borrower: 12000 SAR
+    expose create as request_student_allowance
     expose approve as approve_student
   }
   attach budget = financing.portfolio_limit {
-    expose create as create_budget
     limit: 500000 SAR
+    expose create as create_tuition_budget
     expose approve as approve_budget
   }
+  // Approve both limits before funding. Supply three future monthly dates
+  // and a unique settlementIdentity. Funding must precede the first due date.
   attach tuition = financing.installments {
-    expose create as create_tuition
-    borrower: owner, capital: operator
-    months: 3, pricing: flat_total, profit_rate: 0%, disburse_to: borrower
-    limits: allowance, portfolio: budget
+    borrower: owner, capital: operator, seller: academy
+    months: 3, pricing: flat_total, profit_rate: 0%, share: 0%
+    disburse_to: seller, limits: allowance, portfolio: budget
+    payoff_rebate: 100%, refund_within: 30d, write_off_after: 90d
+    max_extension: 30d, max_amendments: 1, amendment_expiry: 7d
+    expose create as quote_tuition_plan
     expose sign as sign_tuition_plan
-    expose disburse as fund_tuition
+    expose disburse as pay_academy
+    expose cancel as decline_tuition_quote
+    expose void as cancel_unfunded_plan
     expose payoff as repay_early
+    expose complete as close_repaid_plan
   }
 }
 
-expose enrolment.tuition.payment.create as create_payment
+expose enrolment.tuition.payment.create as record_student_payment
 expose enrolment.tuition.payment.pay as pay_instalment
-expose enrolment.tuition.payment.refund as refund_payment
+expose enrolment.tuition.payment.refund as refund_mistaken_payment
 expose enrolment.tuition.payoff_quote.create as request_payoff_quote
+// A hardship extension adds no profit and needs the student's acceptance.
+expose enrolment.tuition.amendment.create as propose_payment_extension
+expose enrolment.tuition.amendment.accept as accept_payment_extension
+expose enrolment.tuition.amendment.decline as decline_payment_extension
+expose enrolment.tuition.amendment.withdraw as withdraw_payment_extension
+expose enrolment.tuition.write_off_request.create as request_overdue_write_off
+expose enrolment.tuition.write_off_request.apply as approve_overdue_write_off
+expose enrolment.tuition.write_off_request.cancel as cancel_write_off_request

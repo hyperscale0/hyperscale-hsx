@@ -3,7 +3,8 @@ import { compile } from "../src/compile.ts";
 import { refusal, rental } from "./fixtures/name-diagnostics.ts";
 
 const parties = "programOperator, programTax, renter";
-const fields = "renter, held, amount, lateFee, dueAt, refund";
+const fields =
+  "renter, held, amount, lateFee, lateTax, startsAt, dueAt, refund, programTaxPayable";
 const states = "pending, funded, returned, cancelled";
 
 // Mutation: drop the root message in checkPath. UDL reports a JSON path on each instrument copy.

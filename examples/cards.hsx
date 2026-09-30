@@ -1,40 +1,57 @@
-// A company issues expense cards to employees and reserves each supplier payment before capture.
-program team_expense_cards "Team expense cards"
+// Riyadh catering cards lets staff reserve supplier purchases up to 5,000 SAR each.
+// Supplier cancellation releases the reservation; captured purchases support a full refund or a reviewed dispute.
+program team_expense_cards "Riyadh catering cards"
 use cards
-// supplier is a business this program declares, so plan needs {"partyBindings":{"supplier":"<partyId>"}}.
-// That partyId is an organization customer's: create the Product from this source without the payment
-// and receipt attachments, add the customer with customer.create, activate its access, open its
-// customer_balance account, then compose this source with the binding.
 party supplier: business
 
-object employee "Employee card" {
+// Bind supplier to the food wholesaler. Staff customers own their card records.
+// Card fee: 0%, tax: 0% on card access because the caterer charges staff nothing.
+// A supplier invoice might be 2,000 SAR plus 15% VAT, paid as one 2,300 SAR
+// authorization. cards does not calculate or remit the supplier's invoice VAT.
+object employee "Catering expense card" {
   fields { employeeName: text, department: text }
   columns: [employeeName, department]
   attach holder = cards.cardholder {
-    expose create as create_holder
     holder: owner
+    expose create as enrol_employee
     expose activate as activate_employee
     expose suspend as suspend_employee
+    expose resume as restore_employee
+    expose close as close_employee_access
+    expose operator_close as remove_employee_access
   }
   attach card = cards.card {
-    expose create as create_card
-    holder: holder, person: owner, spend_limit: 5000 SAR
+    holder: holder, person: owner, issuer: operator, spend_limit: 5000 SAR
+    expose create as issue_card
     expose activate as activate_card
-    expose freeze as freeze_card
-    expose unfreeze as unfreeze_card
+    expose freeze as freeze_lost_card
+    expose unfreeze as restore_found_card
     expose issuer_freeze as block_card
     expose issuer_unfreeze as unblock_card
+    expose cancel as cancel_card
+    expose issuer_cancel as retire_employee_card
   }
+  // Supply the gross invoice amount and expiresAt, such as 24 hours after
+  // ordering. Pending and approved authorizations expire without capture.
   attach payment = cards.authorization {
-    expose create as create_payment
-    card: card, merchant: supplier
+    card: card, merchant: supplier, issuer: operator
+    expose create as request_supplier_payment
     expose approve as approve_payment
-    expose capture as capture_payment
-    expose reverse as reverse_payment
+    expose decline as decline_payment
+    expose capture as capture_delivered_order
+    expose reverse as cancel_supplier_reservation
   }
   attach receipt = cards.transaction {
-    expose create as create_receipt
     authorization: payment
-    expose refund as refund_payment
+    expose create as record_captured_purchase
+    expose refund as refund_supplier_purchase
   }
+  attach complaint = cards.dispute {
+    transaction: receipt, issuer: operator, within: 30d
+    expose create as dispute_supplier_purchase
+    expose review as review_purchase_dispute
+    expose win as uphold_dispute_and_refund
+  }
+  // A dispute unresolved after 30 days becomes lost. A refund always needs
+  // the supplier's funds; the card header does not prove card-network settlement.
 }

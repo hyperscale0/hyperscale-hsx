@@ -1,41 +1,66 @@
-// A business lender refers overdue instalments to an agency with limits on collection contacts.
-program business_collections "Small business collections"
+// Jeddah cafe equipment finance lends 24,000 SAR over 12 months and refers debt seven days overdue.
+// Its agency earns 10% of each recovery from the lender, with at most four contacts per 30 days.
+program business_collections "Jeddah cafe equipment finance"
 use collections
 use financing
-// agency is a business this program declares, so plan needs {"partyBindings":{"agency":"<partyId>"}}.
-// That partyId is an organization customer's: create the Product from this source without the recovery
-// and contact attachments, add the customer with customer.create, activate its access, open its
-// customer_balance account, then compose this source with the binding.
 party agency: business
 
-object facility "Business loan" {
+// Bind agency to the collector. The cafe owns the facility. Set price to
+// 24,000 SAR: 6% flat profit is 1,440 SAR, repaid in twelve 2,120 SAR payments.
+// Loan fee: 0%, tax: 0% on principal. The agency invoices 15% VAT on its
+// recovery service outside collections.case, which posts only the 10% fee.
+object facility "Cafe equipment facility" {
   fields { businessName: text, purpose: text, price: money }
   columns: [businessName, purpose, price]
-  attach allowance = financing.limits { expose create as create_allowance, expose approve as approve_borrower, borrower: owner, per_borrower: 100000 SAR }
-  attach budget = financing.portfolio_limit { expose create as create_budget, expose approve as approve_budget, limit: 2000000 SAR }
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: 100000 SAR
+    expose create as request_borrower_limit
+    expose approve as approve_borrower
+  }
+  attach budget = financing.portfolio_limit {
+    limit: 2000000 SAR
+    expose create as create_lending_budget
+    expose approve as approve_budget
+  }
+  // Approve both limits and provide twelve future due dates before disbursement.
   attach loan = financing.installments {
-    expose create as create_loan
-    borrower: owner, capital: operator
-    months: 12, pricing: amortizing, profit_rate: 6%, disburse_to: borrower
+    borrower: owner, capital: operator, share: 0%
+    months: 12, pricing: flat_total, profit_rate: 6%, disburse_to: borrower
+    payoff_rebate: 100%, refund_within: 30d, write_off_after: 90d
     limits: allowance, portfolio: budget
+    expose create as quote_equipment_loan
     expose sign as sign_loan
     expose disburse as release_loan
+    expose cancel as decline_loan_quote
+    expose void as cancel_unfunded_loan
     expose payoff as repay_early
+    expose complete as close_repaid_loan
   }
+  // Select matching plan, overdue slice and pending payment when opening.
+  // Recovery pays that payment, not necessarily the whole remaining debt.
   attach recovery = collections.case {
-    expose create as create_recovery
-    on: loan, agency: agency
-    expose assign as assign_case
-    expose recover as recover_payment
-    expose recall as recall_case
+    on: loan, agency: agency, capital: operator, overdue: 7d, fee: 10%
+    expose create as refer_overdue_instalment
+    expose assign as assign_agency
+    expose recover as collect_referred_payment
+    expose recall as recall_collection_case
+    expose return_uncollected as return_uncollected_case
   }
   attach contact = collections.contact {
-    expose create as create_contact
     case: recovery, agency: agency
+    max_contacts: 4, window: 30d, contact_from: 9, contact_until: 18
+    timezone: "Asia/Riyadh"
+    expose create as record_collection_contact
   }
 }
 
-expose facility.loan.payment.create as create_payment
+expose facility.contact.outcome.create as record_contact_outcome
+expose facility.loan.payment.create as record_repayment
 expose facility.loan.payment.pay as pay_instalment
-expose facility.loan.payment.refund as refund_payment
+expose facility.loan.payment.refund as refund_mistaken_repayment
 expose facility.loan.payoff_quote.create as request_payoff_quote
+// A disputed contact can be recorded, then capital can recall the case.
+// Uncollectible principal needs a separate capital decision after 90 days.
+expose facility.loan.write_off_request.create as request_overdue_write_off
+expose facility.loan.write_off_request.apply as approve_overdue_write_off
+expose facility.loan.write_off_request.cancel as cancel_write_off_request

@@ -1,16 +1,19 @@
-// A business rents equipment with a 1,000 riyal deposit and a single 50 riyal late fee.
-// On-time return refunds 1,000 riyals; late return pays the operator 50 riyals and refunds 950 riyals.
-program equipment_rental "Equipment rental"
+// Dammam equipment hire holds a 1,000 SAR deposit for a business renter.
+// Return the deposit in full, or deduct a single 50 SAR late charge plus 7.50 SAR VAT.
+program equipment_rental "Dammam equipment hire"
 party renter: business
 
-// The renter is one declared business, so this instrument takes no parameters.
+// Bind renter to the business hiring the equipment. The deposit has fee 0%
+// and tax 0% because it stays refundable principal. The late service has 15% VAT.
 instrument deposit {
-  summary: "Hold a rental deposit, then return it less any fixed late fee."
+  summary: "Hold security until return, with one disclosed late charge."
   fields {
     renter: account of renter
     held: account of self
     amount: money = 1000 SAR
     lateFee: money = 50 SAR
+    lateTax: money = rate(self.lateFee, 15%)
+    startsAt: date
     dueAt: date
     refund: money?
   }
@@ -18,10 +21,12 @@ instrument deposit {
   action create {
     actor: { party: renter }
     requires self.dueAt > self.now
+    requires self.startsAt > self.now
+    requires self.dueAt > self.startsAt
   }
   action fund {
     from: pending, to: funded, actor: { party: renter }
-    deadline: { at: self.dueAt }
+    deadline: { at: self.startsAt }
     moves self.amount from self.renter to self.held
   }
   action return_on_time {
@@ -34,24 +39,30 @@ instrument deposit {
     from: funded, to: returned, actor: { party: programOperator }
     due: { at: self.dueAt }
     subject { returnReference: text }
-    calculate: [{ target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.lateFee }] }]
+    calculate: [{ target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.lateFee }, { field: self.lateTax }] }]
     moves self.lateFee from self.held to programOperator
+    moves self.lateTax from self.held to programTax
     moves self.refund from self.held to self.renter
+  }
+  action refund_before_pickup {
+    from: funded, to: cancelled, actor: { party: renter }
+    deadline: { at: self.startsAt }
+    moves self.held.balance from self.held to self.renter
   }
   action cancel { from: pending, to: cancelled, actor: { party: renter } }
 }
 
-object rental "Equipment rental" {
-  fields { equipment: text }
-  columns: [equipment, dueAt]
+object rental "Equipment deposit" {
+  fields { equipment: text, serialNumber: text, renterName: text }
+  columns: [equipment, serialNumber, renterName, startsAt, dueAt]
   attach security = deposit {
-    // dueAt is a column, so it stays shared object metadata.
-    rename { dueAt: dueAt }
+    rename { startsAt: startsAt, dueAt: dueAt }
     expose create as agree_rental
     expose fund as pay_deposit
     expose return_on_time as return_equipment
     expose return_late as return_equipment_late
-    expose cancel as cancel_rental
+    expose refund_before_pickup as cancel_before_pickup
+    expose cancel as cancel_unpaid_rental
   }
 }
 
@@ -59,4 +70,5 @@ hide deposit.create
 hide deposit.fund
 hide deposit.return_on_time
 hide deposit.return_late
+hide deposit.refund_before_pickup
 hide deposit.cancel

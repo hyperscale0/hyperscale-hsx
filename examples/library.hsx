@@ -1,15 +1,71 @@
-// A minimal financed car sale connects escrow to a three-instalment plan and lending limits.
-program cars "Financed car sales"
+// Riyadh used van finance funds a 34,500 SAR van over three monthly instalments.
+// The dealer is paid after delivery and acceptance; a verified return unwinds financing before the buyer gets a refund.
+program cars "Riyadh used van finance"
 use escrow
 use financing
-object car "Cars" {
- fields { make: text, model: text, year: integer }
- attach sale = escrow.hold { expose create as create_sale, payer: actor, payee: owner, expose fund as sell }
- attach limits = financing.limits { expose create as create_limits, borrower: actor, per_borrower: 60000 SAR }
- attach ceiling = financing.portfolio_limit { expose create as create_ceiling, limit: 1500000 SAR }
- attach plan = financing.installments {
-  borrower: actor, capital: operator, share: 25%
-  months: 3, pricing: flat_total, profit_rate: 2.5%, funds: sale, limits: limits, portfolio: ceiling
-  expose create as finance
- }
+party dealer: business
+
+// Bind dealer to the vehicle seller. Set price to its gross 34,500 SAR invoice;
+// vehicle VAT stays on that invoice. The platform fee is 2% plus 15% VAT
+// on the fee: 690 SAR and 103.50 SAR. The dealer receives 33,706.50 SAR.
+object car "Financed van purchase" {
+  fields { make: text, model: text, year: integer, vin: text, price: money }
+  columns: [make, model, year, vin, price]
+  attach sale = escrow.hold {
+    payer: actor, payee: dealer
+    fee: { seller: 2%, tax: 15% }
+    deliver_within: 7d, accept_within: 3d
+    expose create as agree_van_purchase
+    expose fund as pay_cash_instead
+    expose deliver as confirm_van_delivery
+    expose accept as accept_van
+    expose dispute as dispute_van_condition
+    expose verify_return as verify_returned_van
+    expose refund as refund_buyer_after_unwind
+    expose refund_undelivered as refund_undelivered_cash_purchase
+    expose settle_release as resolve_for_dealer
+    expose settle_return as resolve_for_buyer
+    expose settle_refund as finish_buyer_refund
+    expose cancel as cancel_unfunded_purchase
+  }
+  // Limits are shared across purchases. Approve each once before disbursement.
+  attach limits = financing.limits {
+    borrower: actor, per_borrower: 60000 SAR
+    expose create as request_borrower_limit
+    expose approve as approve_borrower_limit
+  }
+  attach ceiling = financing.portfolio_limit {
+    limit: 1500000 SAR
+    expose create as create_lending_budget
+    expose approve as approve_lending_budget
+  }
+  // At 34,500 SAR, 2.5% flat profit is 862.50 SAR for the whole term.
+  // Financing fee: 0%, tax: 0% on principal; no separate financing service fee.
+  // Supply three future monthly dates and a unique settlementIdentity.
+  attach plan = financing.installments {
+    borrower: actor, capital: operator, share: 0%
+    months: 3, pricing: flat_total, profit_rate: 2.5%
+    funds: sale, limits: limits, portfolio: ceiling
+    returned_goods: refund_all, refund_within: 30d, write_off_after: 90d
+    expose create as finance
+    expose sign as sign_finance_agreement
+    expose disburse as fund_van_escrow
+    expose cancel as decline_finance_quote
+    expose void as cancel_signed_finance
+    expose payoff as repay_early
+    expose complete as close_repaid_finance
+    // Refund paid instalments before unwinding an active plan. Then refund
+    // the escrow remainder. A live plan blocks the escrow's direct refund.
+    expose unwind as unwind_returned_van_finance
+    expose unwind_undelivered as unwind_missing_van_finance
+    expose unwind_paid as unwind_repaid_van_finance
+  }
 }
+
+expose car.plan.payment.create as record_repayment
+expose car.plan.payment.pay as pay_instalment
+expose car.plan.payment.refund as refund_mistaken_repayment
+expose car.plan.payoff_quote.create as request_payoff_quote
+expose car.plan.write_off_request.create as request_overdue_write_off
+expose car.plan.write_off_request.apply as approve_overdue_write_off
+expose car.plan.write_off_request.cancel as cancel_write_off_request

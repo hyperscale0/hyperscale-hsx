@@ -1,31 +1,46 @@
-// A device retailer collects the purchase price and attaches cover with a claim review process.
-program device_insurance "Device insurance"
+// Jeddah device cover sells a 1,725 SAR tablet and a 115 SAR annual protection period.
+// The retailer keeps 10% of each premium; cancelled future periods reverse that commission and the insurer's portion.
+program device_insurance "Jeddah device cover"
 use insurance
 use money
 
-object device "Insured device" {
+// The retailer invoices the tablet at 1,500 SAR plus 15% VAT outside
+// money.transfer. Purchase fee: 0%. The transfer pays the gross 1,725 SAR.
+// The insurer invoices 100 SAR plus 15% VAT for the premium outside
+// insurance.cover, which has no tax setting.
+// At 115 SAR premium, commission is 11.50 SAR and insurer cash is 103.50 SAR.
+object device "Insured tablet" {
   fields { model: text, serialNumber: text, purchaseDate: date }
-  columns: [model, serialNumber, purchaseDate]
+  columns: [model, serialNumber, purchaseDate, coverExpiresAt]
   attach purchase = money.transfer {
-    expose create as create_purchase
-    payer: owner, payee: operator
+    payer: owner, payee: operator, amount: 1725 SAR
     economics pay { purpose: earning, sourceParty: owner }
-    expose pay as pay_for_device
+    expose create as create_purchase
+    expose pay as pay_for_tablet
+    expose cancel as cancel_unpaid_purchase
   }
-  // conformance_boundary is the sandbox insurer adapter; swap in the insurer's registered adapter to go live.
-  // Premiums net of commission go to its account. The default broker is the retailer, which keeps the commission.
-  // claim_limit is the sum insured, set per cover at creation.
+  // Bind the insurer's registered adapter before launch. conformance_boundary
+  // is only the sandbox adapter. Set the cover expiry to the policy end date.
   attach protection = insurance.cover {
-    expose create as create_protection
-    holder: owner, adapter: "conformance_boundary", commission: 10%, covers: purchase
+    holder: owner, broker: operator, adapter: "conformance_boundary"
+    covers: purchase, premium: 115 SAR, commission: 10%, claim_limit: 1500 SAR
+    rename { expiresAt: coverExpiresAt }
+    expose create as request_cover
     expose activate as activate_cover
-    expose cancel as cancel_cover
+    expose cancel as cancel_and_refund_future_cover
   }
+  // Supply loss evidence, the claim amount and its decision expiry.
+  // The 1,500 SAR limit applies to all approved and paid claims on the cover.
   attach claim = insurance.claim {
-    expose create as create_claim
     cover: protection, inspector: operator
+    expose create as report_damage
     expose approve as approve_claim
     expose deny as deny_claim
     expose pay as pay_claim
   }
 }
+
+// Create the annual period with startsAt and endsAt, then collect its premium.
+// Cancelling cover refunds only paid periods that have not started.
+expose device.protection.slice.create as create_premium_period
+expose device.protection.slice.collect as pay_cover_premium
