@@ -2250,6 +2250,9 @@ export function compile(
                       validatedRequirements.push(result.data);
                     }
                     const declaration = {
+                      ...(adapter.onboarding
+                        ? { onboarding: [...adapter.onboarding] }
+                        : {}),
                       provider: adapter.provider,
                       capability: adapter.capability,
                       operation,
