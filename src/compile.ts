@@ -2658,6 +2658,33 @@ export function compile(
                         "write party_name: 70%",
                       );
                     total += Number(literal(rate));
+                    const recipientRole = subjectPartyRoles.includes(
+                      recipient.value as SubjectPartyRole,
+                    );
+                    if (
+                      attachmentInfo &&
+                      (recipientRole ||
+                        document.parties[recipient.value]?.kind ===
+                          "business") &&
+                      !Object.values(attachmentInfo.parties).some(
+                        (binding) =>
+                          ("role" in binding &&
+                            binding.role === recipient.value) ||
+                          ("party" in binding &&
+                            binding.party === recipient.value),
+                      )
+                    ) {
+                      let binding = "splitRecipient";
+                      for (
+                        let index = 2;
+                        Object.hasOwn(attachmentInfo.parties, binding);
+                        index++
+                      )
+                        binding = `splitRecipient${index}`;
+                      attachmentInfo.parties[binding] = recipientRole
+                        ? { role: recipient.value as SubjectPartyRole }
+                        : { party: recipient.value };
+                    }
                     const target = `${name}_${key}_share${index + 1}`;
                     if (fields.some((f) => f.name === target))
                       fail(

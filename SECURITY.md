@@ -19,7 +19,7 @@ This compiler reads untrusted source and emits a document a runtime then
 executes, so the interesting failures are the ones a source file can cause:
 
 - **A program that compiles but should not**, especially one whose emitted
-  pieces do not partition their total, whose exits do not drain custody, or
+  pieces do not partition their total, whose exits do not drain instance-owned ledger accounts, or
   whose fees move money the source did not authorise. A `valid` verdict on an
   unsound program is the worst bug this package can have.
 - **A program that makes the lexer, parser, checker, or lowering burn

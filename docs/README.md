@@ -1,5 +1,7 @@
 # HSX
 
+Read [how Hyperscale fits](https://hyperscale0.ai/docs/runtime.md#how-hyperscale-fits) for provider authority and the shared operation API.
+
 HSX composes a company's objects, agreements and actions into a typed program.
 A repair approval can change state without moving money. A rental can collect a
 deposit and refund it under declared rules. Headers supply reusable instruments;
@@ -299,44 +301,6 @@ with typed input in the same transaction.
 The compiler removes branches excluded by fixed enum tunables. An invalid program reports its source line
 and a correction. No artifact is returned with diagnostics.
 
-## Financing policies
-
-`financing.installments` keeps principal and fixed profit as claims from
-activation. The company chooses how profit is priced, where funding goes and when
-profit becomes earned. All choices use accounts, calculations and moves in the same
-two books.
-
-`pricing` has no default, so every plan states it. `amortizing` reads
-`profit_rate` as an annual rate on the declining balance: equal monthly
-instalments from standard annuity maths, interest and instalment rounded half up,
-the last instalment absorbing the rounding. 12,000 SAR at 18% over 12 months is
-11 instalments of 1,100.16 SAR and a last one of 1,100.19 SAR, 13,201.95 SAR in
-total. `flat_total` reads `profit_rate` as one charge on principal for the whole
-term, rounded down and split evenly with the remainder in position 1: murabaha and
-fixed-fee pay-later. The same 12,000 SAR at 18% `flat_total` costs 14,160 SAR.
-
-| Tunable                            | Default                  | Selected behavior                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `disburse_to`                      | `funds`                  | `funds` pays down payment and principal into the hold and confirms it. `borrower` credits principal to the borrower's balance. `seller` pays principal to the `seller` party at activation; after capital refunds every paid payment, capital's `unwind` debits it back from the seller and cancels open slices.                                                                                                                   |
-| `profit_earned`                    | `on_payment`             | `on_payment` collects unearned profit on payment. `by_schedule` moves unearned claims to earned claims at each slice's date. `at_disbursement` makes that move at activation. Cash arrives only on payment.                                                                                                                                                                                                                        |
-| `apply`                            | `fines_profit_principal` | Visit each slice in position order; within that slice collect assessed fines by overdue date, evidenced costs, profit, then principal. `principal_profit` collects each slice in position order, principal before profit. `pro_rata` uses the slice's fixed principal:profit ratio (its own principal and profit under `amortizing`), caps each side by its collectible balance, and assigns the remainder without stranding cash. |
-| `payoff_rebate`                    | `100%`                   | Reverse this share of unearned profit to borrower debt. Collect the remainder and all earned profit with outstanding principal.                                                                                                                                                                                                                                                                                                    |
-| `late_charge.fines_to`             | `programOperator`        | Receive fine cash and fund its refunds.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `late_charge.costs_to`             | `programOperator`        | Receive evidenced recovery cash and fund its refunds.                                                                                                                                                                                                                                                                                                                                                                              |
-| `collections.case.fee`             | `20%`                    | After payment succeeds, transfer this share of the payment amount from plan capital to the agency.                                                                                                                                                                                                                                                                                                                                 |
-| `lending.distribution.residual_to` | `programOperator`        | Receive the cash remainder and own the claim loss remainder after weighted distribution.                                                                                                                                                                                                                                                                                                                                           |
-
-Each slice owns separate unearned and earned claim accounts. Scheduled recognition
-uses a dated child record so a partial payment cannot disable the maturity clock.
-A normal payment collects only earned profit for the schedule and disbursement
-choices; payoff can also collect non-rebated unearned profit. Partial fines and
-costs stay assessed until their receivable reaches zero. Immutable receipts let
-a refund restore only what that payment collected. The plan's payment receipt
-records actual principal and profit after all ordered collections finish.
-Write-off moves principal and earned profit claims to loss and reverses unearned
-profit to debt. `write_off_after` sets how long a slice must be overdue before a capital-authorized
-write-off request can apply. There is no provision policy.
-
 ## Header branches and bounds
 
 A header may select action clauses at compile time:
@@ -416,28 +380,6 @@ On refusal, inspect `result.diagnostics`; no artifact is returned.
 [object example](../examples/library.hsx) shows authenticated role bindings.
 The [playground](https://hyperscale0.ai/playground/) compiles locally in the browser.
 
-## Standard-library behavior
-
-Read the instrument's states, time gates and moves before promising a money
-outcome. A compiler pass does not prove that required actions are exposed,
-adapters are bound, participants have funds, or the flow can finish.
-
-| Instrument                                 | Behavior                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `financing.installments`                   | `share` allocates collected profit to a cash payable owned by `capital`. It does not itself pay operator income.                                                                                                                                                                                                                         |
-| `financing.limits`                         | `per_borrower` caps outstanding principal. Both borrower and portfolio limits must be approved before disbursement; attaching them does not approve them.                                                                                                                                                                                |
-| `lending.round`                            | The target is the linked plan's principal. Closing requires commitments and held funds to equal that amount.                                                                                                                                                                                                                             |
-| `lending.distribution`                     | Cash distribution needs an eligible recorded settlement, `prepare_cash`, one share record per funded commitment, then `distribute_cash`. Attaching it moves nothing.                                                                                                                                                                     |
-| `insurance.cover.slice`                    | `collect` credits premium net of commission to the insurer account. The tenant retains commission. `refund` returns both portions; claims reserve insurer funds. External settlement uses the boundary protocol.                                                                                                                         |
-| `financing.installments`, `savings.circle` | Supply explicit date lists when creating agreements. A term count does not generate a monthly calendar. Savings supports at most 60 distinct member seats.                                                                                                                                                                               |
-| `escrow.hold`                              | `fund` takes the whole price. Financing into pending escrow collects the remaining down payment and adds capital principal at disbursement; `fund` is not a down-payment checkout.                                                                                                                                                       |
-| `escrow.hold`                              | Acceptance timeout enters `disputed` without paying the seller. Delivery and return verification belong to `payee`; rebinding it also changes who receives accepted funds.                                                                                                                                                               |
-| `escrow.hold`                              | `deliver_within` (default `14d`) starts at funding. After it passes without delivery, an exposed `refund_undelivered` lets the payer take the whole held price back. Nothing runs it automatically.                                                                                                                                      |
-| `wallet.balance`                           | `topup_fee` (default `0%`) takes a floored percentage of each top-up for the Company. At `1%`, a 100.00 top-up credits 99.00 and earns 1.00.                                                                                                                                                                                             |
-| `booking.reservation`                      | The balance is payable only from `deposit_paid`, so a cancelled booking never takes it. `middle_forfeit` and `late_forfeit` default to `0%`, so every cancellation returns all held money until the author sets them. At departure the clock completes a paid booking and lapses an unpaid one on `late_forfeit`.                        |
-| `financing.late_charge`                    | `fine` is a fixed money amount, not a percentage of overdue principal.                                                                                                                                                                                                                                                                   |
-| `cards.card`                               | `spend_limit` is a per-authorization ceiling, not a monthly aggregate. Bind `person` to the cardholder's `holder`, such as `person: actor`; create refuses any other party. The person freezes, unfreezes and cancels; the issuer uses `issuer_freeze`, `issuer_unfreeze` and `issuer_cancel`, and only `issuer_unfreeze` lifts a block. |
-
 A seller-owned marketplace object can declare `entryActions: [create_order]`
 when `create_order` exposes an attachment's create action with its buyer bound
 to `actor`. This admits active enrolled customers to that action. The default
@@ -465,11 +407,9 @@ the bound party accounts. The aggregate caps still apply across all plans.
 The account primitive creates it automatically and shares it across the Product.
 Zero-tax escrow releases need no additional party setup.
 
-The financing, collections and lending samples expose payment creation, payment,
-refund and payoff quotes through the object's existing action routes. Record
-actions are private: the parent still runs them, but a caller sees one only
-after the program exposes it. A child alias names the full attachment path, for
-example:
+A child action uses the object's existing operation routes. A caller sees it
+only after the program exposes it; admission still checks authority, state and
+provider evidence. A child alias names the full attachment path, for example:
 
 ```hsx
 expose enrolment.tuition.payment.create as create_payment
@@ -484,72 +424,12 @@ same object. The caller must satisfy the header's actor rule. Parties bind from
 the session and object ownership. Retry the same request with the same
 Idempotency-Key to retrieve its result without moving money again.
 
-Supply payment amount and identity at creation. Pass the quote instance as the
-parent payoff's `quote` input. For a late charge on a multi-instalment plan, select
-the overdue child with the creation input `slice`. Repayment uses the declared
-allocation order and payoff rebate; aliases do not change those terms.
-
-The [lending sample](../examples/lending.hsx) also exposes share creation. Callers
-still need dates, agreement inputs, funded wallets and eligible settlements.
 Every agreement reference is an optional creation input on an exposed create.
 With one matching agreement on the object the engine picks it; with several,
 such as a plan's slices or a lending round's settlements, the caller passes the
 chosen instance ID under the reference's name.
-Insurance needs premium-slice records and actions. Savings needs dated
-contribution records. Read each header's creation and lifecycle requirements.
-
-## Checkout and reversals
-
-For financed checkout, expose `installments.collect_down_payment` after `create`
-and `sign`. It credits the linked pending escrow with the missing down payment.
-It does not disburse principal or activate the plan. The later `disburse` action
-uses that credit before collecting any remainder. Borrower-directed financing
-has no checkout collection action. The plan and escrow must agree on payer and
-price.
-
-Expose escrow `cancel` to return money credited before full funding. Plan `void`
-cancels the signed financing agreement but does not cancel its escrow. Between
-funding and delivery, the payee's `refund` returns the full price. After
-delivery, the default return path needs three separate aliases for
-`dispute`, `verify_return` and `refund`. The payee supplies return evidence and
-returns the full price to the payer. `accept` pays the payee instead.
-Marketplace order fulfillment alone does not execute any of these money actions.
-
-Expose `late_charge.create` to create an assessment with matching plan, slice
-and borrower. Only that existing assessment can reach clock-owned `assess` after
-grace. A payment can collect part of a fine without settling the rest. A recovery
-cost assessment is a separate record.
-
-## Separate payments and states
-
-Bind `insurance.cover.broker` to the agency that receives commission. Collection
-pays the insurer's net premium and the broker's commission as two moves. Refunds
-reverse those same portions. The default broker, `programOperator`, is the
-Product's own company and needs no binding.
-`claim.deny` accepts only `submitted`; after approval, `pay` or expiry consumes
-the reservation. `claim_limit` is the sum insured, supplied per cover at creation:
-approved and paid claims on one cover never total more. `adapter` names a
-registered boundary adapter, `conformance_boundary` in sandbox. `covers` is
-optional; the attached object is already the insured thing.
-
-A booking cancellation refunds only its own held cash. Expose `cover.cancel`
-separately for eligible premium refunds before the paid period starts. Active
-and expired premium periods are excluded. A card transaction needs a captured
-authorization and its own record before refund, but no authorization-expiry wait.
-
-A booking runs two clock actions at departure. `complete` takes a `paid`
-booking and pays the held money to `operator`. `lapse` takes a booking still
-`reserved` or `deposit_paid` to `cancelled`: `operator` keeps `late_forfeit` of
-the held money and the customer gets the rest back. An unpaid balance at
-departure therefore costs the customer the same as `cancel_late`, and with the
-default `0%` it costs nothing. Nothing stays held after departure.
-
-A savings membership becomes `received` after its pot payout. Its contribution
-records become `paid` independently. Future contributions can remain pending
-after the member receives the pot; paying a contribution does not advance their
-payout seat. Late contributions remain eligible while the membership is
-`active` or `received` and the circle is `active`. These guards do not promise
-scheduler retries or permit a payout larger than the available cash.
+Read each header's creation and lifecycle requirements. Financial decisions
+come from a provider or the tenant's people; a header records their result.
 
 ## Posted economics in the money flows
 
