@@ -9,6 +9,7 @@ import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
   validateUdl,
   resolveField,
+  sameAccount,
   sameObjectField,
   subjectPartyRoles,
   RESERVED_OBJECT_NAMES,
@@ -614,6 +615,7 @@ export function compile(
     // Lowered objects lose their spans, so each keeps the expression that
     // produced it for the name check after lowering.
     const authored = new WeakMap<object, Expr>();
+    const splitMoves = new WeakSet<object>();
     const declarations = new WeakMap<UdlInstrument, InstrumentDecl>();
     const exposures: { instrument: string; action: string; entry: Entry }[] =
       [];
@@ -2719,6 +2721,7 @@ export function compile(
                       from: moneyPath(from),
                       to: `party.${recipient.value}`,
                     });
+                    splitMoves.add(a.moves.at(-1)!);
                   }
                   if (total !== 10000)
                     fail(
@@ -4332,6 +4335,23 @@ export function compile(
           );
       }
     }
+    // Resolve account bindings after lowering, keeping all share calculations
+    // and original leg keys even when a split allocation stays in its source.
+    for (const instrument of document.instruments)
+      for (const action of Object.values(instrument.actions))
+        action.moves = action.moves.filter(
+          (move) =>
+            !splitMoves.has(move) ||
+            !("amount" in move) ||
+            !sameAccount(
+              document,
+              instrument,
+              move.from,
+              move.to,
+              action.input,
+              action,
+            ),
+        );
     const validated = validateUdl(document);
     if (!validated.ok)
       return {
