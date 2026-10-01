@@ -1,0 +1,23 @@
+// Let a customer add funds and reserve each spend before payment.
+program wallet_base "Offer prepaid credit"
+use wallet
+
+object balance "Balance" {
+  attach balance = wallet.balance {
+    holder: owner
+    expose create as create_balance
+    expose activate as activate_balance
+    expose topup as add_funds
+    expose withdraw as withdraw_funds
+    expose freeze as freeze_balance
+    expose unfreeze as unfreeze_balance
+    expose close as close_balance
+  }
+  attach spend = wallet.spend {
+    wallet: balance, payee: operator, holder: owner
+    expose create as create
+    expose reserve as reserve
+    expose pay as pay
+    expose cancel as cancel
+  }
+}

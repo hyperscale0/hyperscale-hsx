@@ -1,0 +1,12 @@
+// Collect a payment from a customer.
+program money_base "Collect a payment"
+use money
+
+object purchase "Purchase" {
+  attach payment = money.transfer {
+    payer: owner, payee: operator
+    expose create as create
+    expose pay as pay
+    expose cancel as cancel
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.258",
+  "version": "1.0.265",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -36,6 +36,7 @@
     "./cost": "./src/cost.ts",
     "./language": "./src/language.ts",
     "./examples": "./src/examples.ts",
+    "./bases": "./src/bases.ts",
     "./package.json": "./package.json",
     "./std/*": "./std/*"
   },
@@ -49,6 +50,7 @@
     "bin",
     "dist",
     "docs",
+    "bases",
     "examples",
     "std",
     "src"
@@ -66,14 +68,15 @@
     "postpack": "bun scripts/pack-exports.ts restore",
     "prepack": "bun run build && bun scripts/pack-exports.ts apply",
     "std:bundle": "bun scripts/bundle-std.ts",
-    "generate": "bun run std:bundle && bun run examples:bundle",
-    "prepare": "bun run std:bundle && bun run examples:bundle",
+    "generate": "bun run std:bundle && bun run examples:bundle && bun run bases:bundle",
+    "prepare": "bun run std:bundle && bun run examples:bundle && bun run bases:bundle",
     "check": "bun run typecheck && tsc -p playground/tsconfig.json && bun test test",
-    "examples:bundle": "bun scripts/bundle-examples.ts"
+    "examples:bundle": "bun scripts/bundle-examples.ts",
+    "bases:bundle": "bun scripts/bundle-bases.ts"
   },
   "dependencies": {
-    "@hyperscale0/adl": "1.0.258",
-    "@hyperscale0/udl": "1.0.258",
+    "@hyperscale0/adl": "1.0.265",
+    "@hyperscale0/udl": "1.0.265",
     "fast-sha256": "1.3.0"
   },
   "devDependencies": {

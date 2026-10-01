@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add eleven neutral archetype programs in `bases/` and the browser export
+  `@hyperscale0/hsx/bases`. Generation and preparation bundle their source and
+  metadata. Package checks enforce compilation, coverage and neutral content.
+
 - Rewrite all 15 ready-made products as Saudi business examples with SAR prices,
   explicit fees and VAT treatment, named business counterparties, useful list
   columns, and supported payment, refund, dispute and overdue paths.

@@ -1,0 +1,38 @@
+// Turn a seller’s offer into an order with payment held until acceptance.
+program marketplace_base "Connect buyers and sellers"
+use marketplace
+use escrow
+party seller: business
+
+object order "Order" {
+  fields { price: money }
+  attach offer = marketplace.listing {
+    seller: seller
+    expose create as create_offer
+    expose publish as publish_offer
+    expose withdraw as withdraw_offer
+    expose sell as sell_offer
+  }
+  attach order = marketplace.order {
+    listing: offer, buyer: owner, fulfiller: seller
+    expose create as create_order
+    expose commit as commit_order
+    expose fulfill as fulfill_order
+    expose cancel as cancel_order
+  }
+  attach payment = escrow.hold {
+    payer: owner, payee: seller
+    expose create as create
+    expose fund as fund
+    expose deliver as deliver
+    expose accept as accept
+    expose dispute as dispute
+    expose verify_return as verify_return
+    expose refund as refund
+    expose refund_undelivered as refund_undelivered
+    expose settle_release as settle_release
+    expose settle_return as settle_return
+    expose settle_refund as settle_refund
+    expose cancel as cancel
+  }
+}

@@ -1,0 +1,36 @@
+// Fund a purchase and collect its scheduled repayments.
+program financing_base "Split a purchase into instalments"
+use financing
+party seller: business
+
+object purchase "Purchase" {
+  fields { price: money }
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: runtime
+    expose create as request_limit
+    expose approve as approve_limit
+  }
+  attach budget = financing.portfolio_limit {
+    limit: runtime
+    expose create as create_budget
+    expose approve as approve_budget
+  }
+  // Architect sets the placeholder profit rate during tailoring.
+  attach plan = financing.installments {
+    borrower: owner, capital: operator
+    months: 2, pricing: flat_total, profit_rate: 0%
+    disburse_to: seller, seller: seller, limits: allowance, portfolio: budget
+    expose create as quote
+    expose sign as sign
+    expose disburse as fund
+    expose cancel as cancel_quote
+    expose void as cancel_plan
+    expose payoff as repay_early
+    expose complete as complete
+  }
+}
+
+expose purchase.plan.payment.create as record_payment
+expose purchase.plan.payment.pay as pay_instalment
+expose purchase.plan.payment.refund as refund_payment
+expose purchase.plan.payoff_quote.create as quote_payoff

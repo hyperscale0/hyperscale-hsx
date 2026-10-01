@@ -1,0 +1,38 @@
+// Reserve a card payment within its spending limit before capture.
+program cards_base "Control card spending"
+use cards
+party seller: business
+
+object card "Card" {
+  attach holder = cards.cardholder {
+    holder: owner
+    expose create as create_holder
+    expose activate as activate_holder
+    expose suspend as suspend_holder
+    expose resume as resume_holder
+    expose close as close_holder
+  }
+  attach card = cards.card {
+    holder: holder, person: owner, issuer: operator, spend_limit: runtime
+    expose create as create_card
+    expose activate as activate_card
+    expose freeze as freeze_card
+    expose unfreeze as unfreeze_card
+    expose issuer_freeze as issuer_freeze_card
+    expose issuer_unfreeze as issuer_unfreeze_card
+    expose cancel as cancel_card
+  }
+  attach payment = cards.authorization {
+    card: card, merchant: seller, issuer: operator
+    expose create as create
+    expose approve as approve
+    expose decline as decline
+    expose capture as capture
+    expose reverse as reverse
+  }
+  attach receipt = cards.transaction {
+    authorization: payment
+    expose create as record_payment
+    expose refund as refund
+  }
+}

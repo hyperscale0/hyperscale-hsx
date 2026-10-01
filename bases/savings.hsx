@@ -1,0 +1,20 @@
+// Collect contributions into a shared pot and pay each member in turn.
+program savings_base "Save as a group"
+use savings
+
+object pot "Pot" {
+  attach circle = savings.circle {
+    contribution: runtime, members: 2, starts: runtime
+    expose create as create_circle
+    expose disband as disband_circle
+    expose close as close_circle
+  }
+  attach membership = savings.membership {
+    circle: circle, member: actor
+    expose create as join
+    expose activate as activate_membership
+    expose withdraw as withdraw
+  }
+}
+
+expose pot.membership.contribution.create as schedule_contribution

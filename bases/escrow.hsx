@@ -1,0 +1,23 @@
+// Hold a buyer’s payment until delivery is accepted.
+program escrow_base "Hold payment until delivery"
+use escrow
+party seller: business
+
+object order "Order" {
+  fields { price: money }
+  attach payment = escrow.hold {
+    payer: owner, payee: seller
+    expose create as create
+    expose fund as fund
+    expose deliver as deliver
+    expose accept as accept
+    expose dispute as dispute
+    expose verify_return as verify_return
+    expose refund as refund
+    expose refund_undelivered as refund_undelivered
+    expose settle_release as settle_release
+    expose settle_return as settle_return
+    expose settle_refund as settle_refund
+    expose cancel as cancel
+  }
+}

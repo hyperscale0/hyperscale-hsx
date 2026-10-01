@@ -1,0 +1,22 @@
+// Collect cover premiums and reserve approved claims for payment.
+program insurance_base "Protect a purchase"
+use insurance
+
+object purchase "Purchase" {
+  attach cover = insurance.cover {
+    holder: owner, adapter: "conformance_boundary"
+    expose create as create_cover
+    expose activate as activate_cover
+    expose cancel as cancel_cover
+  }
+  attach claim = insurance.claim {
+    cover: cover, inspector: operator
+    expose create as create_claim
+    expose approve as approve_claim
+    expose deny as deny_claim
+    expose pay as pay_claim
+  }
+}
+
+expose purchase.cover.slice.create as create_period
+expose purchase.cover.slice.collect as collect_premium

@@ -1,0 +1,40 @@
+// Report outstanding balances and overdue repayments on financed purchases.
+program reporting_base "Track repayments"
+use reporting
+use financing
+
+object purchase "Purchase" {
+  fields { price: money }
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: runtime
+    expose create as request_limit
+    expose approve as approve_limit
+  }
+  attach budget = financing.portfolio_limit {
+    limit: runtime
+    expose create as create_budget
+    expose approve as approve_budget
+  }
+  // Architect sets the placeholder profit rate during tailoring.
+  attach plan = financing.installments {
+    borrower: owner, capital: operator
+    months: 2, pricing: flat_total, profit_rate: 0%
+    disburse_to: borrower, limits: allowance, portfolio: budget
+    expose create as quote
+    expose sign as sign
+    expose disburse as fund
+    expose cancel as cancel_quote
+    expose void as cancel_plan
+    expose payoff as repay_early
+    expose complete as complete
+  }
+  attach reports = reporting.portfolio {
+    on: plan
+    expose create as create_reports
+  }
+}
+
+expose purchase.plan.payment.create as record_payment
+expose purchase.plan.payment.pay as pay_instalment
+expose purchase.plan.payment.refund as refund_payment
+expose purchase.plan.payoff_quote.create as quote_payoff

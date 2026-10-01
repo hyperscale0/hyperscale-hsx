@@ -1,0 +1,73 @@
+// Pool member commitments to fund a loan and distribute repayments or losses.
+program lending_base "Pool funds for lending"
+use lending
+use financing
+use wallet
+
+object plan "Plan" {
+  fields { price: money }
+  attach allowance = financing.limits {
+    borrower: owner, per_borrower: runtime
+    expose create as request_limit
+    expose approve as approve_limit
+  }
+  attach budget = financing.portfolio_limit {
+    limit: runtime
+    expose create as create_budget
+    expose approve as approve_budget
+  }
+  // Architect sets the placeholder profit rate during tailoring.
+  attach plan = financing.installments {
+    borrower: owner, capital: operator
+    months: 2, pricing: flat_total, profit_rate: 0%
+    disburse_to: borrower, limits: allowance, portfolio: budget
+    expose create as quote
+    expose sign as sign
+    expose disburse as fund
+    expose cancel as cancel_quote
+    expose void as cancel_plan
+    expose payoff as repay_early
+    expose complete as complete
+  }
+  attach balance = wallet.balance {
+    holder: actor
+    expose create as create_balance
+    expose activate as activate_balance
+    expose topup as add_funds
+    expose withdraw as withdraw_funds
+    expose close as close_balance
+  }
+  attach round = lending.round {
+    borrower: owner, plan: plan
+    expose create as open_round
+    expose close as close_round
+  }
+  attach commitment = lending.commitment {
+    round: round, wallet: balance, investor: actor
+    expose create as commit
+    expose withdraw as withdraw_commitment
+  }
+  attach returns = lending.distribution {
+    round: round, receipt: plan.settlement
+    expose create as record_settlement
+    expose prepare_cash as prepare_returns
+    expose distribute_cash as distribute_returns
+  }
+  attach losses = lending.distribution {
+    round: round, receipt: plan.settlement, mode: loss
+    expose create as record_loss
+    expose prepare_loss as prepare_losses
+    expose distribute_loss as distribute_losses
+  }
+}
+
+expose plan.plan.payment.create as record_payment
+expose plan.plan.payment.pay as pay_instalment
+expose plan.plan.payment.refund as refund_payment
+expose plan.plan.payoff_quote.create as quote_payoff
+
+expose plan.returns.share.create as create_return_share
+expose plan.losses.share.create as create_loss_share
+expose plan.plan.write_off_request.create as request_write_off
+expose plan.plan.write_off_request.apply as apply_write_off
+expose plan.plan.write_off_request.cancel as cancel_write_off
