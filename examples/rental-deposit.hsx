@@ -1,11 +1,10 @@
-// Dammam equipment hire holds a 1,000 SAR deposit for a business renter.
+// Equipment rental holds a 1,000 SAR deposit for the customer who owns each rental.
 // Return the deposit in full, or deduct a single 50 SAR late charge plus 7.50 SAR VAT.
-program equipment_rental "Dammam equipment hire"
-party renter: business
+program equipment_rental "Equipment rental deposits"
 
-// Bind renter to the business hiring the equipment. The deposit has fee 0%
+// Bind renter to the customer who owns this rental. The deposit has fee 0%
 // and tax 0% because it stays refundable principal. The late service has 15% VAT.
-instrument deposit {
+instrument deposit(renter: party) {
   summary: "Hold security until return, with one disclosed late charge."
   fields {
     renter: account of renter
@@ -56,6 +55,7 @@ object rental "Equipment deposit" {
   fields { equipment: text, serialNumber: text, renterName: text }
   columns: [equipment, serialNumber, renterName, startsAt, dueAt]
   attach security = deposit {
+    renter: owner
     rename { startsAt: startsAt, dueAt: dueAt }
     expose create as agree_rental
     expose fund as pay_deposit
@@ -65,10 +65,3 @@ object rental "Equipment deposit" {
     expose cancel as cancel_unpaid_rental
   }
 }
-
-hide deposit.create
-hide deposit.fund
-hide deposit.return_on_time
-hide deposit.return_late
-hide deposit.refund_before_pickup
-hide deposit.cancel

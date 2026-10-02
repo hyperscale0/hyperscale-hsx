@@ -1,5 +1,5 @@
 name: Bug report
-description: The compiler accepted something it should refuse, refused something it should accept, or emitted the wrong IR.
+description: The compiler accepted something it should refuse, refused something it should accept, or emitted the wrong UDL.
 labels: ["bug", "needs-triage"]
 body:
   - type: markdown
@@ -30,7 +30,7 @@ body:
     id: expected
     attributes:
       label: What you expected instead
-      description: Which verdict, which diagnostic, or which part of the IR should differ, and why.
+      description: Which verdict, which diagnostic, or which part of the UDL should differ, and why.
     validations:
       required: true
 
@@ -39,7 +39,7 @@ body:
     attributes:
       label: Version
       description: Output of `hsx --version`.
-      placeholder: "1.0.0-beta.1"
+      placeholder: "1.0.265 (UDL 1)"
     validations:
       required: true
 

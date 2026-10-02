@@ -9,9 +9,8 @@ security-sensitive belongs in an issue, a pull request, a discussion, or a
 commit message.
 
 A report we can act on names the affected version and gives us something to
-run: the `.hsx` source, and what you expected the compiler to do with it. If
-you can shape it as a fixture under `test/fixtures/`, do that; it goes straight
-into the fix.
+run: the `.hsx` source, and what you expected the compiler to do with it. A
+failing spec is the most useful shape; it goes straight into the fix.
 
 ## What counts
 
@@ -23,22 +22,12 @@ executes, so the interesting failures are the ones a source file can cause:
   whose fees move money the source did not authorise. A `valid` verdict on an
   unsound program is the worst bug this package can have.
 - **A program that makes the lexer, parser, checker, or lowering burn
-  unbounded time or memory.** The schedule, split, and money-event limits bound
-  the output; `src/limits.ts` bounds the input, and a source over either of its
-  ceilings is refused with a diagnostic rather than read.
-
-  The stages behind that ceiling are linear, measured rather than assumed. The
-  lexer was timed on 21 adversarial inputs, one per branch of the scanner:
-  unterminated strings, unclosed comments, single-character invalid runs, one
-  quarter-megabyte invalid run, digit and percent soup, and interleaved open
-  delimiters. Across a 64x range of input size its cost per byte grew at most
-  1.44x, where a quadratic scanner would grow 64x. The worst admitted file
-  costs 9.8 ms to lex and 21.1 ms to compile. A payload that makes any stage
-  cost meaningfully more than that per byte is a finding worth reporting.
-
-- **A crash.** Parsing and checking are total by design: they return
-  diagnostics, they never throw. A source file that throws out of `compile()`
-  is a bug even when the program is nonsense.
+  unbounded time or memory.** The parser refuses source over 256 KiB with
+  `HSX1004`, and block or expression nesting deeper than 32. A way around
+  either, or a stage whose cost grows faster than its input, is a finding
+  worth reporting.
+- **A crash.** `compile()` reports invalid source as diagnostics. A source
+  file that makes it throw is a bug even when the program is nonsense.
 - **A diagnostic that reports the wrong source coordinates**, which sends an
   author to fix the wrong line.
 
@@ -47,8 +36,8 @@ anything that requires already controlling the machine running it.
 
 ## Supported versions
 
-Alpha releases are supported at the newest published `alpha` version only.
-Fixes land there; there is no backport branch before 1.0.0.
+Fixes land in the newest published `1.0.N` release. Older releases get no
+backports.
 
 ## Disclosure
 

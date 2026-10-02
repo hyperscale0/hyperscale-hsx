@@ -4,6 +4,7 @@ import { compile } from "../src/compile.ts";
 const program = `program p "All"
 use money
 use escrow
+use purchase
 use financing
 use insurance
 use lending
@@ -23,10 +24,11 @@ object item "Item" {
   attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
   attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: sale }
   attach clm = insurance.claim { cover: cov, inspector: inspector }
-  attach sale = escrow.hold { payer: actor, payee: owner }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
-  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
+  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: checkout, limits: limits, portfolio: ceiling }
   attach late = financing.late_charge { on: plan, borrower: actor, fines_to: operator, costs_to: operator }
   attach case = collections.case { on: plan, agency: supplier, capital: operator }
   attach inv_wallet = wallet.balance { holder: investor }
@@ -87,6 +89,7 @@ test("standard library money actions name the accountable party", () => {
 test("each party that starts an agreement can enter through its create", () => {
   const result = compile(`program entry "Entry"
 use escrow
+use purchase
 use financing
 use insurance
 use wallet
@@ -94,10 +97,11 @@ use savings
 object item "Item" {
   entryActions: [pay, cap, finance, open_line, cover, open_wallet, join]
   fields { price: money }
-  attach sale = escrow.hold { payer: actor, payee: owner, expose create as pay }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner, expose create as pay }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR, expose create as cap }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
-  attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, funds: sale, limits: limits, portfolio: ceiling, expose create as finance }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
+  attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, funds: checkout, limits: limits, portfolio: ceiling, expose create as finance }
   attach line = financing.credit_line { borrower: actor, adapter: "bank", limit: 1000 SAR, expires: 2027-12-31, expose create as open_line }
   attach draw = financing.advance { line: line, borrower: actor }
   attach cov = insurance.cover { holder: actor, adapter: "insurer", expose create as cover }

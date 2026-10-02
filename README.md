@@ -20,7 +20,8 @@ npx hsx cost rental.hsx
 
 Start with the [first program and rental guide](docs/README.md). Save the
 [rental source](examples/rental-deposit.hsx) as `rental.hsx` for these commands.
-It holds 1,000 SAR, charges a one-time 50 SAR late fee, and returns the remainder.
+It holds 1,000 SAR, charges one 50 SAR late fee plus 7.50 SAR VAT, and returns
+the remainder.
 The guide explains the fixed business binding and the host needed to execute it.
 
 `npx hsx headers --json` prints every std instrument and its tunables from the

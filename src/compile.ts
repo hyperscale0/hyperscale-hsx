@@ -241,6 +241,24 @@ const automatic = (actor: UdlAction["actor"]) =>
   (actor !== null && typeof actor === "object" && "parent" in actor);
 const title = (name: string) =>
   name[0]!.toUpperCase() + name.slice(1).replaceAll("_", " ");
+/** Parties an instrument names itself: account owners, actors, move endpoints. */
+function namedParties(instrument: UdlInstrument): string[] {
+  const names = instrument.fields.flatMap((field) =>
+    field.type === "account" && typeof field.owner === "string"
+      ? [field.owner]
+      : [],
+  );
+  for (const action of Object.values(instrument.actions)) {
+    if (typeof action.actor === "object" && "party" in action.actor)
+      names.push(action.actor.party);
+    for (const move of action.moves) {
+      if (move.economics) names.push(move.economics.sourceParty);
+      for (const endpoint of "from" in move ? [move.from, move.to] : [])
+        if (endpoint.startsWith("party.")) names.push(endpoint.slice(6));
+    }
+  }
+  return names;
+}
 function entries(block: BlockExpr): Map<string, Expr> {
   const map = new Map<string, Expr>();
   for (const row of block.entries) {
@@ -283,6 +301,12 @@ function text(expr: Expr): string {
   );
 }
 function decimal(raw: string, scale: number, expr: Expr): string {
+  if (raw.startsWith("-"))
+    fail(
+      expr,
+      "literal cannot be negative",
+      "write a positive value; a move's from and to set its direction",
+    );
   const [whole = "", fraction = ""] = raw.split(".");
   if (!/^\d+$/.test(whole) || fraction.length > scale)
     fail(
@@ -389,6 +413,12 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
   if (expr.kind === "text") return expr.value;
   if (expr.kind === "name" && ["true", "false"].includes(expr.value))
     return expr.value === "true";
+  if (expr.kind === "name" && expr.value === "runtime")
+    fail(
+      expr,
+      "this value is fixed when the program compiles, so it cannot be runtime",
+      "write a literal value",
+    );
   return fail(expr, "expected a literal", "write a typed constant");
 }
 
@@ -1453,7 +1483,7 @@ export function compile(
               )
                 fail(
                   v,
-                  `${param.key} is outside ${bounds.minimum}..${bounds.maximum}`,
+                  `value is outside ${bounds.minimum}..${bounds.maximum}`,
                   "choose a value inside the tunable's bounds",
                 );
             } catch (error) {
@@ -1524,7 +1554,7 @@ export function compile(
             "name the compared tunables",
           );
         const numericKind = (expr: Expr) =>
-          expr.kind === "name" && /^P/.test(expr.value)
+          expr.kind === "name" && /^P(?:\d|T)/.test(expr.value)
             ? "duration"
             : expr.kind;
         if (
@@ -1627,6 +1657,7 @@ export function compile(
         return lowered;
       };
       const fields: UdlField[] = [];
+      const boundaryReceipts = new Map<string, string>();
       const calculations: UdlCalculation[] = [];
       let currentAction: UdlAction | undefined;
       let currentActionName: string | undefined;
@@ -2070,6 +2101,38 @@ export function compile(
         actions: Object.create(null) as UdlInstrument["actions"],
         actionOrder: [],
       };
+      const actionTargets = new Set<string>();
+      const collectTargets = (block: BlockExpr): void => {
+        for (const entry of block.entries)
+          if (entry.key.startsWith("when "))
+            collectTargets(asBlock(entry.value));
+          else if (entry.key === "calculate")
+            for (const item of entry.value.kind === "list"
+              ? entry.value.items
+              : [entry.value]) {
+              const target =
+                item.kind === "block" ? entries(item).get("target") : undefined;
+              if (target) actionTargets.add(String(data(target)));
+            }
+      };
+      for (const row of decl.body.entries)
+        if (row.key.startsWith("action ")) collectTargets(asBlock(row.value));
+      // Instrument calculations run before every action, create included, so
+      // a fee or split calculates there only on an amount held from create.
+      const heldFromCreate = (amount: UdlValue): boolean => {
+        if (!("field" in amount)) return true;
+        const [root, name, ...rest] = amount.field.split(".");
+        const field = fields.find((item) => item.name === name);
+        return (
+          root === "self" &&
+          !rest.length &&
+          !!field &&
+          !actionTargets.has(name!) &&
+          (!field.optional ||
+            "value" in field ||
+            calculations.some((node) => node.target === name))
+        );
+      };
       for (const row of decl.body.entries.filter((e) =>
         e.key.startsWith("action "),
       )) {
@@ -2407,7 +2470,7 @@ export function compile(
           ...(actionSubject ? { subject: actionSubject } : {}),
         };
         authored.set(a, row.value);
-        const actionFeeCalculations: UdlCalculation[] = [];
+        const moveCalculations: UdlCalculation[] = [];
         for (const binding of boundaryBindings)
           if (
             !a.subject?.adapters.find((entry) => entry.binding === binding)
@@ -2447,12 +2510,28 @@ export function compile(
               const op = parts.has("operation")
                 ? String(data(parts.get("operation")!))
                 : "internal_transfer.create";
-              if (op === "internal_transfer.reserve" && !parts.has("capture"))
-                fail(
-                  move,
-                  "reserve needs a receipt field",
-                  "add capture: receipt_name",
-                );
+              if (op === "internal_transfer.reserve" && !parts.has("capture")) {
+                if (!parts.has("boundary"))
+                  fail(
+                    move,
+                    "reserve needs a receipt field",
+                    "add capture: receipt_name",
+                  );
+                const capture = `${name}Receipt`;
+                if (fields.some((field) => field.name === capture))
+                  fail(
+                    move,
+                    "boundary receipt name is already used",
+                    "name each reservation with an explicit capture",
+                  );
+                fields.push({ name: capture, type: "text", optional: true });
+                boundaryReceipts.set(name, capture);
+                parts.set("capture", {
+                  kind: "text",
+                  value: capture,
+                  span: move.span,
+                });
+              }
               if (
                 (op === "internal_transfer.post" ||
                   op === "internal_transfer.void") &&
@@ -2643,6 +2722,7 @@ export function compile(
                     );
                   let total = 0;
                   const pieces: UdlValue[] = [];
+                  const perAction = !heldFromCreate(val(amount));
                   for (const [index, [party, rate]] of shares.entries()) {
                     const recipient = resolve({
                       kind: "name",
@@ -2694,8 +2774,12 @@ export function compile(
                         "split field name conflicts",
                         "rename the move key",
                       );
-                    fields.push({ name: target, type: "money" });
-                    calculations.push(
+                    fields.push({
+                      name: target,
+                      type: "money",
+                      ...(perAction ? { optional: true } : {}),
+                    });
+                    (perAction ? moveCalculations : calculations).push(
                       index === shares.length - 1 && pieces.length
                         ? {
                             target,
@@ -2797,6 +2881,22 @@ export function compile(
                       "write seller: 1% or buyer: 1%",
                     );
                   const quoted = terms.get(paidBy)!;
+                  // An account the agreement owns holds only what was moved
+                  // into it, so a charge on top has nothing to come from.
+                  if (
+                    paidBy === "buyer" &&
+                    fields.some(
+                      (field) =>
+                        `self.${field.name}` === transfer.from &&
+                        field.type === "account" &&
+                        field.owner === "self",
+                    )
+                  )
+                    fail(
+                      quoted,
+                      `a buyer fee cannot come from \`${transfer.from.slice("self.".length)}\`, which holds only the moved amount`,
+                      "use a seller fee, which comes out of the held amount",
+                    );
                   const rate = quoted.kind === "capped" ? quoted.rate : quoted;
                   if (rate.kind !== "percent")
                     fail(
@@ -2805,11 +2905,7 @@ export function compile(
                       "write a percentage such as 1%",
                     );
                   const prefix = `${name}_${key}`;
-                  // Instrument calculations run at create, before any action
-                  // input exists, so a fee on an input amount runs with its action.
-                  const perAction =
-                    "field" in transfer.amount &&
-                    transfer.amount.field.startsWith("input.");
+                  const perAction = !heldFromCreate(transfer.amount);
                   const derived = (
                     suffix: string,
                     label: string,
@@ -2828,7 +2924,7 @@ export function compile(
                       label,
                       ...(perAction ? { optional: true } : {}),
                     });
-                    (perAction ? actionFeeCalculations : calculations).push({
+                    (perAction ? moveCalculations : calculations).push({
                       ...calculation,
                       target,
                     } as UdlCalculation);
@@ -2960,8 +3056,8 @@ export function compile(
             }
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
-        if (actionFeeCalculations.length)
-          a.calculate = [...(a.calculate ?? []), ...actionFeeCalculations];
+        if (moveCalculations.length)
+          a.calculate = [...(a.calculate ?? []), ...moveCalculations];
         if (attachmentInfo) {
           if (attachmentInfo.exposed.has(name)) {
             if (automatic(a.actor))
@@ -3060,6 +3156,14 @@ export function compile(
         inst.actions[name] = a;
         inst.actionOrder.push(name);
       }
+      for (const action of Object.values(inst.actions))
+        for (const move of action.moves)
+          if ("transfer" in move) {
+            const receipt = boundaryReceipts.get(
+              move.transfer.replace(/^self\./, ""),
+            );
+            if (receipt) move.transfer = `self.${receipt}`;
+          }
       if (attachmentInfo && !attachmentInfo.child)
         applyAttachmentEconomics(
           document,
@@ -3339,6 +3443,21 @@ export function compile(
           bindingDiagnostics.push(error.diagnostic);
           continue;
         }
+        // A business the instrument names itself binds like a parameter, so
+        // Build asks for it and the engine resolves its account and principal.
+        // programOperator and programTax are the company's own accounts.
+        for (const party of document.instruments
+          .slice(firstAttachedInstrument)
+          .flatMap(namedParties))
+          if (
+            document.parties[party]?.kind === "business" &&
+            party !== "programOperator" &&
+            party !== "programTax" &&
+            !Object.values(parties).some(
+              (binding) => "party" in binding && binding.party === party,
+            )
+          )
+            parties[party] ??= { party };
         const attachedInst = document.instruments.find((i) => i.id === instId);
         for (const createdInst of document.instruments
           .slice(firstAttachedInstrument)

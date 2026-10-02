@@ -3,6 +3,7 @@
 program cars "Riyadh used van finance"
 use escrow
 use financing
+use purchase
 party dealer: business
 
 // Bind dealer to the vehicle seller. Set price to its gross 34,500 SAR invoice;
@@ -13,6 +14,7 @@ object car "Financed van purchase" {
   columns: [make, model, year, vin, price]
   attach sale = escrow.hold {
     payer: actor, payee: dealer
+    funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }
     fee: { seller: 2%, tax: 15% }
     deliver_within: 7d, accept_within: 3d
     expose create as agree_van_purchase
@@ -42,10 +44,14 @@ object car "Financed van purchase" {
   // At 34,500 SAR, 2.5% flat profit is 862.50 SAR for the whole term.
   // Financing fee: 0%, tax: 0% on principal; no separate financing service fee.
   // Supply three future monthly dates and a unique settlementIdentity.
+  attach checkout = purchase.checkout {
+    plans: plan, funds: sale, borrower: actor, capital: operator
+    expose create as prepare_financed_purchase
+  }
   attach plan = financing.installments {
     borrower: actor, capital: operator, share: 0%
     months: 3, pricing: flat_total, profit_rate: 2.5%
-    funds: sale, limits: limits, portfolio: ceiling
+    funds: checkout, limits: limits, portfolio: ceiling
     returned_goods: refund_all, refund_within: 30d, write_off_after: 90d
     expose create as finance
     expose sign as sign_finance_agreement

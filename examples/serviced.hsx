@@ -3,6 +3,7 @@
 program car_financing "Dammam delivery van finance"
 use escrow
 use financing
+use purchase
 use collections
 party dealer: business
 
@@ -13,6 +14,7 @@ object car "Delivery van finance" {
   columns: [make, model, year, vin, price]
   attach sale = escrow.hold {
     payer: actor, payee: dealer
+    funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }
     fee: { seller: 1%, tax: 15% }, deliver_within: 14d, accept_within: 3d
     expose create as agree_van_purchase
     expose fund as pay_cash_instead
@@ -40,13 +42,17 @@ object car "Delivery van finance" {
   // Down payment is 6,900 SAR. Capital is 62,100 SAR; total flat profit is
   // 5,278.50 SAR. Financing service fee: 0%, tax: 0% on principal repayments.
   // Supply 36 future monthly dates. Approve limits before collecting and funding.
+  attach checkout = purchase.checkout {
+    plans: plan, funds: sale, borrower: actor, capital: operator
+    expose create as prepare_financed_purchase
+  }
   attach plan = financing.installments {
     borrower: actor, capital: operator, share: 0%
     months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
     apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
     refund_within: 30d, payoff_quote_expiry: 1h, returned_goods: refund_all
     max_extension: 60d, max_amendments: 2, amendment_expiry: 7d
-    funds: sale, limits: limits, portfolio: ceiling
+    funds: checkout, limits: limits, portfolio: ceiling
     expose create as finance
     expose sign as sign_contract
     expose collect_down_payment as pay_down_payment

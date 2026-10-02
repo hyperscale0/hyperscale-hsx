@@ -242,15 +242,17 @@ instrument validator {
 test("Standard financing family resolution works with standard library", () => {
   const source = `program std_financing "StdFinancing"
 use escrow
+use purchase
 use financing
 object contract "Contract" {
   fields { make: text }
-  attach sale = escrow.hold { payer: actor, payee: owner, expose fund as sell }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner, expose fund as sell }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
   attach plan = financing.installments {
     borrower: actor, capital: operator, share: 25%
-    months: 3, pricing: flat_total, profit_rate: 2.5%, funds: sale, limits: limits, portfolio: ceiling
+    months: 3, pricing: flat_total, profit_rate: 2.5%, funds: checkout, limits: limits, portfolio: ceiling
     expose create as finance
   }
 }

@@ -30,7 +30,7 @@ instrument case(on: ref<financing.installments>[], agency: party, capital: party
     requires unique "overdue_referral" on [self.slice]
   }
   action assign { from: opened, to: assigned, actor: { party: capital } }
-  action recover { expansionLimit: 8192, from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
+  action recover { from: assigned, to: recovered, actor: { party: agency }, requires self.payment.plan == self.plan, invoke: [{ reference: self.payment, action: pay, input: {} }, { reference: self.id, action: pay_fee, input: {} }] }
   action pay_fee { allowZero: true, from: recovered, to: recovered, actor: { parent: current() }, moves self.agencyFee from self.plan.capital to agency economics { recipient: agency, company: { recipient: capital, company: { purpose: internal, sourceParty: capital }, participant: { purpose: earning, sourceParty: capital } }, participant: { recipient: capital, company: { purpose: participant_payout, sourceParty: capital }, participant: { purpose: pass_through, sourceParty: capital } } } }
   action recall { from: [opened, assigned], to: recalled, actor: { party: capital } }
   action return_uncollected { from: assigned, to: returned_uncollected, actor: { party: agency } }

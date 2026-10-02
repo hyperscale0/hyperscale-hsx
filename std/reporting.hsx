@@ -12,7 +12,7 @@ header reporting
 // That zero instruction count does not price report capture, rendering, storage or
 // release. The host owns those charges and their execution.
 
-instrument portfolio(on: ref<financing.installments>[], default_days: integer(1, 3650) = 90, retention_years: integer(1, 100) = 10, aging_first_days: integer(1, 3650) = 30, aging_second_days: integer(1, 3650) = 60, aging_third_days: integer(1, 3650) = 90, ratio_scale: integer(1, 1000000) = 10000, ratio_rounding: enum(floor, halfUp) = floor, lock_wait_ms: integer(1, 2000) = 2000, capture_ms: integer(1, 10000) = 10000, max_rows: integer(1, 100000) = 10000, max_join_rows: integer(1, 1000000) = 100000, max_bytes: integer(1024, 16777216) = 8388608) {
+instrument portfolio(on: ref<financing.installments>[], default_days: integer(1, 3650) = 90, retention_years: integer(1, 100) = 10, aging_first_days: integer(1, 3650) = 30, aging_second_days: integer(1, 3650) = 60, aging_third_days: integer(1, 3650) = 90, ratio_scale: integer(1, 1000000) = 10000, ratio_rounding: enum(floor, halfUp) = floor) {
   summary: "Declared financing reports evaluated over frozen Product facts."
   fields {}
   lifecycle { states: [declared], initial: declared }
@@ -333,11 +333,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
           { left: "scheduleCount", right: "capturedScheduleCount" }
         ],
         unavailableFacts: [  ],
-        lockTimeoutMs: lock_wait_ms,
-        captureTimeoutMs: capture_ms,
-        maxRows: max_rows,
-        maxJoinRows: max_join_rows,
-        maxBytes: max_bytes
       },
       output: {
         profile: "internal.v1",
@@ -679,11 +674,6 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
           { left: "scheduleCount", right: "capturedScheduleCount" }
         ],
         unavailableFacts: [  ],
-        lockTimeoutMs: lock_wait_ms,
-        captureTimeoutMs: capture_ms,
-        maxRows: max_rows,
-        maxJoinRows: max_join_rows,
-        maxBytes: max_bytes
       },
       output: {
         profile: "internal.v1",

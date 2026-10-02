@@ -1,0 +1,89 @@
+header purchase
+
+// A financed purchase connects a repayment plan, a delivery hold and optional
+// marketplace reservations. The hold blocks refunds while checkout is active.
+// Debt cancellation returns outstanding capital before the buyer's own cash.
+instrument checkout(plans: ref<financing.installments>[], funds: ref<escrow.hold>, borrower: party, capital: party = programOperator) {
+  summary: "Fund a purchase and return lender capital before refunding the buyer."
+  fields {
+    funds: ref<funds>, borrower: account of borrower
+    downPaymentCredit: money?, downPaymentRemaining: money?
+  }
+  lifecycle { states: [pending, active, closed], initial: pending }
+  action create { actor: { party: borrower } }
+  action check {
+    from: pending, to: pending, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires input.plan.borrower == self.borrower
+    requires input.plan.borrower == self.funds.payer
+    requires input.plan.price == self.funds.price
+  }
+  action collect { allowZero: true,
+    from: pending, to: pending, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [pending]
+    calculate: [{ target: downPaymentCredit, op: minimum, values: [{ field: self.funds.held.balance }, { field: input.plan.downPayment }] }, { target: downPaymentRemaining, op: subtract, base: { field: input.plan.downPayment }, subtract: [{ field: self.downPaymentCredit }] }]
+    moves self.downPaymentRemaining from self.borrower to self.funds.held economics { purpose: principal, sourceParty: borrower }
+  }
+  action disburse {
+    from: pending, to: active, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [pending]
+    invoke: [{ selection: { instrument: all(marketplace.reservation), reference: "funds", anchor: self.funds, states: [active], limit: 1 }, action: credit, input: { funds: { field: self.funds }, contribution: { field: input.plan.downPayment } } }, { reference: self.id, action: fund, input: { plan: { field: input.plan } } }]
+  }
+  action fund { allowZero: true,
+    from: active, to: active, actor: { parent: current() }
+    input { plan: ref<plans> }
+    calculate: [{ target: downPaymentCredit, op: minimum, values: [{ field: self.funds.held.balance }, { field: input.plan.downPayment }] }, { target: downPaymentRemaining, op: subtract, base: { field: input.plan.downPayment }, subtract: [{ field: self.downPaymentCredit }] }]
+    moves self.downPaymentRemaining from self.borrower to self.funds.held economics { purpose: principal, sourceParty: borrower }
+    moves input.plan.principal from input.plan.capital to self.funds.held economics { purpose: principal, sourceParty: capital }
+    invoke: [{ reference: self.funds, action: confirm, input: {} }]
+  }
+  action write_off {
+    from: active, to: active, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [released]
+  }
+  action refund { allowZero: true,
+    from: active, to: closed, actor: { parent: plans }
+    input { plan: ref<plans>, principal: money }
+    requires input.plan.funds == self.id
+    requires self.funds in [return_verified]
+    moves input.principal from self.funds.held to input.plan.capital economics { purpose: principal, sourceParty: capital }
+  }
+  action cancel_undelivered { allowZero: true,
+    from: active, to: closed, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [funded]
+    moves input.plan.principal from self.funds.held to input.plan.capital economics { purpose: principal, sourceParty: capital }
+    invoke: [{ reference: self.funds, action: finish_refund, input: {} }]
+  }
+  action return_paid {
+    from: active, to: closed, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [return_verified]
+    invoke: [{ reference: self.funds, action: finish_refund, input: {} }]
+  }
+  action unwind_paid_undelivered {
+    from: active, to: closed, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [funded]
+    requires self.funds.deliverBy < self.now
+    invoke: [{ reference: self.funds, action: finish_refund, input: {} }]
+  }
+  action unwind_paid {
+    from: active, to: closed, actor: { parent: plans }
+    input { plan: ref<plans> }
+    requires input.plan.funds == self.id
+    requires self.funds in [funded, return_verified]
+    requires self.funds.deliverBy < self.now
+    invoke: [{ reference: self.funds, action: finish_refund, input: {} }]
+  }
+}

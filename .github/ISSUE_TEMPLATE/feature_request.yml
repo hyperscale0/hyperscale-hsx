@@ -1,12 +1,12 @@
 name: Feature request
-description: Propose a change to the language, the diagnostics, or the emitted IR.
+description: Propose a change to the language, the diagnostics, or the emitted UDL.
 labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
         HSX is small on purpose. The bar for a new keyword or a new archetype is
-        high: it has to describe a settlement shape the existing nine cannot,
+        high: it has to describe a settlement shape the existing std headers cannot,
         and it has to lower to money events the runtime already understands.
         Proposals that make an existing program shorter are easier to land than
         proposals that make a new program possible.
@@ -24,7 +24,7 @@ body:
     id: proposal
     attributes:
       label: What should change
-      description: Which stage moves. Lexer, grammar, checker, lowering, or the IR itself.
+      description: Which stage moves. Lexer, grammar, checker, lowering, or the emitted UDL itself.
     validations:
       required: true
 
@@ -34,8 +34,8 @@ body:
       label: What breaks
       description: >
         Does an existing program change meaning, change verdict, or lower to
-        different money events? If the emitted IR changes shape, say whether
-        HSX_IR_VERSION has to move.
+        different money events? If the emitted UDL changes shape, say whether
+        the UDL format version has to move.
     validations:
       required: true
 

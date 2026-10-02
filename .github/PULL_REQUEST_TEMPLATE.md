@@ -16,9 +16,9 @@ bun test
 ## Checklist
 
 - [ ] `bun run check` passes locally (typecheck plus the full suite).
-- [ ] A grammar, checker, or lowering change comes with a fixture under `test/fixtures/`. A change without a fixture is a change nobody can defend later.
-- [ ] A change to emitted UDL updates its canonical fixture and keeps the UDL package's format law.
-- [ ] A user-visible change is in `CHANGELOG.md` under Unreleased.
+- [ ] A grammar, checker, or lowering change comes with a spec under `test/` that shows one admitted and one refused program. A change without one is a change nobody can defend later.
+- [ ] A change to emitted UDL still passes `validateUdl` and updates every spec that pins that output.
+- [ ] A user-visible change is in `CHANGELOG.md`.
 - [ ] New syntax updates its compiler vocabulary source and `docs/README.md`.
 
 Before the merge the maintainer who asked for this change sends the CLA;

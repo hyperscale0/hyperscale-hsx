@@ -194,13 +194,13 @@ instrument consumer(target: ref) {
     }
 });
 
-test("payout reserves before instruction-bound confirmation posts", () => {
+test("payout authors a business amount and the compiler correlates settlement", () => {
   const result = compile(
     `program payout_test "Payout"
 use money
 party payer: person
 party payee: business
-payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "fixture" }
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
     {
       adapterRegistry: {
@@ -208,46 +208,18 @@ payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d,
       },
     },
   );
-  const actions = result.artifacts?.document.instruments[0]?.actions;
-  expect([
-    actions?.instruct?.moves[0],
-    actions?.instruct?.subject?.adapters[0]?.snapshot?.provider,
-    actions?.confirm?.requires[0],
-    actions?.confirm?.moves[0]?.operation,
-    actions?.reject?.requires[0],
-    actions?.reject?.moves[0]?.operation,
-  ]).toEqual([
-    {
-      key: "move1",
-      operation: "internal_transfer.reserve",
-      amount: { field: "self.amount" },
-      from: "party.payer",
-      to: "party.payee",
-      capture: "receipt",
-      boundary: { adapter: "fixture" },
-    },
-    "conformance_boundary",
-    {
-      kind: "evidence",
-      subject: "self.id",
-      family: "boundary",
-      check: "outcome",
-      result: "confirmed",
-      maxAge: 86400000,
-      instruction: "self.receipt",
-    },
-    "internal_transfer.post",
-    {
-      kind: "evidence",
-      subject: "self.id",
-      family: "boundary",
-      check: "outcome",
-      result: "rejected",
-      maxAge: 86400000,
-      instruction: "self.receipt",
-    },
-    "internal_transfer.void",
-  ]);
+  expect(result.diagnostics).toEqual([]);
+  const actions = result.artifacts!.document.instruments[0]!.actions;
+  const capture = actions.instruct!.moves[0]!.capture;
+  expect(capture).toBeDefined();
+  expect(actions.confirm!.moves[0]).toMatchObject({
+    operation: "internal_transfer.post",
+    transfer: `self.${capture}`,
+  });
+  expect(actions.reject!.moves[0]).toMatchObject({
+    operation: "internal_transfer.void",
+    transfer: `self.${capture}`,
+  });
 });
 
 const boundaryEvidence = `program boundary_evidence "Boundary evidence"
@@ -287,7 +259,7 @@ test("boundary dispatch refuses an unknown adapter binding", () => {
 use money
 party payer: person
 party payee: business
-payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "missing" }
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "missing" }
 `,
     {
       adapterRegistry: Object.create({
@@ -306,7 +278,7 @@ test("direct UDL refuses a boundary without its retained adapter snapshot", () =
 use money
 party payer: person
 party payee: business
-payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, max_age: 1d, adapter: "fixture" }
+payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
     {
       adapterRegistry: {

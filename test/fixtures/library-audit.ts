@@ -1,6 +1,7 @@
 export const libraryAuditSource = `program library_audit "Library audit"
 use money
 use escrow
+use purchase
 use booking
 use marketplace
 use financing
@@ -21,16 +22,17 @@ object item "Item" {
  attach schedule = money.schedule { payer: actor, payee: owner, amount: 750 SAR, count: 3 }
  attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
  attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
- attach payout = money.payout { payer: actor, payee: owner, adapter: "fixture", max_age: 1d }
+ attach payout = money.payout { payer: actor, payee: owner, adapter: "fixture" }
  attach mandate = money.mandate { payer: actor, payee: owner }
  attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
  attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "insurer", covers: sale }
  attach claim = insurance.claim { cover: cov, inspector: inspector }
- attach sale = escrow.hold { payer: actor, payee: owner }
+ attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner }
  attach trip = booking.reservation { customer: actor, operator: owner }
  attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
  attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
- attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+ attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
+  attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: checkout, limits: limits, portfolio: ceiling }
  attach late = financing.late_charge { on: plan, borrower: actor }
  attach line = financing.credit_line { borrower: operator, adapter: "lender", limit: 100000 SAR, expires: 2027-01-01 }
  attach advance = financing.advance { line: line }
@@ -49,7 +51,7 @@ object item "Item" {
  attach dispute = cards.dispute { transaction: transaction }
  attach listing = marketplace.listing { seller: owner }
  attach order = marketplace.order { listing: listing, buyer: actor }
- attach reservation = marketplace.reservation { listing: listing, funds: sale, converters: plan, buyer: actor, seller: owner }
+ attach reservation = marketplace.reservation { listing: listing, funds: sale, converters: checkout, buyer: actor, seller: owner }
  attach circle = savings.circle { contribution: 300 SAR, members: 8, starts: 2027-01-01 }
  attach membership = savings.membership { circle: circle, member: actor }
  attach reports = reporting.portfolio { on: plan }

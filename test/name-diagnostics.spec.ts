@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { refusal, rental } from "./fixtures/name-diagnostics.ts";
 
-const parties = "programOperator, programTax, renter";
+const parties = "programOperator, programTax, owner, actor, operator";
 const fields =
   "renter, held, amount, lateFee, lateTax, startsAt, dueAt, refund, programTaxPayable";
 const states = "pending, funded, returned, cancelled";
@@ -48,12 +48,12 @@ test("a misspelled actor party names itself and suggests the declared party", ()
   expect(
     refusal(
       "action cancel { from: pending, to: cancelled, actor: { party: renter } }",
-      "action cancel { from: pending, to: cancelled, actor: { party: rentr } }",
+      "action cancel { from: pending, to: cancelled, actor: { party: owne } }",
     ),
   ).toMatchObject({
-    at: "rentr",
-    message: "`rentr` is not a declared party. Did you mean `renter`?",
-    fix: `Declare it with \`party rentr: business\`, or name a declared party (${parties}).`,
+    at: "owne",
+    message: "`owne` is not a declared party. Did you mean `owner`?",
+    fix: `Declare it with \`party owne: business\`, or name a declared party (${parties}).`,
   });
 });
 

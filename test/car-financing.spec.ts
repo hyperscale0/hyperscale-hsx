@@ -16,16 +16,18 @@ const carFields = `fields { make: text, model: text, year: integer, vin: text, p
 
 const minimalCarFinancing = `program car_financing "Car financing"
 use escrow
+use purchase
 use financing
 object car "Car" {
   ${carFields}
-  attach sale = escrow.hold { payer: actor, payee: operator }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: operator }
   attach limits = financing.limits { borrower: actor, per_borrower: 250000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
   attach plan = financing.installments {
     borrower: actor, capital: operator
     months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
-    funds: sale, limits: limits, portfolio: ceiling
+    funds: checkout, limits: limits, portfolio: ceiling
     expose create as finance
   }
 }`;
@@ -38,6 +40,7 @@ const servicedCarFinancing = readFileSync(
 
 const institutionalCarFinancing = `program car_financing "Car financing"
 use escrow
+use purchase
 use financing
 use collections
 use insurance
@@ -52,13 +55,14 @@ object facility "Credit facility" {
 }
 object car "Car" {
   ${carFields}
-  attach sale = escrow.hold { payer: actor, payee: operator, expose fund as purchase }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: operator, expose fund as purchase }
   attach limits = financing.limits { borrower: actor, per_borrower: 250000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 10000000 SAR }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
   attach plan = financing.installments {
     borrower: actor, capital: operator
     months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
-    funds: sale, limits: limits, portfolio: ceiling
+    funds: checkout, limits: limits, portfolio: ceiling
     expose create as finance, expose sign as sign_contract, expose payoff as payoff
   }
   attach late = financing.late_charge {

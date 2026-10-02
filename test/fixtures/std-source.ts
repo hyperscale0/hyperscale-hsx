@@ -21,8 +21,9 @@ export function instrument(source: string, id: string) {
 export const financing = `program checkout "Checkout"
 use financing
 use escrow
+use purchase
 object purchase "Purchase" {
- attach sale = escrow.hold {
+ attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] },
   payer: actor, payee: owner
   expose create as order, expose cancel as cancel_checkout
   expose dispute as dispute_order, expose verify_return as verify_return
@@ -30,9 +31,10 @@ object purchase "Purchase" {
  }
  attach limits = financing.limits { borrower: actor, per_borrower: 10000 SAR }
  attach ceiling = financing.portfolio_limit { limit: 100000 SAR }
- attach plan = financing.installments {
+ attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
+  attach plan = financing.installments {
   borrower: actor, capital: operator, months: 4, pricing: flat_total, profit_rate: 0%, down_payment: 25%
-  funds: sale, limits: limits, portfolio: ceiling
+  funds: checkout, limits: limits, portfolio: ceiling
   expose create as finance, expose sign as sign_offer
   expose collect_down_payment as checkout, expose disburse as disburse
  }

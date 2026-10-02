@@ -178,6 +178,10 @@ test("constraints refuse nonnumeric or unlike tunables without throwing", () => 
   for (const [parameters, supplied] of [
     ["first: text, second: text", 'first: "a", second: "b"'],
     ["first: money, second: integer", "first: 1 SAR, second: 2"],
+    [
+      "first: enum(Premium, Basic), second: enum(Plus, Basic)",
+      "first: Premium, second: Plus",
+    ],
   ]) {
     const fixture = headerProgram(
       parameters!,

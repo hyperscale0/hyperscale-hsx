@@ -13,9 +13,10 @@ const errors = (source: string) =>
 
 // Mutation: drop the kin filter from matchable. The cash escrow's refund
 // selects the other object's plan and fails UDL2002.
-test("an unfinanced escrow beside a financed one only selects its own plans", () => {
+test("an unfinanced escrow beside a financed one only blocks on its explicit funding controller", () => {
   const result = build(`program shop "Shop"
 use escrow
+use purchase
 use financing
 object cash_sale "Cash sale" {
   fields { title: text, price: money }
@@ -23,10 +24,11 @@ object cash_sale "Cash sale" {
 }
 object financed_sale "Financed sale" {
   fields { title: text, price: money }
-  attach sale = escrow.hold { payer: owner, expose create as create_financed_payment }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: owner, expose create as create_financed_payment }
   attach allowance = financing.limits { borrower: owner, per_borrower: 20000 SAR, expose create as create_allowance }
   attach budget = financing.portfolio_limit { limit: 2000000 SAR, expose create as create_budget }
-  attach plan = financing.installments { borrower: owner, capital: operator, funds: sale, limits: allowance, portfolio: budget, months: 4, pricing: flat_total, profit_rate: 4%, expose create as finance }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: owner, capital: operator }
+  attach plan = financing.installments { borrower: owner, capital: operator, funds: checkout, limits: allowance, portfolio: budget, months: 4, pricing: flat_total, profit_rate: 4%, expose create as finance }
 }`);
   expect(result.diagnostics).toEqual([]);
   const instruments = result.artifacts!.document.instruments;
@@ -44,7 +46,7 @@ object financed_sale "Financed sale" {
     financed.actions.refund!.requires.some(
       (rule) =>
         rule.kind === "aggregate" &&
-        [rule.selection.instrument].flat().includes("financed_sale_plan"),
+        [rule.selection.instrument].flat().includes("financed_sale_checkout"),
     ),
   ).toBe(true);
 });
@@ -185,6 +187,7 @@ object membership "Membership" {
 test("economics may name a party reached through a sibling reference", () => {
   const result = build(`program shop "Shop"
 use escrow
+use purchase
 use financing
 instrument late_fee(on: ref<financing.installments>) {
   summary: "A late fee on one plan."
@@ -198,10 +201,11 @@ instrument late_fee(on: ref<financing.installments>) {
 }
 object purchase "Purchase" {
   fields { price: money }
-  attach sale = escrow.hold { payer: owner, payee: operator }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: owner, payee: operator }
   attach allowance = financing.limits { borrower: owner, per_borrower: 20000 SAR }
   attach budget = financing.portfolio_limit { limit: 2000000 SAR }
-  attach plan = financing.installments { borrower: owner, capital: operator, funds: sale, limits: allowance, portfolio: budget, months: 4, pricing: flat_total, profit_rate: 4% }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: owner, capital: operator }
+  attach plan = financing.installments { borrower: owner, capital: operator, funds: checkout, limits: allowance, portfolio: budget, months: 4, pricing: flat_total, profit_rate: 4% }
   attach fee = late_fee { on: plan, expose create as propose_late_fee }
 }`);
   expect(result.diagnostics).toEqual([]);

@@ -6,76 +6,15 @@ import {
   standardLibrary,
 } from "./fixtures/std-source.ts";
 
-// Mutation checkout-principal: move self.principal in collect_down_payment.
-test("checkout collects only the down-payment gap before lender disbursement", () => {
-  const plan = instrument(financing, "purchase_plan");
-  const checkout = plan.actions.collect_down_payment!;
-  expect(checkout.publicAction).toBe("checkout");
-  expect(checkout.actor).toEqual({ party: "actor" });
-  expect(plan.lifecycle.transitions.collect_down_payment).toEqual({
-    from: ["signed"],
-    to: "signed",
-  });
-  expect(checkout.requires).toContainEqual({
-    kind: "state",
-    reference: "self.funds",
-    states: ["pending"],
-  });
-  expect(checkout.calculate).toEqual([
-    {
-      target: "downPaymentCredit",
-      op: "minimum",
-      values: [
-        { field: "self.funds.held.balance" },
-        { field: "self.downPayment" },
-      ],
-    },
-    {
-      target: "downPaymentRemaining",
-      op: "subtract",
-      base: { field: "self.downPayment" },
-      subtract: [{ field: "self.downPaymentCredit" }],
-    },
-  ]);
-  expect(checkout.moves).toMatchObject([
-    {
-      from: "self.borrower",
-      to: "self.funds.held",
-      amount: { field: "self.downPaymentRemaining" },
-    },
-  ]);
-  expect(checkout.invoke ?? []).toEqual([]);
-  expect(checkout.allowZero).toBe(true);
-  const funding = plan.actions.fund_down_payment!;
-  expect(funding.calculate).toEqual(checkout.calculate);
-  expect(funding.moves).toMatchObject([
-    { amount: { field: "self.downPaymentRemaining" } },
-    {
-      amount: { field: "self.principal" },
-      from: "self.capital",
-      to: "self.funds.held",
-    },
-  ]);
-});
-
 // Mutation checkout-direct: remove the false requirement in the borrower branch.
 test("direct borrower funding cannot expose escrow checkout", () => {
-  const source = financing.replace("funds: sale", "disburse_to: borrower");
+  const source = financing.replace(
+    "funds: checkout",
+    "disburse_to: borrower, funds: checkout",
+  );
   expect(
     compile(source, { standardLibrary }).diagnostics.map((d) => d.message),
   ).toEqual(["action collect_down_payment is excluded by these bindings"]);
-});
-
-// Mutation checkout-price: remove the plan/escrow price equality.
-test("financing cannot collect against a differently priced escrow", () => {
-  expect(
-    instrument(financing, "purchase_plan").actions.create!.requires,
-  ).toContainEqual({
-    kind: "compare",
-    left: { field: "self.price" },
-    operator: "==",
-    right: { field: "self.funds.price" },
-  });
 });
 
 // Mutation pending-refund: remove the move from escrow.cancel.

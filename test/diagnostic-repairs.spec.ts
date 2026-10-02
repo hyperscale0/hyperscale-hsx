@@ -32,7 +32,7 @@ object membership "Membership" {
   const { result, diagnostic } = refusal(
     draft,
     "Attachment `plan` disburses into a hold, but `funds` is not bound.",
-    "Bind `funds: sale` to an escrow attachment. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly.",
+    "Bind `funds: checkout` to a funding composition. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly.",
   );
   expect(result.diagnostics).toHaveLength(1);
   expect(draft.slice(diagnostic.span.start, diagnostic.span.end)).toContain(

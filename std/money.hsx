@@ -147,24 +147,22 @@ instrument swap(first: party, second: party, first_amount: money, second_amount:
   action expire_both { from: both_ready, to: cancelled, actor: clock, due: { at: self.expiresAt }, moves void self.firstReceipt; moves void self.secondReceipt }
 }
 
-instrument payout(payer: party, payee: party, adapter: text, max_age: duration, amount: money = runtime) {
-  summary: "Reserve funds until matching terminal boundary evidence permits posting."
-  fields { amount: money = amount, receipt: text? }
+instrument payout(payer: party, payee: party, adapter: text, amount: money = runtime) {
+  summary: "Pay the recipient when the provider confirms settlement."
+  fields { amount: money = amount }
   lifecycle { states: [pending, instructed, settled, rejected], initial: pending }
   action create {}
   action instruct {
     from: pending, to: instructed, actor: { party: payer }
-    moves reserve self.amount from payer to payee capture "receipt" boundary adapter
+    moves reserve self.amount from payer to payee boundary adapter
   }
   action confirm {
     from: instructed, to: settled
-    requires evidence self.id family boundary check outcome result confirmed maxAge max_age instruction self.receipt
-    moves post self.receipt
+    moves post instruct
   }
   action reject {
     from: instructed, to: rejected
-    requires evidence self.id family boundary check outcome result rejected maxAge max_age instruction self.receipt
-    moves void self.receipt
+    moves void instruct
   }
 }
 

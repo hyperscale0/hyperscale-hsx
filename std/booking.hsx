@@ -7,7 +7,8 @@ header booking
 // Expose create, pay_deposit and pay_balance for the booking path, and
 // cancel_early, cancel_middle and cancel_late for the customer. Create captures
 // subject departure, price, deposit and balance, and refuses a deposit and balance
-// that do not add up to the price. The balance is payable only after the deposit
+// that do not add up to the price. Both installments must be positive. Creation
+// and deposit payment close at the balance cutoff. The balance is payable only after the deposit
 // and before balance_due ahead of departure, so a cancelled booking never offers
 // it. cancel_early runs until early_until before departure and returns everything
 // held. cancel_middle runs from then until late_from; cancel_late runs from then
@@ -22,6 +23,7 @@ header booking
 // composed counts.
 
 instrument reservation(customer: party = party(person), operator: party = programOperator, early_until: duration = 30d, late_from: duration = 15d, balance_due: duration = 15d, middle_forfeit: percent = 0%, late_forfeit: percent = 0%) {
+  constraints { late_from: less_than(early_until) }
   revisioned: true
   summary: "Take a deposit and a balance for a dated booking, with cancellation windows before departure."
   fields {
@@ -38,11 +40,14 @@ instrument reservation(customer: party = party(person), operator: party = progra
   action create {
     subject { departure: date, price: money, deposit: money, balance: money }
     actor: { party: customer }
-    requires self.departure > self.now
+    requires self.balanceAt > self.now
+    requires self.departure > self.balanceAt
+    requires self.deposit > "0"
+    requires self.balance > "0"
     requires self.split == self.price
   }
   action pay_deposit {
-    from: reserved, to: deposit_paid, actor: { party: customer }
+    from: reserved, to: deposit_paid, actor: { party: customer }, deadline: { at: self.balanceAt }
     moves self.deposit from customer to self.held economics { purpose: principal, sourceParty: customer }
   }
   action pay_balance {

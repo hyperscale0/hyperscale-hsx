@@ -180,3 +180,24 @@ instrument sale(payer: party = missing) {
   expect(header.slice(imported.span.start, imported.span.end)).toBe("missing");
   expect([imported.line, imported.column]).toEqual([2, 32]);
 });
+
+// Mutation: start attachment parties empty and add only parameters, and the
+// engine never binds a business the instrument names itself.
+test("The rental customer binds to the object owner without a business party", () => {
+  const example = readFileSync(
+    new URL("../examples/rental-deposit.hsx", import.meta.url),
+    "utf8",
+  );
+  const result = compile(example);
+  expect(bindings(result)).toEqual({ renter: { role: "owner" } });
+  expect(
+    Object.entries(result.artifacts!.document.parties)
+      .filter(
+        ([name, party]) =>
+          party.kind === "business" &&
+          name !== "programOperator" &&
+          name !== "programTax",
+      )
+      .map(([name]) => name),
+  ).toEqual([]);
+});

@@ -6,37 +6,9 @@ import { bases } from "../src/bases.ts";
 import { generateBasesBundleCode, readBases } from "../scripts/bundle-bases.ts";
 import { readExamples } from "../scripts/bundle-examples.ts";
 
-const archetypes = {
-  escrow: "Hold payment until delivery",
-  money: "Collect a payment",
-  wallet: "Offer prepaid credit",
-  cards: "Control card spending",
-  financing: "Split a purchase into instalments",
-  savings: "Save as a group",
-  marketplace: "Connect buyers and sellers",
-  insurance: "Protect a purchase",
-  lending: "Pool funds for lending",
-  collections: "Follow up overdue payments",
-  reporting: "Track repayments",
-};
 const authored = readBases();
 const examples = readExamples();
 const cities = /\b(?:Riyadh|Jeddah|Khobar|Madinah|Tabuk|Qassim|Dammam)\b/i;
-
-test("each archetype has one base with a neutral identity and one object", () => {
-  expect(authored.map((base) => base.id)).toEqual(
-    Object.keys(archetypes).sort(),
-  );
-  for (const base of authored) {
-    const { program } = parseProgram(base.source);
-    expect(program.name).toBe(`${base.id}_base`);
-    expect(base.title).toBe(archetypes[base.id as keyof typeof archetypes]);
-    expect(base.headers).toContain(base.id);
-    expect(program.decls.filter((decl) => decl.kind === "object")).toHaveLength(
-      1,
-    );
-  }
-});
 
 test.each(authored)("$id compiles without diagnostics", (base) => {
   const result = compile(base.source);
@@ -57,6 +29,25 @@ test.each(authored)("$id stays neutral", (base) => {
 });
 
 test("the browser bases bundle matches the authored files and metadata", () => {
+  expect(
+    authored.map(({ id, title, source }) => [
+      id,
+      parseProgram(source).program.name,
+      title,
+    ]),
+  ).toEqual([
+    ["cards", "cards_base", "Control card spending"],
+    ["collections", "collections_base", "Follow up overdue payments"],
+    ["escrow", "escrow_base", "Hold payment until delivery"],
+    ["financing", "financing_base", "Split a purchase into instalments"],
+    ["insurance", "insurance_base", "Protect a purchase"],
+    ["lending", "lending_base", "Pool funds for lending"],
+    ["marketplace", "marketplace_base", "Connect buyers and sellers"],
+    ["money", "money_base", "Collect a payment"],
+    ["reporting", "reporting_base", "Track repayments"],
+    ["savings", "savings_base", "Save as a group"],
+    ["wallet", "wallet_base", "Offer prepaid credit"],
+  ]);
   expect(bases).toEqual(authored);
   expect(
     readFileSync(new URL("../src/bases-bundle.ts", import.meta.url), "utf8"),

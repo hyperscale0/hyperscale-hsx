@@ -23,7 +23,7 @@ test("financing range accepts the full schedule domain and costs nested children
     if (!doc) throw new Error(JSON.stringify(res.diagnostics));
     expect(
       buildUdlCostManifest(doc).actions["car_plan.create"]!.invocations,
-    ).toBe(m * 3);
+    ).toBe(m * 3 + 1);
   }
 });
 test("financing refuses schedules outside the std bound", () => {
@@ -57,7 +57,7 @@ test("all financing enum policy combinations compile", () => {
             ).toBe("valid");
 });
 
-test("late-charge waterfall needs the bounded ceiling while ordinary actions retain 4096", () => {
+test("late-charge waterfall derives its expansion bound without an authored override", () => {
   const witness = source
     .replace("months: 3", "months: 366")
     .replace(
@@ -72,20 +72,15 @@ test("late-charge waterfall needs the bounded ceiling while ordinary actions ret
       .invocations + 1;
   expect(cost).toBeGreaterThan(4096);
   expect(cost).toBeLessThanOrEqual(8192);
-  delete document.instruments.find((item) => item.id === "car_plan_payment")!
-    .actions.pay!.expansionLimit;
-  const ordinary = validateUdl(document);
-  expect(ordinary.ok).toBe(false);
-  if (!ordinary.ok)
-    expect(ordinary.issues.map((i) => i.message)).toContain(
-      "invocation car_plan_payment.pay exceeds 4096 actions",
-    );
+  expect(JSON.stringify(document)).not.toContain("expansionLimit");
+  expect(validateUdl(document).ok).toBe(true);
 });
 
 test("source-backed compilation accepts all five changed std modules", () => {
   const p = `program p "All"
 use money
 use escrow
+use purchase
 use financing
 use insurance
 use lending
@@ -97,10 +92,11 @@ object item "Item" {
   attach pay = money.transfer { payer: actor, payee: owner, amount: 750 SAR }
   attach cov = insurance.cover { holder: actor, adapter: "motor_insurer", covers: sale }
   attach clm = insurance.claim { cover: cov, inspector: inspector }
-  attach sale = escrow.hold { payer: actor, payee: owner }
+  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner }
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
-  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: sale, limits: limits, portfolio: ceiling }
+  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
+  attach plan = financing.installments { borrower: actor, capital: operator, share: 25%, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: checkout, limits: limits, portfolio: ceiling }
   attach inv_wallet = wallet.balance { holder: investor }
   attach round = lending.round { borrower: actor, plan: plan, minimum_ticket: 100 SAR, investor_cap: 100% }
   attach commit = lending.commitment { round: round, wallet: inv_wallet, investor: investor }

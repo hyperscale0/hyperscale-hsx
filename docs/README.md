@@ -42,10 +42,10 @@ hsx cost lesson.hsx
 `check` exits zero without output on success. `build` writes canonical UDL;
 without `--out` it prints to stdout. `cost` prints instruction counts, described
 below. `format` prints formatted source or writes it with `--out`. `headers --json`
-prints the header manifest. These commands have no `--strict` or `--catalog` option.
-Exit 1 means invalid source; exit 2 means a command or file error. Diagnostics name
-the source, line, column, code, problem and suggested fix. UDL validation keeps
-its UDL diagnostic codes; binding errors can have names such as
+prints the header manifest. Exit 1 means invalid source; exit 2 means a command
+or file error. Diagnostics name the source, line, column, code, problem and
+suggested fix. UDL validation keeps its UDL diagnostic codes; binding errors can
+have names such as
 `subject_party_unbound`. Read the message and fix, not just the code.
 
 At runtime, create a lesson object first, then call `book_lesson` to create its
@@ -57,38 +57,37 @@ and party IDs are not metadata supplied by the caller.
 ## A rental deposit in one hour
 
 Open [rental-deposit.hsx](../examples/rental-deposit.hsx). It is a complete source
-file for a business renting equipment from the program operator. Copy it to
+file for a customer renting equipment from the program operator. Copy it to
 `rental.hsx` and run the same check, build and cost commands against that file.
 No header import is needed because it declares its own instrument.
 
-The terms are a 1,000 SAR deposit and a one-time 50 SAR late fee. The supplied
-`dueAt` timestamp is the cutoff: a return before it gets the whole deposit back;
-a return at or after it gets 950 SAR back. The operator receives the other 50 SAR.
-The late fee is not a daily charge and is not `financing.late_charge`, which
+The terms are a 1,000 SAR deposit and one late charge of 50 SAR plus 15% VAT,
+which is 7.50 SAR. The record's `startsAt` and `dueAt` timestamps reach the
+agreement through `rename`, so `agree_rental` reads them from the object. A
+return before `dueAt` gets the whole deposit back; a return at or after it gets
+942.50 SAR back. The operator receives 50 SAR and `programTax` receives 7.50 SAR.
+The late charge is not a daily charge and is not `financing.late_charge`, which
 requires a financing plan and an overdue installment.
 
-| Step                         | Public action           | Actor and required values                                                             | Money effect                                       |
-| ---------------------------- | ----------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| Create the object            | Host object creation    | Optional `equipment` metadata                                                         | None                                               |
-| Agree terms                  | `agree_rental`          | Bound renter; `dueAt`, for example `2027-01-10T12:00:00+03:00`, must be in the future | Creates the agreement's held account               |
-| Fund before the cutoff       | `pay_deposit`           | Bound renter with 1,000 SAR available                                                 | Renter pays 1,000 SAR into held                    |
-| Record an on-time return     | `return_equipment`      | Operator; `returnReference` metadata                                                  | Held pays 1,000 SAR to renter                      |
-| Or record a late return      | `return_equipment_late` | Operator; `returnReference` metadata                                                  | Held pays 50 SAR to operator and 950 SAR to renter |
-| Cancel an unfunded agreement | `cancel_rental`         | Bound renter, while pending                                                           | None                                               |
+| Step                         | Public action           | Actor and required values                                                                                 | Money effect                                                           |
+| ---------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Create the object            | Host object creation    | Optional `equipment`, `serialNumber`, `renterName`, `startsAt` and `dueAt` metadata                       | None                                                                   |
+| Agree terms                  | `agree_rental`          | Bound renter; `startsAt` and `dueAt`, for example `2027-01-10T12:00:00+03:00`, both future, `dueAt` later | Creates the agreement's held account                                   |
+| Fund before pickup           | `pay_deposit`           | Bound renter with 1,000 SAR available, before `startsAt`                                                  | Renter pays 1,000 SAR into held                                        |
+| Record an on-time return     | `return_equipment`      | Operator, before `dueAt`; `returnReference` metadata                                                      | Held pays 1,000 SAR to renter                                          |
+| Or record a late return      | `return_equipment_late` | Operator, at or after `dueAt`; `returnReference` metadata                                                 | Held pays 50 SAR to operator, 7.50 SAR to tax and 942.50 SAR to renter |
+| Cancel before pickup         | `cancel_before_pickup`  | Bound renter on a funded agreement, before `startsAt`                                                     | Held pays 1,000 SAR back to renter                                     |
+| Cancel an unfunded agreement | `cancel_unpaid_rental`  | Bound renter, while pending                                                                               | None                                                                   |
 
 Choose one return action. Both finish the agreement, so the fee and refund cannot
-repeat. The late action calculates the refund from the held balance before either
+repeat. The late action calculates the refund from the held balance before any
 move runs. Both paths empty the held account. `returnReference` records the
 operator's return evidence; it does not verify the physical return. Time means
 the executor's current time when the action runs, not a caller-supplied return date.
 A late `due` permits the operator action; it does not schedule that action.
 
-This sample binds a declared business named `renter` in Product configuration.
-The renter is one business for the whole Build, so the instrument takes no
-parameters. Changing the renter binding is a Build configuration decision, not a
-different party ID on each request. For per-object participants, give a program
-instrument parameters as a header would, such as `instrument purse(holder: party)`,
-and bind `holder: owner` or `holder: actor` in each `attach` block. A
+The renter is a party parameter bound to the rental object's `owner`. Each rental
+can belong to a different customer without a fixed business binding. A
 parameterized program instrument exists only through its attachments. A `fee` on
 a move of an action input, such as `moves input.amount from holder to self.held
 fee { seller: 1% }`, is calculated when that action runs. Reusable custom headers
@@ -97,8 +96,7 @@ this CLI.
 
 Inspect `objects` in the compiled UDL for the attachment and public names, then
 its instrument for fields, transitions, actors, requirements and ordered moves.
-The `hide deposit.*` lines remove public names from the unattached declaration;
-the attachment exposes its own copy. `money.hold` and `escrow.hold` both refund
+`money.hold` and `escrow.hold` both refund
 whole amounts, so neither implements this partial-refund policy by itself.
 
 A local compile gives you a contract. Executing it needs a host with authenticated
@@ -189,7 +187,7 @@ and basis points. Fee and tax calculations round down. Split percentages sum to
 schedules use positions 1 through n and put the division remainder in position 1.
 Amortizing financing is the exception: it rounds half up and puts the remainder in
 the last instalment, as a standard amortization table does.
-Tax binds `programTax`. Fees default to `programOperator`. Fine, recovery and
+Tax binds `programTax`. Fees go to `programOperator`. Fine, recovery and
 residual destinations are party tunables.
 
 Attached actions are private unless the attachment exposes them with
@@ -284,8 +282,9 @@ maxAge 1d` requires a recent completed provider check.
 only to reservations. Fees settle with create moves, never reservations. A fee move
 also derives `<action>_<move>_debit`, the payer's whole debit: amount plus fee and
 tax when the buyer pays, the amount alone when the seller pays. Repeated clauses keep
-their declaration order. The JSON-like clause form remains accepted and lowers
-to the same [UDL clauses](https://github.com/hyperscale0/hyperscale-udl/blob/main/spec/README.md).
+their declaration order. A clause list after a colon, such as `calculate: [{ ... }]`
+or `invoke: [{ ... }]`, writes [UDL clauses](https://github.com/hyperscale0/hyperscale-udl/blob/main/spec/README.md)
+directly; the std headers use it for calculations, `set` and invocations.
 Use `economics { purpose: earning, sourceParty: merchant }` on a move to
 classify posted money. Other purposes are `principal`, `participant_payout`,
 `internal`, `prepaid_credit`, and `pass_through`. `reversalOf: self.originalTransfer` links a
@@ -369,7 +368,8 @@ the selection limit, so a count is an upper bound rather than observed usage.
 Zero-valued moves can cost fewer actual transfers than their static count.
 
 The rental attachment's create declares one owned account, fund declares one
-transfer, on-time return one, and late return two. These are counts, not SAR
+transfer, on-time return one, and late return three: the charge, its VAT and
+the refund. These are counts, not SAR
 prices. The executor's tariff supplies commercial prices and actual usage.
 
 The compiler API is `compile(source)`. On success, `result.verdict` is `valid`
@@ -395,7 +395,16 @@ customer: `financing.limits` and `financing.installments` (borrower),
 (member). Several customers can each start one on the same record. A plan,
 commitment or other reference resolves the sibling that binds the same
 accounts to the parties both share, so each customer's plan finds its own
-escrow and each investor's commitment finds their own wallet.
+checkout and each investor's commitment finds their own wallet.
+
+A financed purchase connects `financing.installments` to `escrow.hold` through
+`purchase.checkout`. Bind the plan's `funds` to checkout, checkout's `funds` to
+the hold, and checkout's `plans` to the plan. Give the hold the funding policy
+`{ controllers: [checkout], reference: "funds", blocking_states: [active] }`.
+If a marketplace reservation contributes a deposit, its `converters` also names
+checkout. Create the hold, then checkout, then the plan. The coordinator collects
+the missing down payment and returns outstanding lender capital before a buyer
+refund. See [library.hsx](../examples/library.hsx) for the complete wiring.
 
 `financing.limits` and `financing.portfolio_limit` declare `scope: product`.
 Create and approve the portfolio limit once per Product and the borrower limit

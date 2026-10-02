@@ -36,15 +36,14 @@ test("a seller refunds before delivery, or after verifying a return", () => {
   });
   // Only a cancelled plan has returned its principal to capital, so a new
   // installments state blocks both refunds until someone decides otherwise.
-  const funding = instrument(financing, "purchase_plan").lifecycle.states;
   for (const name of ["refund", "refund_undelivered"])
     expect(sale.actions[name]!.requires).toContainEqual(
       expect.objectContaining({
         kind: "aggregate",
         selection: expect.objectContaining({
-          instrument: ["purchase_plan"],
+          instrument: ["purchase_checkout"],
           reference: "funds",
-          states: funding.filter((state) => state !== "cancelled"),
+          states: ["active"],
         }),
         value: { literal: 0 },
       }),
@@ -55,10 +54,10 @@ test("a seller refunds before delivery, or after verifying a return", () => {
 // An escrow-only program then fails to compile, since a parent list needs a member.
 test("only a financed hold has the plan-run unwind", () => {
   const sale = instrument(financing, "purchase_sale");
-  expect(sale.actions.unwind_financed!.actor).toEqual({
-    parent: ["purchase_plan"],
+  expect(sale.actions.finish_refund!.actor).toEqual({
+    parent: ["purchase_checkout"],
   });
-  expect(sale.lifecycle.transitions.unwind_financed).toEqual({
+  expect(sale.lifecycle.transitions.finish_refund).toEqual({
     from: ["funded", "return_verified"],
     to: "refunded",
   });
@@ -70,11 +69,13 @@ object order "Order" {
 }`,
     "order_sale",
   );
-  expect(sale.actions.confirm!.actor).toEqual({ parent: ["purchase_plan"] });
+  expect(sale.actions.confirm!.actor).toEqual({
+    parent: ["purchase_checkout"],
+  });
   expect(plain.actions.confirm).toBeUndefined();
-  expect(plain.actions.unwind_financed).toBeUndefined();
-  expect(plain.lifecycle.transitions.unwind_financed).toBeUndefined();
-  expect(plain.actionOrder).not.toContain("unwind_financed");
+  expect(plain.actions.finish_refund).toBeUndefined();
+  expect(plain.lifecycle.transitions.finish_refund).toBeUndefined();
+  expect(plain.actionOrder).not.toContain("finish_refund");
 });
 
 // Mutation post-approval-denial: add approved to insurance.claim.deny from-states.

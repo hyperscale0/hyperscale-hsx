@@ -8,30 +8,17 @@ header escrow
 // subject.price; acceptance pays payee less the configured fee, not payer.
 // Expose dispute, verify_return and refund separately for the return path.
 // Payer disputes delivered goods; payee verifies return evidence from disputed.
-// Payee refunds the whole held balance before delivery, or from return_verified
-// by default after a dispute. While a financing plan funds the hold in any state
-// but cancelled, both refunds refuse, so a written-off plan never hands lender
-// principal to the payer. Only unwind returns the principal to capital and
-// cancels the plan; after that, refund returns the rest. Before delivery the
-// Product operator runs the plan's unwind_undelivered instead, which invokes
-// unwind_financed here to return the rest to the payer and close the hold.
-// For a paid plan, the plan's unwind_paid runs unwind_financed from funded after
-// deliverBy, and return_hold or unwind_paid runs it from return_verified,
-// depending on the plan's returned_goods.
-// Only an installments plan can run confirm and unwind_financed. In a program
-// without financing neither action exists, so every hold reaches funded through
-// fund, which sets fundedAt. The plan's confirm leaves fundedAt unset, so
-// refund_undelivered never comes due on a financed hold and no schedule offers
-// it. Confirm sets deliverBy, deliver_within after confirmation, and the plan's
-// unwind_paid waits for it so the payee keeps the whole delivery window.
+// Refunds return the held balance to the payer. A composition can supply funding
+// controllers and the states in which they block direct refunds. Only those
+// controllers may confirm outside funding or finish its coordinated refund.
 // Expose refund_undelivered to let the payer take the whole held price back once
 // deliver_within has passed since funding without delivery. It is a payer action
 // that becomes available at that time; nothing runs it automatically.
 // The Product operator settles any disputed hold: settle_release pays the payee
 // as acceptance would, and settle_return moves it to return_verified. Without a
-// live plan, settle_return also runs settle_refund to return the whole balance
-// to the payer. A financed return continues on the plan's returned-goods path,
-// and once that plan is cancelled the operator's settle_refund returns the rest.
+// active funding controller, settle_return also runs settle_refund to return
+// the whole balance to the payer. Otherwise the controller coordinates the
+// return before the operator's settle_refund returns the rest.
 // Acceptance expiry enters disputed, never released. Neither verify_return nor
 // refund becomes public merely because dispute is exposed. Clock actions remain
 // internal. Expose cancel for a pending hold, including a checkout-funded hold;
@@ -42,12 +29,12 @@ header escrow
 // transfer; accept expands the configured fee and tax into moves. Run hsx cost
 // on the composed program for instruction counts. The executor supplies prices.
 
-instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, deliver_within: duration = 14d, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }) {
+instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, deliver_within: duration = 14d, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }, funding: policy = { controllers: [], reference: "funds", blocking_states: [active] }) {
   revisioned: true
   summary: "Hold the subject price through delivery, acceptance and verified return."
   fields {
     payer: account of payer, payee: account of payee
-    held: account of self, fundedAt: date?, deliverBy: date?, deliveredAt: date?, openPlans: integer?
+    held: account of self, fundedAt: date?, deliverBy: date?, deliveredAt: date?, blockingFunding: integer?
     price: money = subject.price
   }
   lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
@@ -61,7 +48,7 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
     moves self.price from payer to self.held economics { purpose: principal, sourceParty: payer }
   }
   action confirm {
-    from: pending, to: funded, actor: { parent: all(financing.installments) }
+    from: pending, to: funded, actor: { parent: funding.controllers }
     requires self.held.balance == self.price
     calculate: [{ target: deliverBy, op: shift, date: { field: self.now }, milliseconds: { literal: deliver_within }, direction: after }]
   }
@@ -95,27 +82,27 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
   action settle_return {
     from: disputed, to: return_verified, actor: { party: programOperator }
     input { ruling: text }
-    calculate: [{ target: openPlans, op: aggregate, selection: { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [quoted, signed, active, paid, written_off], limit: 1 }, measure: count }]
-    invoke: [{ reference: self.id, action: settle_refund, guard: { kind: compare, left: { field: self.openPlans }, operator: "==", right: { literal: 0 } }, input: {} }]
+    calculate: [{ target: blockingFunding, op: aggregate, selection: { instrument: funding.controllers, reference: funding.reference, anchor: self.id, states: funding.blocking_states, limit: 1 }, measure: count }]
+    invoke: [{ reference: self.id, action: settle_refund, guard: { kind: compare, left: { field: self.blockingFunding }, operator: "==", right: { literal: 0 } }, input: {} }]
   }
   action settle_refund { allowZero: true,
     from: return_verified, to: refunded, actor: { party: programOperator }
-    requires count of { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [quoted, signed, active, paid, written_off], limit: 1 } == 0
+    requires count of { instrument: funding.controllers, reference: funding.reference, anchor: self.id, states: funding.blocking_states, limit: 1 } == 0
     moves self.held.balance from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
   action refund {
     from: [funded, dispute.refund_after], to: refunded, actor: { party: payee }
-    requires count of { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [quoted, signed, active, paid, written_off], limit: 1 } == 0
+    requires count of { instrument: funding.controllers, reference: funding.reference, anchor: self.id, states: funding.blocking_states, limit: 1 } == 0
     moves self.held.balance from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
   action refund_undelivered {
     from: funded, to: refunded, actor: { party: payer }
     due: { at: self.fundedAt, offset: deliver_within }
-    requires count of { instrument: all(financing.installments), reference: "funds", anchor: self.id, states: [quoted, signed, active, paid, written_off], limit: 1 } == 0
+    requires count of { instrument: funding.controllers, reference: funding.reference, anchor: self.id, states: funding.blocking_states, limit: 1 } == 0
     moves self.price from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
-  action unwind_financed { allowZero: true,
-    from: [funded, return_verified], to: refunded, actor: { parent: all(financing.installments) }
+  action finish_refund { allowZero: true,
+    from: [funded, return_verified], to: refunded, actor: { parent: funding.controllers }
     moves self.held.balance from self.held to payer economics { purpose: principal, sourceParty: programOperator }
   }
   action cancel { allowZero: true,
