@@ -6,8 +6,7 @@ header wallet
 
 // Expose balance.create, activate, topup and withdraw as needed. Holder moves
 // cash only while active. Freeze blocks new topups, withdrawals and spend reserves;
-// close requires no held cash. Only the Product operator freezes or unfreezes.
-// The holder closes the wallet, or the Product operator with operator_close.
+// only the Product operator freezes or unfreezes.
 // Only the wallet holder creates a spend record, which checks its amount against
 // spendLimit; bind the spend holder to the balance holder.
 // Expose reserve, pay and cancel for the bound payee. Reserve requires an active
@@ -26,7 +25,7 @@ header wallet
 instrument balance(holder: party, spend_limit: money = 100000 SAR, topup_fee: percent = 0%) {
   summary: "A holder's reusable balance with an immutable per-spend ceiling."
   fields { holder: account of holder, held: account of self, spendLimit: money = spend_limit, topupFee: money?, topupCredit: money? }
-  lifecycle { states: [pending, active, frozen, closed], initial: pending }
+  lifecycle { states: [pending, active, frozen], initial: pending }
   action create { actor: { party: holder } }
   action activate { from: pending, to: active, actor: { party: holder } }
   action topup {
@@ -47,8 +46,6 @@ instrument balance(holder: party, spend_limit: money = 100000 SAR, topup_fee: pe
   }
   action freeze { from: active, to: frozen, actor: { party: programOperator } }
   action unfreeze { from: frozen, to: active, actor: { party: programOperator } }
-  action close { from: [pending, active], to: closed, actor: { party: holder }, requires self.held.balance == "0" }
-  action operator_close { from: [pending, active], to: closed, actor: { party: programOperator }, requires self.held.balance == "0" }
 }
 
 instrument spend(wallet: ref<wallet.balance>, payee: party, holder: party = party(person)) {

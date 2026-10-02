@@ -29,6 +29,31 @@ test("UDL2002 preserves the undeclared-parent refusal through HSX", () => {
   ]);
 });
 
+test("UDL2002 rejects non-money seller-fee amounts without throwing", () => {
+  for (const amount of ['"oops"', "true"]) {
+    const result = compile(`program shop "Shop"
+party seller: business
+instrument payment(payer: party) {
+  fields {}
+  lifecycle { states: [open, paid], initial: open }
+  action create {}
+  action pay { from: open, to: paid, actor: { party: payer }
+    moves ${amount} from payer to seller fee { seller: 5%, tax: 15% }
+  }
+}
+object sale "Sale" {
+  attach payment = payment { payer: owner
+    expose create as open_payment
+    expose pay as pay
+  }
+}`);
+    expect(new Set(result.diagnostics.map((d) => d.code))).toEqual(
+      new Set(["UDL2002"]),
+    );
+    expect(result.artifacts).toBeUndefined();
+  }
+});
+
 // Mutation: return artifacts before UDL invocation-cycle analysis.
 test("UDL2010 refuses a recursive action instead of entering cost recursion", () => {
   const result = compile(

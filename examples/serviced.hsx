@@ -1,6 +1,6 @@
-// Dammam delivery van finance funds a 69,000 SAR van with 10% down and 36 monthly instalments.
+// Denver delivery van finance funds a 69,000 SAR van with 10% down and 36 monthly instalments.
 // It records reminders, late charges, hardship extensions, early repayment and financed returns.
-program car_financing "Dammam delivery van finance"
+program car_financing "Denver delivery van finance"
 use escrow
 use financing
 use purchase

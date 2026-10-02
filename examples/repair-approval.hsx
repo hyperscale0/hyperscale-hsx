@@ -1,6 +1,6 @@
-// Jeddah phone repair quotes 350 SAR plus 52.50 SAR VAT for a screen replacement.
+// Portland phone repair quotes 350 SAR plus 52.50 SAR VAT for a screen replacement.
 // The customer approves and funds the repair; acceptance pays the shop, while a failed repair returns all 402.50 SAR.
-program repair_shop "Jeddah phone repair"
+program repair_shop "Portland phone repair"
 
 // Fee: 0% beyond the repair price. The shop keeps 350 SAR and posts 15% VAT.
 instrument assessment(customer: party) {

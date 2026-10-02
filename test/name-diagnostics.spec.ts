@@ -4,8 +4,8 @@ import { refusal, rental } from "./fixtures/name-diagnostics.ts";
 
 const parties = "programOperator, programTax, owner, actor, operator";
 const fields =
-  "renter, held, amount, lateFee, lateTax, startsAt, dueAt, refund, programTaxPayable";
-const states = "pending, funded, returned, cancelled";
+  "renter, held, amount, lateFee, lateTax, dueAt, refund, programTaxPayable";
+const states = "pending, funded, returned";
 
 // Mutation: drop the root message in checkPath. UDL reports a JSON path on each instrument copy.
 test("a misspelled field names itself and suggests the declared field", () => {
@@ -47,8 +47,8 @@ test("a misspelled field names itself and suggests the declared field", () => {
 test("a misspelled actor party names itself and suggests the declared party", () => {
   expect(
     refusal(
-      "action cancel { from: pending, to: cancelled, actor: { party: renter } }",
-      "action cancel { from: pending, to: cancelled, actor: { party: owne } }",
+      "from: pending, to: funded, actor: { party: renter }",
+      "from: pending, to: funded, actor: { party: owne }",
     ),
   ).toMatchObject({
     at: "owne",
@@ -210,12 +210,10 @@ test("a misspelled state is one error at the state name", () => {
 // Mutation: remove distinct(). The attached copy and the standalone copy both report the typo.
 test("an instrument attached before its declaration reports a typo once", () => {
   const declaration = rental.slice(
-    rental.indexOf("instrument deposit {"),
+    rental.indexOf("instrument deposit("),
     rental.indexOf("object rental"),
   );
-  const attachedFirst = rental
-    .replace(declaration, "")
-    .replace("hide deposit.create", `${declaration}hide deposit.create`);
+  const attachedFirst = `${rental.replace(declaration, "")}\n${declaration}`;
   expect(compile(attachedFirst).diagnostics).toEqual([]);
   expect(
     refusal(

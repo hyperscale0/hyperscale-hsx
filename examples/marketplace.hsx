@@ -1,6 +1,6 @@
-// Riyadh design market sells a 2,000 SAR restaurant menu project with delivery in seven days.
+// Boston design market sells a 2,000 SAR restaurant menu project with delivery in seven days.
 // The company keeps 10% plus 15% VAT on its fee; the designer receives 1,770 SAR after client acceptance.
-program freelance_marketplace "Riyadh design market"
+program freelance_marketplace "Boston design market"
 use marketplace
 use escrow
 party designer: business

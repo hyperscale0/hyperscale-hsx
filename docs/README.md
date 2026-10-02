@@ -56,6 +56,12 @@ and party IDs are not metadata supplied by the caller.
 
 ## A rental deposit in one hour
 
+For a separate hire charge and refundable security, use
+[rental-hire.hsx](../examples/rental-hire.hsx) and the `rental` header.
+Its shared rules refund both paid parts on cancellation before pickup.
+`complete_hire` requires recorded pickup, and an ended hire still counts toward
+the one-hire limit. The operator records pickup, return and damage.
+
 Open [rental-deposit.hsx](../examples/rental-deposit.hsx). It is a complete source
 file for a customer renting equipment from the program operator. Copy it to
 `rental.hsx` and run the same check, build and cost commands against that file.

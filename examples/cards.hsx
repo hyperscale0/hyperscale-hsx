@@ -1,6 +1,6 @@
-// Riyadh catering cards lets staff reserve supplier purchases up to 5,000 SAR each.
+// Boston catering cards lets staff reserve supplier purchases up to 5,000 SAR each.
 // Supplier cancellation releases the reservation; captured purchases support a full refund or a reviewed dispute.
-program team_expense_cards "Riyadh catering cards"
+program team_expense_cards "Boston catering cards"
 use cards
 party supplier: business
 

@@ -1,6 +1,6 @@
-// Tabuk workshop equipment finance lends 46,000 SAR and reports monthly repayments and arrears.
+// Lyon workshop equipment finance lends 46,000 SAR and reports monthly repayments and arrears.
 // Ageing bands at 30, 60 and 90 days distinguish overdue balances from loans written off after 90 days.
-program equipment_loan_reports "Tabuk workshop equipment finance"
+program equipment_loan_reports "Lyon workshop equipment finance"
 use reporting
 use financing
 

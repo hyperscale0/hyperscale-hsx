@@ -8,7 +8,7 @@ import { readExamples } from "../scripts/bundle-examples.ts";
 
 const authored = readBases();
 const examples = readExamples();
-const cities = /\b(?:Riyadh|Jeddah|Khobar|Madinah|Tabuk|Qassim|Dammam)\b/i;
+const cities = /\b(?:Boston|Portland|Seattle|York|Lyon|Bristol|Denver)\b/i;
 
 test.each(authored)("$id compiles without diagnostics", (base) => {
   const result = compile(base.source);

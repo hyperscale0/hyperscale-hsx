@@ -1,0 +1,23 @@
+// Equipment rental: refundable security and one hire, earned only after pickup.
+program equipment_hire "Equipment hire and security"
+use rental
+
+object rental "Rental deposit" {
+  fields { item: text, renter: text, price: money }
+  columns: [item, renter, price]
+  attach hire = rental.hire_charge {
+    renter: owner, security: security
+    expose create as agree_hire
+    expose fund as pay_hire
+    expose release as complete_hire
+  }
+  attach security = rental.deposit {
+    renter: owner, hire: hire
+    rename { price: price }
+    expose create as agree_rental
+    expose fund as pay_deposit
+    expose pickup as collect_equipment
+    expose return as return_equipment
+    expose withhold as withhold_damage
+  }
+}

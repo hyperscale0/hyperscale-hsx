@@ -35,7 +35,6 @@ object plan "Plan" {
     expose activate as activate_balance
     expose topup as add_funds
     expose withdraw as withdraw_funds
-    expose close as close_balance
   }
   attach round = lending.round {
     borrower: owner, plan: plan

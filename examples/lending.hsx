@@ -1,6 +1,6 @@
-// Qassim bakery funding raises 30,000 SAR for ovens from investors who commit at least 1,000 SAR each.
+// Bristol bakery funding raises 30,000 SAR for ovens from investors who commit at least 1,000 SAR each.
 // An unclosed round refunds its wallets at expiry; funded loans distribute repayments or record investor losses.
-program community_business_lending "Qassim bakery funding"
+program community_business_lending "Bristol bakery funding"
 use lending
 use financing
 use wallet
@@ -42,7 +42,6 @@ object business "Bakery oven funding" {
     expose activate as open_wallet
     expose topup as add_funds
     expose withdraw as withdraw_available_funds
-    expose close as close_empty_wallet
   }
   attach funding = lending.round {
     borrower: owner, plan: loan, minimum_ticket: 1000 SAR, investor_cap: 25%

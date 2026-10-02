@@ -76,8 +76,7 @@ currency units, basis points and milliseconds.
 
 Examples have `id`, `title`, `summary`, `headers` and `source`. The ID is the
 filename without `.hsx`; leading comments supply the summary. The array is sorted
-by filename and contains no filesystem imports. Workspace imports use
-`@hyperscale0/hsx` instead of the published `@hyperscale0/hsx` name.
+by filename and contains no filesystem imports.
 
 ## Working from source
 

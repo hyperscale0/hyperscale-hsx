@@ -18,6 +18,7 @@ import {
   type AttachmentPartyBinding,
   type SubjectPartyRole,
   udlObjectFieldSchema,
+  udlFieldValueSchema,
   udlInstrumentSchema,
   type UdlAction,
   type UdlActionSubject,
@@ -2964,6 +2965,37 @@ export function compile(
                       "tax needs a percentage of the fee",
                       "write tax: 15%",
                     );
+                  if (
+                    paidBy === "seller" &&
+                    (!("literal" in transfer.amount) ||
+                      udlFieldValueSchema({
+                        name: "amount",
+                        type: "money",
+                      }).safeParse(transfer.amount.literal).success)
+                  ) {
+                    const bps = BigInt(Number(literal(rate)));
+                    const taxBps = BigInt(tax ? Number(literal(tax)) : 0);
+                    const cap =
+                      quoted.kind === "capped"
+                        ? BigInt(String(literal(quoted.cap)))
+                        : undefined;
+                    let exceeds =
+                      cap === undefined && bps * (10000n + taxBps) > 100000000n;
+                    if ("literal" in transfer.amount) {
+                      const amount = BigInt(String(transfer.amount.literal));
+                      const grossFee = (amount * bps) / 10000n;
+                      const fee =
+                        cap !== undefined && cap < grossFee ? cap : grossFee;
+                      exceeds = fee + (fee * taxBps) / 10000n > amount;
+                    }
+                    if (exceeds)
+                      failWithCode(
+                        quoted,
+                        "seller_fee_exceeds_amount",
+                        "seller fee plus tax exceeds the base amount",
+                        "lower the seller fee, cap or tax so the combined charge fits within the amount",
+                      );
+                  }
                   const vat = tax
                     ? derived("tax", "Fee tax", {
                         op: "rate",

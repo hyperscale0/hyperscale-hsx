@@ -1,6 +1,6 @@
-// Madinah pottery studio lets members prepay for visits at 172.50 SAR each.
+// York pottery studio lets members prepay for visits at 172.50 SAR each.
 // A reserved visit can be charged, cancelled or released at expiry; unused credit can be withdrawn.
-program workshop_credits "Madinah pottery studio"
+program workshop_credits "York pottery studio"
 use wallet
 
 // Top-up fee: 0%. Loading and withdrawing credit have tax 0% here because
@@ -18,8 +18,6 @@ object membership "Pottery membership" {
     expose withdraw as withdraw_unused_credit
     expose freeze as freeze_balance
     expose unfreeze as restore_balance
-    expose close as close_empty_balance
-    expose operator_close as close_empty_membership
   }
   // Supply amount: 172.50 SAR and expiresAt: the booked visit time.
   // Each spend has its own inputs; a second visit cannot inherit the first.

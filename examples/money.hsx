@@ -1,6 +1,6 @@
-// Riyadh tutoring studio charges 172.50 SAR for a private Arabic lesson.
+// Boston tutoring studio charges 172.50 SAR for a private Arabic lesson.
 // A paid booking can be refunded before the lesson or if the tutor cannot teach.
-program tutoring_studio "Riyadh tutoring studio"
+program tutoring_studio "Boston tutoring studio"
 use money
 
 // The customer is the object's owner. Fee: 0% on top of the lesson price.

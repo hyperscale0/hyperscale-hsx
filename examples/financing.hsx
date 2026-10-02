@@ -1,6 +1,6 @@
-// Riyadh language academy finance pays 6,900 SAR tuition to the academy at enrolment.
+// Boston language academy finance pays 6,900 SAR tuition to the academy at enrolment.
 // The student repays three monthly instalments of 2,300 SAR with no financing profit or late fee.
-program tuition_instalments "Riyadh language academy finance"
+program tuition_instalments "Boston language academy finance"
 use financing
 party academy: business
 

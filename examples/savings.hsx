@@ -1,6 +1,6 @@
-// Al Khobar shopkeepers circle collects 500 SAR from each of six members every month.
+// Seattle shopkeepers circle collects 500 SAR from each of six members every month.
 // Each member receives one 3,000 SAR pot in order; missed contributions remain payable and an unfunded pot waits.
-program neighbourhood_savings "Al Khobar shopkeepers circle"
+program neighbourhood_savings "Seattle shopkeepers circle"
 use savings
 
 // Fee: 0%. Tax: 0% because this circle only returns members' principal and

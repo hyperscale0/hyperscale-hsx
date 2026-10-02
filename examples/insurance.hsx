@@ -1,6 +1,6 @@
-// Jeddah device cover sells a 1,725 SAR tablet and a 115 SAR annual protection period.
+// Portland device cover sells a 1,725 SAR tablet and a 115 SAR annual protection period.
 // The retailer keeps 10% of each premium; cancelled future periods reverse that commission and the insurer's portion.
-program device_insurance "Jeddah device cover"
+program device_insurance "Portland device cover"
 use insurance
 use money
 

@@ -1,6 +1,6 @@
-// Khobar used laptops holds a buyer's 2,300 SAR until the laptop arrives and passes inspection.
+// Seattle used laptops holds a buyer's 2,300 SAR until the laptop arrives and passes inspection.
 // Delivery has seven days; the buyer has 48 hours to accept or dispute before the operator reviews the sale.
-program used_device_sales "Khobar used laptops"
+program used_device_sales "Seattle used laptops"
 use escrow
 party seller: business
 

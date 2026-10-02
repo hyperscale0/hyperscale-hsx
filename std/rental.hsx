@@ -1,0 +1,68 @@
+header rental
+
+// One hire per security agreement, including ended hires.
+// Pickup makes hire payable to the operator; cancellation before pickup refunds both holds.
+instrument hire_charge(renter: party, security: ref<rental.deposit>) {
+  fields { security: ref<security>, held: account of self }
+  lifecycle { states: [pending, funded, released, cancelled], initial: pending }
+  action create {
+    actor: { party: renter }
+    requires count of { instrument: current(), reference: "security", anchor: self.security, states: [pending, funded, released, cancelled], limit: 1 } == 0
+  }
+  action fund {
+    from: pending, to: funded, actor: { party: renter }
+    requires self.security in [pending, funded, hired, returned]
+    moves 250 SAR from renter to self.held economics { purpose: principal, sourceParty: renter }
+  }
+  action release {
+    from: funded, to: released, actor: { party: renter }
+    requires self.security in [hired, returned]
+    moves self.held.balance from self.held to programOperator economics { purpose: earning, sourceParty: renter }
+  }
+  action refund { allowZero: true,
+    from: [pending, funded], to: cancelled, actor: { parent: security }
+    moves self.held.balance from self.held to renter economics { purpose: principal, sourceParty: programOperator }
+  }
+  action cancel {
+    from: [pending, funded], to: preserve, actor: { party: renter }
+    invoke: [{ reference: self.security, action: cancel, input: {} }]
+  }
+}
+
+// Security stays refundable. Only the operator records pickup and damage.
+instrument deposit(renter: party, hire: ref<rental.hire_charge>) {
+  summary: "Refund rental security on return, less an authorized damage amount."
+  fields { renter: account of renter, held: account of self, amount: money = subject.price, refund: money? }
+  lifecycle { states: [pending, funded, hired, returned, cancelled], initial: pending }
+  action create { actor: { party: renter }, subject { price: money }, requires self.amount > "0" }
+  action fund {
+    from: pending, to: funded, actor: { party: renter }
+    moves self.amount from self.renter to self.held economics { purpose: principal, sourceParty: renter }
+  }
+  action pickup { from: funded, to: hired, actor: { party: programOperator } }
+  action return {
+    from: hired, to: returned, actor: { party: programOperator }
+    input { returnReference: text }
+    moves self.held.balance from self.held to self.renter economics { purpose: principal, sourceParty: programOperator }
+  }
+  action withhold { allowZero: true,
+    from: hired, to: returned, actor: { party: programOperator }
+    input { damage: money, damageReference: text }
+    requires input.damage > "0"
+    requires input.damage <= self.held.balance
+    calculate: [{ target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: input.damage }] }]
+    moves input.damage from self.held to programOperator economics { purpose: earning, sourceParty: renter }
+    moves self.refund from self.held to self.renter economics { purpose: principal, sourceParty: programOperator }
+  }
+  action refund_before_pickup { allowZero: true,
+    from: [pending, funded], to: cancelled, actor: { party: renter }
+    moves self.held.balance from self.held to self.renter economics { purpose: principal, sourceParty: programOperator }
+    invoke: [{ selection: { instrument: hire, reference: "security", anchor: self.id, states: [pending, funded], limit: 1 }, action: refund, input: {} }]
+  }
+  action cancel { allowZero: true,
+    from: [pending, funded], to: cancelled, actor: { party: renter }
+    moves self.held.balance from self.held to self.renter economics { purpose: principal, sourceParty: programOperator }
+    invoke: [{ selection: { instrument: hire, reference: "security", anchor: self.id, states: [pending, funded], limit: 1 }, action: refund, input: {} }]
+  }
+}
+

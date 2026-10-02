@@ -11,7 +11,6 @@ object balance "Balance" {
     expose withdraw as withdraw_funds
     expose freeze as freeze_balance
     expose unfreeze as unfreeze_balance
-    expose close as close_balance
   }
   attach spend = wallet.spend {
     wallet: balance, payee: operator, holder: owner
