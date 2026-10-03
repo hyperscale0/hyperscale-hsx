@@ -1,8 +1,8 @@
 header insurance
 
 // Economics: Company commission is earning; refunds reverse its captured transfer.
-// Outside broker commissions are pass-through. Adapter-owned premium and claim
-// accounts lack an authored source party, so their moves remain unclassified.
+// Outside broker commissions and insurer premiums are pass-through.
+// Claim moves remain unclassified until their money purpose is declared.
 
 // Expose cover.create, activate and cancel separately. The adapter names a
 // registered boundary adapter (conformance_boundary in sandbox). covers is an
@@ -59,7 +59,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
         requires self.premium > "0"
         from: pending, to: paid, actor: { party: holder }
         requires self.cover in [active]
-        moves self.insurerPremium from holder to self.cover.insurer
+        moves self.insurerPremium from holder to self.cover.insurer economics { purpose: pass_through, sourceParty: holder }
         moves self.commission from holder to broker capture "commissionReceipt" economics { recipient: broker, company: { purpose: earning, sourceParty: holder }, participant: { purpose: pass_through, sourceParty: holder } }
       }
       action start { from: paid, to: active, actor: clock, due: { at: self.startsAt } }
@@ -68,7 +68,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
         allowZero: true
         requires self.premium > "0"
         from: paid, to: refunded, actor: { parent: parent }, deadline: { at: self.startsAt }
-        moves self.insurerPremium from self.cover.insurer to holder
+        moves self.insurerPremium from self.cover.insurer to holder economics { purpose: pass_through, sourceParty: programOperator }
         moves self.commission from broker to holder economics { recipient: broker, company: { purpose: earning, sourceParty: broker, reversalOf: self.commissionReceipt }, participant: { purpose: pass_through, sourceParty: broker } }
       }
     }
