@@ -1,8 +1,8 @@
 body {
   font-family: system-ui, sans-serif;
   margin: 2rem;
-  color: #182125;
-  background: #f8faf9;
+  color: #171717;
+  background: white;
 }
 main {
   max-width: 76rem;
@@ -15,15 +15,21 @@ textarea {
   min-height: 24rem;
   padding: 1rem;
   font: 14px/1.5 monospace;
-  border: 1px solid #718080;
+  color: #ededed;
+  caret-color: #ededed;
+  background: #0a0a0a;
+  border: 1px solid #262626;
 }
 button {
   margin: 1rem 0;
   padding: 0.7rem 1.2rem;
   font: inherit;
-  background: #183e39;
+  background: #2d4bf2;
   color: white;
   border: 0;
+}
+button:hover {
+  background: #2338e0;
 }
 pre {
   white-space: pre-wrap;
@@ -31,51 +37,55 @@ pre {
 }
 button:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid #247c69;
+  outline: 3px solid #2d4bf2;
   outline-offset: 3px;
 }
 
 #tokens,
-#explanation {
+#explanation,
+#output {
   padding: 1rem;
-  background: white;
-  border: 1px solid #718080;
+  border: 1px solid #e5e5e5;
   font: 14px/1.5 monospace;
+}
+#tokens,
+#output {
+  color: #ededed;
+  background: #0a0a0a;
+  border-color: #262626;
 }
 #tokens span {
   cursor: help;
 }
-.hsx-keyword,
-.hsx-operator {
-  color: #2d4bf2;
+.hsx-keyword {
+  color: #f75f8f;
 }
 .hsx-header,
-.hsx-instrument,
+.hsx-type {
+  color: #bf7af0;
+  font-weight: 600;
+}
+.hsx-instrument {
+  color: #52a8ff;
+}
 .hsx-action {
-  color: #183e39;
-  font-weight: bold;
+  color: #4dd4e8;
 }
 .hsx-party,
 .hsx-role,
-.hsx-field,
-.hsx-parameter {
-  color: #7a3500;
-}
-.hsx-type,
+.hsx-duration,
 .hsx-state {
-  color: #60368c;
+  color: #f5b83d;
 }
 .hsx-money,
 .hsx-number,
 .hsx-percent,
-.hsx-duration,
-.hsx-date {
-  color: #12604c;
-}
+.hsx-date,
 .hsx-string {
-  color: #784124;
+  color: #62c073;
 }
-.hsx-comment {
-  color: #56656b;
-  font-style: italic;
+.hsx-comment,
+.hsx-punctuation,
+.hsx-operator {
+  color: #8f8f8f;
 }
