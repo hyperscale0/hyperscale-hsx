@@ -3491,6 +3491,10 @@ export function compile(
           )
             parties[party] ??= { party };
         const attachedInst = document.instruments.find((i) => i.id === instId);
+        // A program-local instrument loses its authored name to the scoped id;
+        // library instruments keep theirs in `family`.
+        if (attachedInst && !targetTemplate.includes("."))
+          attachedInst.template = targetTemplate;
         for (const createdInst of document.instruments
           .slice(firstAttachedInstrument)
           .filter(
