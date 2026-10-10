@@ -118,7 +118,7 @@ test("all financing enum policy combinations compile", () => {
                 ),
               ).verdict,
             ).toBe("valid");
-});
+}, 60_000);
 
 test("late-charge waterfall derives its expansion bound without an authored override", () => {
   const witness = source

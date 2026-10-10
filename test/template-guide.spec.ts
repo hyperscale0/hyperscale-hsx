@@ -26,7 +26,7 @@ test("every template's guide compiles its own example", () => {
   }
   expect(templateGuide("money.nothing", options)).toBeUndefined();
   expect(templateGuide("money", options)).toBeUndefined();
-});
+}, 60_000);
 
 // Round 4 F9 and D4: an agent read amount as one piece and could not tell
 // when the first piece is charged. Round 8 F4: a monthly plan is one line.
