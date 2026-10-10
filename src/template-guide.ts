@@ -143,7 +143,10 @@ export function templateGuide(
     })),
     createInput: (create?.input ?? []).map((field) => ({
       name: field.name,
-      type: inputType(field as unknown as Record<string, unknown>),
+      type: inputType(
+        field as unknown as Record<string, unknown>,
+        listBound(field.name, decl, spell),
+      ),
     })),
     subject: manifest.subject,
     actions,
@@ -573,10 +576,39 @@ function compiledAttachment(
   return Object.assign(instrument, { warnings: result.warnings });
 }
 
-function inputType(field: Record<string, unknown>) {
+/**
+ * The tunable a list field's length follows, as in `dates: list(date, count)`.
+ * Such a list takes one entry per unit of the tunable, so the guide names the
+ * tunable instead of the example's value.
+ */
+function listBound(
+  name: string,
+  decl: InstrumentDecl,
+  spell: (expression: Expr) => string,
+) {
+  const fields = slot(decl.body, "fields");
+  const entry =
+    fields?.kind === "block"
+      ? fields.entries.find((item) => item.key === name)
+      : undefined;
+  const bound = entry
+    ? /^list\(\s*[\w<>]+\s*,\s*(\w+)\s*\)$/.exec(fieldValue(entry, spell))?.[1]
+    : undefined;
+  return bound && decl.parameters.some((parameter) => parameter.key === bound)
+    ? bound
+    : undefined;
+}
+
+function inputType(field: Record<string, unknown>, bound?: string) {
   const type = String(field.type);
   if (type === "list")
-    return `list of ${String(field.item)}${field.maxItems === undefined ? "" : `, at most ${String(field.maxItems)}`}`;
+    return `list of ${String(field.item)}${
+      bound
+        ? `, one per ${bound} (${String(field.maxItems)} in the example)`
+        : field.maxItems === undefined
+          ? ""
+          : `, at most ${String(field.maxItems)}`
+    }`;
   if (type === "ref" && field.target) return `ref to ${String(field.target)}`;
   if (type === "enum" && Array.isArray(field.values))
     return `one of ${field.values.join(", ")}`;

@@ -52,7 +52,7 @@ test("money.schedule says amount is the total, who runs each action and when a p
     when: "The clock runs it at self.dueAt. While self.schedule in [active] does not hold, it waits. activate collects every one already due in the same request.",
   });
   expect(guide.createInput).toEqual([
-    { name: "dates", type: "list of date, at most 3" },
+    { name: "dates", type: "list of date, one per count (3 in the example)" },
   ]);
   expect(guide.example).toContain("expose activate");
   expect(guide.example).not.toContain("expose occurrence");
