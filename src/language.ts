@@ -50,6 +50,7 @@ const types = new Set([
   "ref",
   "date",
   "duration",
+  "period",
   "text",
   "integer",
   "percent",

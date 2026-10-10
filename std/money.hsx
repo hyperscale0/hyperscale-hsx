@@ -12,9 +12,15 @@ header money
 // payee, so a shop that is payee keeps a deposit without acting for its customer.
 // Bind released_by: payer for an escrow-style hold that only the payer releases.
 // Only the payee refunds. A hold has no dispute or damage decision.
-// The payee proposes a schedule, which creates its count occurrences, and only
-// the payer activates or cancels it. Each due occurrence pays only while the
-// schedule is active. A due time promises no retry.
+// The payee proposes a schedule and only the payer activates or cancels it; the
+// payee stops it. Without every, create makes count occurrences on the listed
+// dates and they sum to amount. With every (1 month, 2 weeks), each occurrence
+// charges amount, the first at startsAt, and paying one creates the next, so only
+// one piece waits ahead. Months step from startsAt and clamp to the month's end.
+// create refuses a startsAt in the past. An authored count ends it after count
+// pieces; without one it runs until stopped or cancelled. Each due occurrence pays
+// only while the schedule is active, and one clock drain charges at most 126
+// pieces; the next drain continues a plan that fell further behind.
 // A pool accepts whole contributions only up to its remaining target and at most
 // 366 paid records. Expose pay to release the exact target. Clock failure refunds
 // original contributors; excess acceptance and partial contribution are absent.
@@ -30,9 +36,11 @@ header money
 // record's own due field. Once dueAt plus grace plus one period has passed, the
 // clock charges amount from payer to payee for each whole period, and the last
 // charge takes only what is left under cap; then the fee is capped. The payee runs
-// stop when the obligation is met, which ends charging. A charge the payer cannot
-// fund refuses as clock work and charging waits for its retry. Grace is at least
-// one second; there are no percentage or interest-style fees.
+// stop when the obligation is met. Stop keeps what was owed: each charge due at or
+// before it still posts, and the fee settles until the last of those posts, then
+// stops. A period still running at the stop is not charged. A charge the payer cannot fund refuses as clock work and charging waits
+// for its retry; the payee runs waive to forgive what is still owed. Grace is at
+// least one second; there are no percentage or interest-style fees.
 
 // Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
 // fund, release and refund each declare one transfer. Schedules and pools add bounded
@@ -84,13 +92,21 @@ instrument split(payer: party, amount: money = runtime, shares: split = { progra
   action cancel { from: pending, to: cancelled }
 }
 
-instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366) = 12) {
-  summary: "A finite schedule whose dated pieces sum exactly to the declared total."
-  fields { amount: money = amount, count: integer = count, dates: list(date, count) }
+instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366) = 12, every: period?) {
+  summary: "Pieces due on listed dates that sum to the total, or one amount each period from a start date."
+  fields {
+    amount: money = amount
+    when every is unset { count: integer = count, dates: list(date, count) }
+    when every is set { startsAt: date }
+  }
   lifecycle { states: [draft, active, complete, cancelled], initial: draft }
   action create {
     actor: { party: payee }
-    invoke: [{ range: { count: { literal: count }, maximum: count, bind: position }, instrument: occurrence, action: create, input: { schedule: { field: self.id }, position: { field: position } } }]
+    when every is unset { invoke: [{ range: { count: { literal: count }, maximum: count, bind: position }, instrument: occurrence, action: create, input: { schedule: { field: self.id }, position: { field: position } } }] }
+    when every is set {
+      requires self.startsAt >= self.now
+      invoke: [{ instrument: occurrence, action: create, input: { schedule: { field: self.id }, position: { literal: 1 } } }]
+    }
   }
   action activate { from: draft, to: active, actor: { party: payer } }
   action complete {
@@ -98,20 +114,41 @@ instrument schedule(payer: party, payee: party, amount: money = runtime, count: 
     requires count of { instrument: occurrence, reference: "schedule", anchor: self.id, states: [pending], limit: 366 } == 0
   }
   action cancel { from: [draft, active], to: cancelled, actor: { party: payer } }
+  action stop { from: active, to: cancelled, actor: { party: payee } }
   records {
     occurrence: {
       fields {
-        schedule: ref<parent>, position: integer(1, count), dueAt: date = at(self.schedule.dates, self.position)
-        base: money = divide(self.schedule.amount, count)
-        allocated: money = multiply(self.base, count)
-        remainder: money = subtract(self.schedule.amount, self.allocated)
-        first: integer = divide(1, self.position)
-        adjustment: money = multiply(self.remainder, self.first)
-        amount: money = sum(self.base, self.adjustment)
+        schedule: ref<parent>
+        when every is unset {
+          position: integer(1, count), dueAt: date = at(self.schedule.dates, self.position)
+          base: money = divide(self.schedule.amount, count)
+          allocated: money = multiply(self.base, count)
+          remainder: money = subtract(self.schedule.amount, self.allocated)
+          first: integer = divide(1, self.position)
+          adjustment: money = multiply(self.remainder, self.first)
+          amount: money = sum(self.base, self.adjustment)
+        }
+        when every is set {
+          position: integer, offset: integer = subtract(self.position, 1), following: integer = sum(self.position, 1)
+          dueAt: date = after(self.schedule.startsAt, every, self.offset)
+          amount: money = self.schedule.amount
+        }
       }
       lifecycle { states: [pending, paid, cancelled], initial: pending }
-      action create { actor: { parent: parent }, input { schedule: ref<parent>, position: integer(1, count) }, requires unique "scheduled_position" on [self.schedule, self.position] }
-      action pay { allowZero: true, from: pending, to: paid, actor: clock, due: { at: self.dueAt }, requires self.schedule in [active], moves self.amount from payer to payee }
+      action create {
+        actor: { parent: [parent, current()] }
+        input { schedule: ref<parent>, when every is unset { position: integer(1, count) } when every is set { position: integer } }
+        requires unique "scheduled_position" on [self.schedule, self.position]
+      }
+      action pay {
+        allowZero: true, from: pending, to: paid, actor: clock, due: { at: self.dueAt }
+        requires self.schedule in [active]
+        moves self.amount from payer to payee
+        when every is set {
+          when count is set { invoke: [{ instrument: current(), action: create, guard: { kind: compare, left: { field: self.position }, operator: "<", right: { literal: count } }, input: { schedule: { field: self.schedule }, position: { field: self.following } } }] }
+          when count is unset { invoke: [{ instrument: current(), action: create, input: { schedule: { field: self.schedule }, position: { field: self.following } } }] }
+        }
+      }
       action cancel { from: pending, to: cancelled, requires self.schedule in [cancelled] }
     }
   }
@@ -201,9 +238,9 @@ instrument late_fee(payer: party, payee: party, amount: money, cap: money, perio
   summary: "Charge a fixed fee for each period a due time stays unmet, up to a cap."
   fields {
     payer: account of payer, payee: account of payee, amount: money = amount, cap: money = cap, ceiling: money = multiply(self.amount, 366)
-    dueAt: date, graceEndsAt: date?, firstAt: date?, nextAt: date?, followingAt: date?, charge: money?, left: money?, remaining: money?
+    dueAt: date, graceEndsAt: date?, firstAt: date?, nextAt: date?, followingAt: date?, charge: money?, left: money?, remaining: money?, stoppedAt: date?
   }
-  lifecycle { states: [running, capped, stopped], initial: running }
+  lifecycle { states: [running, settling, capped, stopped], initial: running }
   action create {
     actor: { party: payer }
     requires self.amount > "0"
@@ -220,6 +257,23 @@ instrument late_fee(payer: party, payee: party, amount: money, cap: money, perio
     moves self.charge from payer to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: payer } }
     invoke: [{ selection: { instrument: current(), reference: "payer", anchor: self.payer, states: [running], limit: 1, where: { id: { field: self.id }, left: { literal: "0" } } }, action: finish, input: {} }]
   }
-  action finish { from: running, to: capped, actor: { parent: current() } }
-  action stop { from: running, to: stopped, actor: { party: payee } }
+  action collect {
+    summary: "Collect owed late fee"
+    from: settling, to: settling, actor: clock, due: { at: self.nextAt }
+    calculate: [{ target: charge, op: minimum, values: [{ field: self.amount }, { field: self.left }] }, { target: remaining, op: subtract, base: { field: self.left }, subtract: [{ field: self.charge }] }, { target: followingAt, op: shift, date: { field: self.nextAt }, milliseconds: { literal: period }, direction: after }]
+    set: { left: { field: self.remaining }, nextAt: { field: self.followingAt } }
+    moves self.charge from payer to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: payer } }
+    invoke: [
+      { reference: self.id, action: settle, guard: { kind: compare, left: { field: self.nextAt }, operator: ">", right: { field: self.stoppedAt } }, input: {} }
+      { selection: { instrument: current(), reference: "payer", anchor: self.payer, states: [settling], limit: 1, where: { id: { field: self.id }, left: { literal: "0" } } }, action: finish, input: {} }
+    ]
+  }
+  action finish { from: [running, settling], to: capped, actor: { parent: current() } }
+  action stop {
+    from: running, to: settling, actor: { party: payee }
+    set: { stoppedAt: { field: self.now } }
+    invoke: [{ reference: self.id, action: settle, guard: { kind: compare, left: { field: self.nextAt }, operator: ">", right: { field: self.stoppedAt } }, input: {} }]
+  }
+  action settle { from: settling, to: stopped, actor: { parent: current() } }
+  action waive { from: settling, to: stopped, actor: { party: payee } }
 }

@@ -121,6 +121,7 @@ export function templateGuide(
   const compiled = compiledAttachment(program, example.attachment, options);
   const create = compiled.actions.create;
   const economics = compiled.warnings.flatMap((warning) =>
+    warning.code === "economic_purpose_missing" &&
     warning.message.startsWith(`${example.attachment}: `)
       ? [/economics [^}]+\}/.exec(warning.fix)![0]]
       : [],
@@ -163,23 +164,54 @@ function slot(block: BlockExpr, key: string) {
   return block.entries.find((entry) => entry.key === key)?.value;
 }
 
+/** Each `key` row of a block with the `when` branches it sits under. */
+function branched(
+  block: BlockExpr,
+  key: string,
+  outer: string[] = [],
+): { value: Expr; condition: string }[] {
+  return block.entries.flatMap((entry) =>
+    entry.key.startsWith("when ") && entry.value.kind === "block"
+      ? branched(entry.value, key, [...outer, entry.key])
+      : entry.key === key
+        ? [
+            {
+              value: entry.value,
+              condition: outer.length
+                ? `when ${outer.map((when) => when.slice(5)).join(" and ")}`
+                : "",
+            },
+          ]
+        : [],
+  );
+}
+
+/** A block's rows with every `when` branch's rows in place, so both forms read. */
+function flat(block: BlockExpr): Entry[] {
+  return block.entries.flatMap((entry) =>
+    entry.key.startsWith("when ") && entry.value.kind === "block"
+      ? flat(entry.value)
+      : [entry],
+  );
+}
+
 /**
  * The parser desugars `requires` and `moves` into blocks without source
- * spans, so each clause is spelled from the slot's own source text.
+ * spans, so each clause is spelled from the slot's own source text. A clause
+ * under a `when` branch names its condition.
  */
 function clauses(
-  action: BlockExpr,
+  rows: { value: Expr; condition: string }[],
   key: "requires" | "moves",
   spell: (expression: Expr) => string,
 ) {
-  return action.entries
-    .filter((entry) => entry.key === key)
-    .flatMap((entry) =>
-      spell(entry.value)
-        .split(new RegExp(`(?:^|[;,]?\\s+)${key}\\s+`))
-        .map((clause) => clause.trim().replace(/[;,]$/, ""))
-        .filter(Boolean),
-    );
+  return rows.flatMap(({ value, condition }) =>
+    spell(value)
+      .split(new RegExp(`(?:^|[;,]?\\s+)${key}\\s+`))
+      .map((clause) => clause.trim().replace(/[;,]$/, ""))
+      .filter(Boolean)
+      .map((clause) => (condition ? `${clause}, ${condition}` : clause)),
+  );
 }
 
 function items(expression: Expr | undefined): Expr[] {
@@ -198,7 +230,7 @@ function guideActions(
   for (const entry of body.entries) {
     if (!entry.key.startsWith("action ") || entry.value.kind !== "block")
       continue;
-    const action = entry.value;
+    const action = { ...entry.value, entries: flat(entry.value) };
     const actor = slot(action, "actor");
     const party = actor?.kind === "block" ? slot(actor, "party") : undefined;
     const parent = actor?.kind === "block" ? slot(actor, "parent") : undefined;
@@ -219,10 +251,27 @@ function guideActions(
     };
     const due = at("due");
     const deadline = at("deadline");
-    const requires = clauses(action, "requires", spell);
-    const moves = clauses(action, "moves", spell);
-    const invokes = items(slot(action, "invoke")).flatMap((item) =>
-      item.kind === "block" ? [invocation(item, spell, prefix)] : [],
+    const requires = clauses(
+      branched(entry.value, "requires"),
+      "requires",
+      spell,
+    );
+    const moves = clauses(
+      action.entries
+        .filter((row) => row.key === "moves")
+        .map((row) => ({ value: row.value, condition: "" })),
+      "moves",
+      spell,
+    );
+    const invokes = branched(entry.value, "invoke").flatMap(
+      ({ value, condition }) =>
+        items(value).flatMap((item) =>
+          item.kind === "block"
+            ? [
+                `${invocation(item, spell, prefix)}${condition ? `, ${condition}` : ""}`,
+              ]
+            : [],
+        ),
     );
     const from = slot(action, "from");
     const to = slot(action, "to");
@@ -262,7 +311,9 @@ function invocation(
 ) {
   const instrument = slot(block, "instrument");
   const action = slot(block, "action");
-  const target = `${instrument ? `${prefix}${spell(instrument)}.` : ""}${action ? spell(action) : "?"}`;
+  // current() is the record itself, already named by the prefix.
+  const own = instrument && spell(instrument) === "current()";
+  const target = `${instrument && !own ? `${prefix}${spell(instrument)}.` : own ? prefix : ""}${action ? spell(action) : "?"}`;
   const range = slot(block, "range");
   const count = range?.kind === "block" ? slot(range, "count") : undefined;
   const literal =
@@ -351,7 +402,7 @@ function valueMeaning(
   const fields = slot(decl.body, "fields");
   const set =
     fields?.kind === "block"
-      ? fields.entries.filter((entry) => bare.test(fieldValue(entry, spell)))
+      ? flat(fields).filter((entry) => bare.test(fieldValue(entry, spell)))
       : [];
   const read = new Set(set.map((entry) => entry.key));
   const uses: string[] = [];
@@ -367,14 +418,14 @@ function valueMeaning(
           : new RegExp(`\\bself\\.${field}\\b`).test(text),
       );
     if (own?.kind === "block" && prefix)
-      for (const entry of own.entries) {
+      for (const entry of flat(own)) {
         const value = fieldValue(entry, spell);
         if (reads(value)) uses.push(`${prefix}${entry.key}: ${value}`);
       }
     for (const entry of body.entries) {
       if (!entry.key.startsWith("action ") || entry.value.kind !== "block")
         continue;
-      for (const part of entry.value.entries) {
+      for (const part of flat(entry.value)) {
         if (["actor", "from", "to", "summary"].includes(part.key)) continue;
         const text = spell(part.value);
         // A long slot, such as an invoke list, is named rather than spelled.
@@ -391,7 +442,7 @@ function valueMeaning(
         const recordFields = slot(record.value, "fields");
         const refs =
           recordFields?.kind === "block"
-            ? recordFields.entries
+            ? flat(recordFields)
                 .filter((entry) =>
                   /^ref<parent>/.test(fieldValue(entry, spell)),
                 )
@@ -589,7 +640,7 @@ function listBound(
   const fields = slot(decl.body, "fields");
   const entry =
     fields?.kind === "block"
-      ? fields.entries.find((item) => item.key === name)
+      ? flat(fields).find((item) => item.key === name)
       : undefined;
   const bound = entry
     ? /^list\(\s*[\w<>]+\s*,\s*(\w+)\s*\)$/.exec(fieldValue(entry, spell))?.[1]

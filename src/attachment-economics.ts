@@ -176,3 +176,106 @@ export function purposeWarnings(
   }
   return warnings;
 }
+
+/**
+ * A move whose payer and payee resolve to one party pays nobody. `actor` is
+ * whoever runs the attachment's create, so a create bound to a party pins it:
+ * in money.schedule the payee runs create, and `payer: actor` is the payee.
+ * Without a pinned create, `actor` against `operator` is the company paying
+ * itself whenever the company runs create; that is only known at run time.
+ */
+export function samePartyMoves(
+  document: UdlDocument,
+  selectors: ReadonlyMap<string, { prefix: string; root: string }>,
+  attaches: ReadonlyMap<
+    string,
+    { entry: Entry; name: string; template: InstrumentDecl }
+  >,
+): { errors: Diagnostic[]; warnings: Diagnostic[] } {
+  const errors: Diagnostic[] = [];
+  const warnings: Diagnostic[] = [];
+  const bindings = new Map(
+    document.objects.flatMap((object) =>
+      object.attachments.map((item) => [item.instrument, item.parties]),
+    ),
+  );
+  const party = (path: string | undefined) =>
+    /^party\.(\w+)$/.exec(path ?? "")?.[1];
+  const normal = (name: string) =>
+    name === "programOperator" ||
+    document.parties[name]?.role === "program_operator"
+      ? "operator"
+      : name;
+  const seen = new Set<string>();
+  for (const instrument of document.instruments) {
+    const selector = selectors.get(instrument.id);
+    const attach = selector && attaches.get(selector.root);
+    if (!selector || !attach) continue;
+    const parties = bindings.get(selector.root) ?? {};
+    // The template's own parameter, as the founder bound it.
+    const parameter = (name: string) =>
+      Object.entries(parties).find(([, binding]) =>
+        [name, normal(name)].includes(
+          normal("role" in binding ? binding.role : binding.party),
+        ),
+      )?.[0];
+    const spell = (name: string) => {
+      const key = parameter(name);
+      return key && key !== name ? `${key}: ${name}` : name;
+    };
+    const creator = document.instruments.find(
+      (item) => item.id === selector.root,
+    )?.actions.create?.actor;
+    const pinned =
+      typeof creator === "object" && "party" in creator
+        ? normal(creator.party)
+        : undefined;
+    const runsCreate = pinned && pinned !== "actor" ? pinned : undefined;
+    for (const actionName of instrument.actionOrder) {
+      for (const move of instrument.actions[actionName]!.moves) {
+        const from = "from" in move ? party(move.from) : undefined;
+        const to = "to" in move ? party(move.to) : undefined;
+        if (!from || !to) continue;
+        const payer = normal(from);
+        const payee = normal(to);
+        const resolve = (name: string) =>
+          name === "actor" && runsCreate ? runsCreate : name;
+        const key = `${attach.name}:${payer}:${payee}`;
+        if (seen.has(key)) continue;
+        const path = `${selector.prefix}${actionName}`;
+        const span = {
+          start: attach.entry.span.start,
+          end: attach.entry.span.start + `attach ${attach.name}`.length,
+        };
+        if (resolve(payer) === resolve(payee)) {
+          seen.add(key);
+          const via =
+            payer !== payee
+              ? ` ${parameter(runsCreate!) ?? runsCreate} runs create, so actor is ${runsCreate}.`
+              : "";
+          errors.push({
+            code: "same_party_move",
+            message: `${attach.name}: ${path} moves money from ${spell(from)} to ${spell(to)}, and both are ${resolve(payer)}.${via} A party cannot pay itself.`,
+            fix: `Bind the paying and receiving parties to different roles, such as ${parameter(from) ?? "payer"}: owner and ${parameter(to) ?? "payee"}: operator for a customer paying the company.`,
+            span,
+          });
+        } else if (
+          // A template's own programOperator leg, such as a fee, is the
+          // template's design; warn on the founder's operator binding.
+          !runsCreate &&
+          [from, to].includes("actor") &&
+          [from, to].includes("operator")
+        ) {
+          seen.add(key);
+          warnings.push({
+            code: "same_party_move",
+            message: `${attach.name}: ${path} moves money from ${spell(from)} to ${spell(to)}. When the company runs create itself, actor is the company and it pays itself.`,
+            fix: `Run create on behalf of a customer, or bind ${parameter("actor") ?? "the paying party"}: owner if the record's owner pays.`,
+            span,
+          });
+        }
+      }
+    }
+  }
+  return { errors, warnings };
+}

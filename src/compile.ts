@@ -43,6 +43,7 @@ import { parseProgram } from "./parse.ts";
 import {
   applyAttachmentEconomics,
   purposeWarnings,
+  samePartyMoves,
 } from "./attachment-economics.ts";
 import { parseHeader } from "./header-source.ts";
 import {
@@ -330,6 +331,24 @@ function decimal(raw: string, scale: number, expr: Expr): string {
     BigInt(whole) * 10n ** BigInt(scale) +
     BigInt(fraction.padEnd(scale, "0") || "0")
   ).toString();
+}
+/**
+ * A calendar period as ISO-8601 text: `1 month`, `2 weeks`, `7d` or `P1M`.
+ * Days, weeks, months and years only, the units Stripe and Shopify bill in.
+ */
+function periodText(expr: Expr): string | undefined {
+  if (!["duration", "text", "name"].includes(expr.kind)) return undefined;
+  const value = (expr as { value: string }).value.trim();
+  const units: Record<string, string> = { d: "D", w: "W", m: "M", y: "Y" };
+  const words = /^([1-9]\d{0,3}) ?(day|week|month|year)s?$/.exec(value);
+  const short = /^([1-9]\d{0,3})(d|w)$/.exec(value);
+  const iso =
+    /^P(?!$)(?:[1-9]\d{0,3}Y)?(?:[1-9]\d{0,3}M)?(?:[1-9]\d{0,3}W)?(?:[1-9]\d{0,3}D)?$/.exec(
+      value,
+    );
+  if (words) return `P${words[1]}${units[words[2]![0]!]}`;
+  if (short) return `P${short[1]}${units[short[2]!]}`;
+  return iso ? value : undefined;
 }
 function literal(expr: Expr, expectedType?: string): string | number | boolean {
   if (expr.kind === "text" && expectedType === "duration")
@@ -778,6 +797,8 @@ export function compile(
         revision?: number | undefined;
       },
       standardOrigin?: NonNullable<CompileOriginMapEntry["standardBlock"]>,
+      /** Declared tunables, true where the author bound them. */
+      inheritedTunables = new Map<string, boolean>(),
     ) => {
       const resolveFamilyInstruments = (
         family: UdlFamily,
@@ -970,6 +991,9 @@ export function compile(
         suppliedEntries.set(entry.key, entry);
       }
       const environment = new Map<string, Expr>(inherited);
+      // `when every is set` asks whether the author bound a tunable; a
+      // default leaves it unset.
+      const tunables = new Map(inheritedTunables);
       const parameterErrors: Diagnostic[] = [];
       for (const param of decl.parameters) {
         const type =
@@ -989,6 +1013,7 @@ export function compile(
             document.parties[param.key])
             ? { kind: "name", value: param.key, span: origin }
             : undefined;
+        tunables.set(param.key, supplied.has(param.key) || !!byName);
         const actual =
           supplied.get(param.key) ??
           byName ??
@@ -1331,6 +1356,9 @@ export function compile(
             /^P/.test(v.value)
           )
             v = { ...v, kind: "duration" };
+          // A period lowers as ISO text, so `after` steps calendar months.
+          const period = type === "period" ? periodText(v) : undefined;
+          if (period) v = { kind: "text", value: period, span: v.span };
           environment.set(param.key, v);
           if (type === "enum" && t.kind === "call") {
             if (v.kind !== "name" || !t.args.some((a) => text(a) === v.value))
@@ -1453,6 +1481,13 @@ export function compile(
                 items: [v],
                 span: v.span,
               });
+          } else if (type === "period") {
+            if (!period)
+              fail(
+                v,
+                `${param.key} needs a calendar period`,
+                `write ${param.key}: 1 month, 2 weeks, 1 year or 7 days`,
+              );
           } else if (type === "fee" || type === "split" || type === "policy") {
             if (v.kind !== "block")
               fail(
@@ -1873,9 +1908,71 @@ export function compile(
             : value.value;
         return literal(value);
       };
+      const branchMatches = (entry: Entry): boolean => {
+        const [, tunable, relation, choice] = entry.key.split(" ");
+        // `when every is set` holds when the author bound the tunable, so an
+        // optional tunable and a defaulted one both read as unset.
+        if (
+          relation === "is" &&
+          (choice === "set" || choice === "unset") &&
+          tunables.has(tunable!) &&
+          !enums.has(tunable!)
+        )
+          return tunables.get(tunable!) === (choice === "set");
+        const binding = environment.get(tunable!);
+        if (!binding)
+          fail(
+            entry,
+            `unknown branch tunable ${tunable}`,
+            "name an enum, reference or optional tunable declared by this header",
+          );
+        if (relation === "has") {
+          // Inspect declarations, not lowering order: a bound object may
+          // appear after the instrument that asks about its fields.
+          const bound = resolve(binding!);
+          const [root, ...children] = text(bound).split(".");
+          const assignment = assignments.get(root!);
+          let target = assignment
+            ? templates.get(assignment.target)?.body
+            : program.decls
+                .filter(
+                  (decl): decl is InstrumentDecl => decl.kind === "instrument",
+                )
+                .find((decl) => decl.name === root)?.body;
+          for (const child of children) {
+            const record = target
+              ? entries(asBlock(entries(target).get("records"))).get(child)
+              : undefined;
+            target = record ? asBlock(record) : undefined;
+          }
+          if (!target)
+            fail(
+              entry,
+              "field branch needs a declared object",
+              "bind a reference to a declared object",
+            );
+          return entries(asBlock(entries(target!).get("fields"))).has(choice!);
+        }
+        if (!enums.get(tunable!)?.includes(choice!))
+          fail(
+            entry,
+            `unknown enum branch ${choice}`,
+            "use a declared enum value, or set or unset",
+          );
+        return text(binding!) === choice;
+      };
+      // Fields and inputs take `when` branches too; a branch holds field rows.
+      const branchRows = (block: BlockExpr): Entry[] =>
+        block.entries.flatMap((row) =>
+          row.key.startsWith("when ")
+            ? branchMatches(row)
+              ? branchRows(asBlock(row.value))
+              : []
+            : [row],
+        );
       const lowerFields = (block: BlockExpr): UdlField[] => {
         const result: UdlField[] = [];
-        for (const row of block.entries) {
+        for (const row of branchRows(block)) {
           const { type: t } = fieldType(row);
           const constant =
             row.value.kind === "default" ? resolve(row.value.value) : undefined;
@@ -2086,6 +2183,15 @@ export function compile(
                   milliseconds: args[1]!,
                   direction: constant.name as "before" | "after",
                 });
+              // after(start, 1 month, 3) steps calendar periods from start.
+              else if (constant.name === "after" && args.length === 3)
+                calculations.push({
+                  target,
+                  op: "step",
+                  date: args[0]!,
+                  period: args[1]!,
+                  times: args[2]!,
+                });
               else
                 fail(
                   constant,
@@ -2179,53 +2285,7 @@ export function compile(
           ...block,
           entries: block.entries.flatMap((entry) => {
             if (!entry.key.startsWith("when ")) return [entry];
-            const [, tunable, relation, choice] = entry.key.split(" ");
-            const binding = environment.get(tunable!);
-            if (!binding)
-              fail(
-                entry,
-                `unknown branch tunable ${tunable}`,
-                "name an enum or reference tunable declared by this header",
-              );
-            let matches: boolean;
-            if (relation === "has") {
-              // Inspect declarations, not lowering order: a bound object may
-              // appear after the instrument that asks about its fields.
-              const bound = resolve(binding!);
-              const [root, ...children] = text(bound).split(".");
-              const assignment = assignments.get(root!);
-              let target = assignment
-                ? templates.get(assignment.target)?.body
-                : program.decls
-                    .filter(
-                      (decl): decl is InstrumentDecl =>
-                        decl.kind === "instrument",
-                    )
-                    .find((decl) => decl.name === root)?.body;
-              for (const child of children) {
-                const record = target
-                  ? entries(asBlock(entries(target).get("records"))).get(child)
-                  : undefined;
-                target = record ? asBlock(record) : undefined;
-              }
-              if (!target)
-                fail(
-                  entry,
-                  "field branch needs a declared object",
-                  "bind a reference to a declared object",
-                );
-              matches = entries(asBlock(entries(target!).get("fields"))).has(
-                choice!,
-              );
-            } else {
-              if (!enums.get(tunable!)?.includes(choice!))
-                fail(
-                  entry,
-                  `unknown enum branch ${choice}`,
-                  "use a declared enum value",
-                );
-              matches = text(binding!) === choice;
-            }
+            const matches = branchMatches(entry);
             const body = asBlock(entry.value);
             for (const clause of body.entries)
               if (
@@ -3397,6 +3457,7 @@ export function compile(
                   .join("."),
               }
             : undefined,
+          tunables,
         );
       }
     };
@@ -4710,12 +4771,24 @@ export function compile(
           );
         }),
       };
+    const sameParty = samePartyMoves(
+      document,
+      attachedSelectors,
+      attachEntries,
+    );
+    if (sameParty.errors.length)
+      return {
+        verdict: "invalid",
+        warnings: [],
+        diagnostics: sameParty.errors.map((d) => diagnostic(d, "check")),
+      };
     return {
       verdict: "valid",
       diagnostics: [],
-      warnings: purposeWarnings(document, attachedSelectors, attachEntries).map(
-        (d) => ({ ...diagnostic(d, "check"), severity: "warning" }),
-      ),
+      warnings: [
+        ...sameParty.warnings,
+        ...purposeWarnings(document, attachedSelectors, attachEntries),
+      ].map((d) => ({ ...diagnostic(d, "check"), severity: "warning" })),
       artifacts: {
         document: validated.value,
         costManifest: buildUdlCostManifest(validated.value),

@@ -6,6 +6,8 @@ use money
 // The customer owns the rental and pays both the deposit and any late fee.
 // The shop is payee, so its own session keeps a damaged camera's deposit with
 // keep_deposit; released_by stays on the default payee. Late fees are earnings.
+// A return keeps the fees owed so far; waive_late_fees forgives the ones a
+// customer never funds.
 object rental "Camera rental" {
   fields { camera: text, returnBy: date }
   columns: [camera, returnBy]
@@ -21,5 +23,6 @@ object rental "Camera rental" {
     rename { dueAt: returnBy }
     expose create as agree_late_fees
     expose stop as record_return
+    expose waive as waive_late_fees
   }
 }

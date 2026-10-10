@@ -21,14 +21,16 @@ const schedule = (extra = "") => `  attach dues = money.schedule {
 // Mutation: parse `1 month` as two tokens, or drop the template name, and the
 // diagnostic moves to the next line as "expected :".
 test("an unknown tunable is named on its own line with the template's tunables", () => {
-  const source = program(schedule(", every: 1 month"));
+  const source = program(schedule(", cadence: 1 month"));
   const result = compile(source);
   expect(result.verdict).toBe("invalid");
   const [diagnostic] = result.diagnostics;
   expect(diagnostic!.message).toBe(
-    'money.schedule has no tunable "every". Tunables: payer, payee, amount, count',
+    'money.schedule has no tunable "cadence". Tunables: payer, payee, amount, count, every',
   );
-  expect(source.split("\n")[diagnostic!.line - 1]).toContain("every: 1 month");
+  expect(source.split("\n")[diagnostic!.line - 1]).toContain(
+    "cadence: 1 month",
+  );
   expect(diagnostic!.fix).not.toContain("write :");
 });
 

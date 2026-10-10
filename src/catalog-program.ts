@@ -24,7 +24,7 @@ object item "Item" {
  attach transfer = money.transfer { payer: actor, payee: owner, amount: 750 SAR }
  attach hold = money.hold { payer: actor, payee: owner, amount: 750 SAR }
  attach split = money.split { payer: actor, amount: 750 SAR }
- attach schedule = money.schedule { payer: actor, payee: owner, amount: 750 SAR, count: 3 }
+ attach schedule = money.schedule { payer: owner, payee: operator, amount: 250 SAR, every: 1 month }
  attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
  attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
  attach payout = money.payout { payer: actor, payee: owner, adapter: "conformance_boundary" }

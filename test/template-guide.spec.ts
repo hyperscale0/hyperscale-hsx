@@ -29,8 +29,8 @@ test("every template's guide compiles its own example", () => {
 });
 
 // Round 4 F9 and D4: an agent read amount as one piece and could not tell
-// when the first piece is charged.
-test("money.schedule says amount is the total, who runs each action and when a piece is charged", () => {
+// when the first piece is charged. Round 8 F4: a monthly plan is one line.
+test("money.schedule says what amount means in each form, who runs each action and when a piece is charged", () => {
   const guide = templateGuide("money.schedule", options)!;
   expect(JSON.stringify(guide).length).toBeLessThan(8_000);
   const tunable = (name: string) =>
@@ -38,22 +38,41 @@ test("money.schedule says amount is the total, who runs each action and when a p
   expect(tunable("amount")).toContain(
     "occurrence.base: money = divide(self.schedule.amount, count)",
   );
+  expect(tunable("amount")).toContain(
+    "occurrence.amount: money = self.schedule.amount",
+  );
+  expect(tunable("every")).toContain(
+    "occurrence.dueAt: date = after(self.schedule.startsAt, every, self.offset)",
+  );
   expect(tunable("payer")).toBe(
     "Runs activate, cancel. Pays in occurrence.pay.",
   );
-  expect(tunable("payee")).toBe("Runs create. Receives in occurrence.pay.");
+  expect(tunable("payee")).toBe(
+    "Runs create, stop. Receives in occurrence.pay.",
+  );
   const action = (name: string) =>
     guide.actions.find((entry) => entry.name === name)!;
-  expect(action("create").invokes).toEqual(["occurrence.create, count times"]);
+  expect(action("create").invokes).toEqual([
+    "occurrence.create, count times, when every is unset",
+    "occurrence.create, when every is set",
+  ]);
+  // A rule under a branch names it, so a date list never reads as needing startsAt.
+  expect(action("create").requires).toEqual([
+    "self.startsAt >= self.now, when every is set",
+  ]);
   expect(action("occurrence.pay")).toMatchObject({
     runBy: "clock",
     due: "self.dueAt",
     moves: ["self.amount from payer to payee"],
+    invokes: [
+      "occurrence.create, when every is set and count is set",
+      "occurrence.create, when every is set and count is unset",
+    ],
     when: "The clock runs it at self.dueAt. While self.schedule in [active] does not hold, it waits. activate collects every one already due in the same request.",
   });
-  expect(guide.createInput).toEqual([
-    { name: "dates", type: "list of date, one per count (3 in the example)" },
-  ]);
+  // The catalog example is the monthly form, so create takes the start date.
+  expect(guide.createInput).toEqual([{ name: "startsAt", type: "date" }]);
+  expect(guide.example).toContain("every: 1 month");
   expect(guide.example).toContain("expose activate");
   expect(guide.example).not.toContain("expose occurrence");
 });
