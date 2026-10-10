@@ -17,6 +17,8 @@ party investor: business
 object item "Item" {
   attach tr = money.transfer { payer: actor, payee: owner, amount: 750 SAR }
   attach hold = money.hold { payer: actor, payee: owner, amount: 750 SAR }
+  attach escrowed = money.hold { payer: actor, payee: owner, amount: 750 SAR, released_by: payer }
+  attach overdue = money.late_fee { payer: actor, payee: owner, amount: 50 SAR, cap: 500 SAR }
   attach split = money.split { payer: actor, amount: 750 SAR }
   attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
   attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
@@ -69,6 +71,17 @@ test("standard library money actions name the accountable party", () => {
   expect(find("item_auth", "approve")).toEqual({ party: "programOperator" });
   expect(find("item_disp", "win")).toEqual({ party: "programOperator" });
   expect(find("item_case", "assign")).toEqual({ party: "operator" });
+  // Mutation: put release back on the payer, or ignore released_by. A shop
+  // could keep a deposit only by acting for its customer, or a payee could
+  // release a hold its payer kept for itself.
+  expect(find("item_hold", "release")).toEqual({ party: "owner" });
+  expect(find("item_hold", "refund")).toEqual({ party: "owner" });
+  expect(find("item_escrowed", "release")).toEqual({ party: "actor" });
+  expect(find("item_escrowed", "refund")).toEqual({ party: "owner" });
+  // Mutation: let the payee consent for its payer, or let the payer stop its fee.
+  expect(find("item_overdue", "create")).toEqual({ party: "actor" });
+  expect(find("item_overdue", "stop")).toEqual({ party: "owner" });
+  expect(find("item_overdue", "charge")).toBe("clock");
   // Mutation: drop the actor from any of these. A customer or seller could
   // then approve credit or lift an operator's freeze or suspension.
   for (const [id, action] of [

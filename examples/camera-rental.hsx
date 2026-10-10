@@ -1,0 +1,25 @@
+// Riyadh camera shop holds a 1,000 SAR deposit on each rental and charges 50 SAR
+// for each day a camera comes back late, after one day of grace, up to 300 SAR.
+program camera_rentals "Camera rentals"
+use money
+
+// The customer owns the rental and pays both the deposit and any late fee.
+// The shop is payee, so its own session keeps a damaged camera's deposit with
+// keep_deposit; released_by stays on the default payee. Late fees are earnings.
+object rental "Camera rental" {
+  fields { camera: text, returnBy: date }
+  columns: [camera, returnBy]
+  attach deposit = money.hold {
+    payer: owner, payee: operator, amount: 1000 SAR
+    expose create as agree_deposit
+    expose fund as pay_deposit
+    expose release as keep_deposit
+    expose refund as return_deposit
+  }
+  attach late = money.late_fee {
+    payer: owner, payee: operator, amount: 50 SAR, cap: 300 SAR, period: 1d, grace: 1d
+    rename { dueAt: returnBy }
+    expose create as agree_late_fees
+    expose stop as record_return
+  }
+}

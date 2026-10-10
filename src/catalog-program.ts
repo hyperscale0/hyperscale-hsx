@@ -30,6 +30,7 @@ object item "Item" {
  attach payout = money.payout { payer: actor, payee: owner, adapter: "conformance_boundary" }
  attach mandate = money.mandate { payer: actor, payee: owner }
  attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
+ attach late_fee = money.late_fee { payer: actor, payee: owner, amount: 50 SAR, cap: 500 SAR }
  attach policy = insurance.cover { holder: actor, adapter: "conformance_boundary" }
  attach claim = insurance.claim { cover: policy, inspector: inspector }
  attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "conformance_boundary", covers: sale }

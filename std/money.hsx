@@ -1,12 +1,17 @@
 header money
 
 // Economics: Held funding and returns are principal. Release to the company realizes
-// earnings; release to another participant passes the payer's cash through. Generic transfers, splits,
-// schedules, swaps, boundary payouts and metered fees retain no assumed purpose.
+// earnings; release to another participant passes the payer's cash through. A late
+// fee charge is the same: earnings for the company, pass-through for another payee.
+// Generic transfers, splits, schedules, swaps, boundary payouts and metered fees
+// retain no assumed purpose.
 
 // Expose each attachment's create and caller actions explicitly. A transfer or
 // split pays once; a hold exposes fund, release and refund separately. Release
-// pays payee and refund returns payer. A hold has no dispute or damage decision.
+// pays payee and refund returns payer. released_by runs release and defaults to
+// payee, so a shop that is payee keeps a deposit without acting for its customer.
+// Bind released_by: payer for an escrow-style hold that only the payer releases.
+// Only the payee refunds. A hold has no dispute or damage decision.
 // The payee proposes a schedule, which creates its count occurrences, and only
 // the payer activates or cancels it. Each due occurrence pays only while the
 // schedule is active. A due time promises no retry.
@@ -21,10 +26,18 @@ header money
 // most 366 billed events across every metered attachment on the mandate may sum
 // their payer debit, buyer fee and tax included, to its limit. The payer revokes
 // it to stop billing. Only the payee cancels its own unbilled usage.
+// The payer creates a late fee against its dueAt, which rename can bind to the
+// record's own due field. Once dueAt plus grace plus one period has passed, the
+// clock charges amount from payer to payee for each whole period, and the last
+// charge takes only what is left under cap; then the fee is capped. The payee runs
+// stop when the obligation is met, which ends charging. A charge the payer cannot
+// fund refuses as clock work and charging waits for its retry. Grace is at least
+// one second; there are no percentage or interest-style fees.
 
 // Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
 // fund, release and refund each declare one transfer. Schedules and pools add bounded
-// child invocations. Run hsx cost on the composed program for counts, not riyal prices.
+// child invocations. Each late fee charge declares one transfer, and cap may be at most
+// 366 times amount. Run hsx cost on the composed program for counts, not riyal prices.
 
 instrument transfer(payer: party, payee: party, amount: money = runtime) {
   summary: "One transfer between the bound parties."
@@ -38,7 +51,7 @@ instrument transfer(payer: party, payee: party, amount: money = runtime) {
   action cancel { from: pending, to: cancelled, actor: { party: payer } }
 }
 
-instrument hold(payer: party, payee: party, amount: money = runtime) {
+instrument hold(payer: party, payee: party, amount: money = runtime, released_by: party = payee) {
   summary: "Hold the declared amount until release or refund."
   fields { payer: account of payer, payee: account of payee, amount: money = amount, price: money = self.amount, held: account of self }
   lifecycle { states: [pending, funded, released, refunded, cancelled], initial: pending }
@@ -52,7 +65,7 @@ instrument hold(payer: party, payee: party, amount: money = runtime) {
     requires self.held.balance == self.amount
   }
   action release {
-    from: funded, to: released, actor: { party: payer }
+    from: funded, to: released, actor: { party: released_by }
     moves self.amount from self.held to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: programOperator } }
   }
   action refund {
@@ -182,4 +195,31 @@ instrument metered(payer: party, payee: party, unit_price: money, units: integer
   action create { requires unique "usage_event" on [self.usageIdentity]; requires self.mandate.payer == self.payer; requires self.mandate.payee == self.payee }
   action bill { allowZero: true, requires self.amount > "0"; from: recorded, to: billed, actor: { party: payee }, deadline: { at: self.mandate.expiresAt }, requires self.mandate in [active], moves self.amount from payer to payee fee fee }
   action cancel { from: recorded, to: cancelled, actor: { party: payee } }
+}
+
+instrument late_fee(payer: party, payee: party, amount: money, cap: money, period: duration = 1d, grace: duration = 1h) {
+  summary: "Charge a fixed fee for each period a due time stays unmet, up to a cap."
+  fields {
+    payer: account of payer, payee: account of payee, amount: money = amount, cap: money = cap, ceiling: money = multiply(self.amount, 366)
+    dueAt: date, graceEndsAt: date?, firstAt: date?, nextAt: date?, followingAt: date?, charge: money?, left: money?, remaining: money?
+  }
+  lifecycle { states: [running, capped, stopped], initial: running }
+  action create {
+    actor: { party: payer }
+    requires self.amount > "0"
+    requires self.cap >= self.amount
+    requires self.cap <= self.ceiling
+    calculate: [{ target: graceEndsAt, op: shift, date: { field: self.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: firstAt, op: shift, date: { field: self.graceEndsAt }, milliseconds: { literal: period }, direction: after }]
+    set: { nextAt: { field: self.firstAt }, left: { field: self.cap } }
+  }
+  action charge {
+    summary: "Charge late fee"
+    from: running, to: running, actor: clock, due: { at: self.nextAt }
+    calculate: [{ target: charge, op: minimum, values: [{ field: self.amount }, { field: self.left }] }, { target: remaining, op: subtract, base: { field: self.left }, subtract: [{ field: self.charge }] }, { target: followingAt, op: shift, date: { field: self.nextAt }, milliseconds: { literal: period }, direction: after }]
+    set: { left: { field: self.remaining }, nextAt: { field: self.followingAt } }
+    moves self.charge from payer to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: payer } }
+    invoke: [{ selection: { instrument: current(), reference: "payer", anchor: self.payer, states: [running], limit: 1, where: { id: { field: self.id }, left: { literal: "0" } } }, action: finish, input: {} }]
+  }
+  action finish { from: running, to: capped, actor: { parent: current() } }
+  action stop { from: running, to: stopped, actor: { party: payee } }
 }
