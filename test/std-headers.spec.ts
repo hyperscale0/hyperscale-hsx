@@ -1,4 +1,4 @@
-import { libraryAuditSource } from "./fixtures/library-audit.ts";
+import { catalogProgramSource } from "../src/catalog-program.ts";
 import { expect, test } from "bun:test";
 import { genericAdapter } from "../../adl/src/boundary-fixture.ts";
 import { compile } from "../src/compile.ts";
@@ -8,19 +8,21 @@ import { standardLibrary } from "./fixtures/std-source.ts";
 // Mutation unreachable-header-state: add an unentered state to any std lifecycle.
 // The manifest comparison also fails if a new export lacks a compilation witness.
 test("every standard header export is instantiated under the strict compiler", () => {
-  const result = compile(libraryAuditSource, {
+  const result = compile(catalogProgramSource, {
     standardLibrary,
     adapterRegistry: {
-      fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+      conformance_boundary: {
+        adapter: genericAdapter,
+        operation: "boundary.observe",
+      },
     },
   });
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
   expect(result.diagnostics).toEqual([]);
   const attached = new Map(
-    [...libraryAuditSource.matchAll(/attach (\w+) = ([\w.]+) \{/g)].map((m) => [
-      m[2]!,
-      m[1]!,
-    ]),
+    [...catalogProgramSource.matchAll(/attach (\w+) = ([\w.]+) \{/g)].map(
+      (m) => [m[2]!, m[1]!],
+    ),
   );
   const compiled = new Set(
     result.artifacts.document.objects.flatMap((kind) =>

@@ -24,3 +24,9 @@ export type {
 } from "./ast.ts";
 
 export { headerManifest, HEADER_NAMES } from "./headers.ts";
+export {
+  templateGuide,
+  templateIndex,
+  type TemplateGuide,
+  type TemplateIndexEntry,
+} from "./template-guide.ts";
