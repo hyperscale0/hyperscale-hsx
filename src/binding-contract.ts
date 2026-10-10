@@ -68,16 +68,23 @@ export function bindingDependencies(decl: InstrumentDecl) {
       selector?.value.kind === "default"
         ? selector.value.type
         : selector?.value;
+    // An optional selector reads like `when every is unset`.
+    const presence =
+      (type?.kind === "type" || type?.kind === "call") &&
+      type.name !== "enum" &&
+      !!type.optional &&
+      ["set", "unset"].includes(values.get("is")!);
     if (
-      type?.kind !== "call" ||
-      type.name !== "enum" ||
-      !type.args.some(
-        (arg) => arg.kind === "name" && arg.value === values.get("is"),
-      )
+      !presence &&
+      (type?.kind !== "call" ||
+        type.name !== "enum" ||
+        !type.args.some(
+          (arg) => arg.kind === "name" && arg.value === values.get("is"),
+        ))
     )
       throw new BindingContractError(
         entry,
-        "Dependency must select a declared enum choice.",
+        "Dependency must select a declared enum choice, or set or unset of an optional tunable.",
       );
     return {
       binding: entry.key,

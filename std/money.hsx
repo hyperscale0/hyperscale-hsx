@@ -13,17 +13,21 @@ header money
 // Bind released_by: payer for an escrow-style hold that only the payer releases.
 // Only the payee refunds. A hold has no dispute or damage decision.
 // The payee proposes a schedule and only the payer activates or cancels it; the
-// payee stops it. Without every, create makes count occurrences on the listed
-// dates and they sum to amount. With every (1 month, 2 weeks), each occurrence
-// charges amount, the first at startsAt, and paying one creates the next, so only
-// one piece waits ahead. Months step from startsAt and clamp to the month's end.
-// create refuses a startsAt in the past. An authored count ends it after count
-// pieces; without one it runs until stopped or cancelled. Each due occurrence pays
-// only while the schedule is active, and one clock drain charges at most 126
-// pieces; the next drain continues a plan that fell further behind.
+// payee stops it. Without every, count is required and create makes count
+// occurrences on the listed dates that sum to amount. With every (1 month, 2
+// weeks), each occurrence charges amount, the first at startsAt, and paying one
+// creates the next, so only one piece waits ahead. Months step from startsAt and
+// clamp to the month's end. create refuses a startsAt in the past. An authored
+// count ends it after count pieces; without one it runs until stopped or
+// cancelled. The schedule keeps count as a field only when it is set, so reads
+// name a piece "2 of 12" or, open-ended, "#2". Each due occurrence pays
+// only while the schedule is active, and one clock drain posts at most the 253
+// ledger transfers one request takes, 253 one-transfer pieces; the next drain
+// continues a plan that fell further behind.
 // A pool accepts whole contributions only up to its remaining target and at most
-// 366 paid records. Expose pay to release the exact target. Clock failure refunds
-// original contributors; excess acceptance and partial contribution are absent.
+// 253 paid records, so a failure refunds every contributor in one ledger request.
+// Expose pay to release the exact target. Clock failure refunds original
+// contributors; excess acceptance and partial contribution are absent.
 // A swap reserves both legs before exchange or voids reservations on expiry.
 // Payout instruct reserves across the selected adapter; confirm/reject require
 // matching terminal instruction evidence. An acknowledgement cannot settle it.
@@ -32,15 +36,30 @@ header money
 // most 366 billed events across every metered attachment on the mandate may sum
 // their payer debit, buyer fee and tax included, to its limit. The payer revokes
 // it to stop billing. Only the payee cancels its own unbilled usage.
-// The payer creates a late fee against its dueAt, which rename can bind to the
-// record's own due field. Once dueAt plus grace plus one period has passed, the
-// clock charges amount from payer to payee for each whole period, and the last
-// charge takes only what is left under cap; then the fee is capped. The payee runs
-// stop when the obligation is met. Stop keeps what was owed: each charge due at or
-// before it still posts, and the fee settles until the last of those posts, then
-// stops. A period still running at the stop is not charged. A charge the payer cannot fund refuses as clock work and charging waits
-// for its retry; the payee runs waive to forgive what is still owed. Grace is at
-// least one second; there are no percentage or interest-style fees.
+// The company starts a late fee against its dueAt, so late tracking never waits
+// on the payer; rename can bind dueAt to the record's own due field. Once dueAt
+// plus grace plus one period has passed, the clock charges amount from payer to
+// payee for each whole period, and the last charge takes only what is left under
+// cap; then the fee is capped. Charge k is due at dueAt plus grace plus k
+// periods. create copies dueAt. When any action on the record changes the bound
+// field, follow runs on the fee in the same request and reads the field as it
+// stands; the payee's reschedule runs follow directly. Follow keeps the charges
+// already posted and moves the rest later, never earlier, because fees run from
+// the dueAt set at create; past ones post on the next clock run. The clock never
+// runs twice at one instant, so follow also needs the next charge after the last
+// posted one. A move that breaks either rule refuses reschedule, while another
+// action's change leaves the fee where it was and still runs. Period counts
+// whole seconds. The payee runs stop when the obligation is met. Stop keeps what
+// was owed: each charge due at or before it still posts, and the fee settles
+// until the last of those posts, then stops. A period still running at the stop
+// is not charged. A charge the payer cannot fund refuses as clock work and
+// charging waits for its retry; the payee runs waive to forgive what is still
+// owed. Grace is at least one second; there are no percentage or interest-style
+// fees. Bind a hold's late_fee to the late fee on its object and refund also
+// runs stop on that fee while it is running, so returning the deposit ends both.
+// The link sits on refund because every good return refunds, and a fee already
+// capped or stopped is skipped rather than blocking the refund. The hold links
+// the fee at create, so the fee is agreed first, with the same payer and payee.
 
 // Cost: transfer.pay declares one transfer. Hold.create declares one owned account;
 // fund, release and refund each declare one transfer. Schedules and pools add bounded
@@ -59,11 +78,19 @@ instrument transfer(payer: party, payee: party, amount: money = runtime) {
   action cancel { from: pending, to: cancelled, actor: { party: payer } }
 }
 
-instrument hold(payer: party, payee: party, amount: money = runtime, released_by: party = payee) {
+instrument hold(payer: party, payee: party, amount: money = runtime, released_by: party = payee, late_fee: ref<money.late_fee>?) {
   summary: "Hold the declared amount until release or refund."
-  fields { payer: account of payer, payee: account of payee, amount: money = amount, price: money = self.amount, held: account of self }
+  fields {
+    payer: account of payer, payee: account of payee, amount: money = amount, price: money = self.amount, held: account of self
+    when late_fee is set { lateFee: ref<late_fee> }
+  }
   lifecycle { states: [pending, funded, released, refunded, cancelled], initial: pending }
-  action create { }
+  action create {
+    when late_fee is set {
+      requires self.lateFee.payer == self.payer
+      requires self.lateFee.payee == self.payee
+    }
+  }
   action fund {
     from: pending, to: funded, actor: { party: payer }
     moves self.amount from payer to self.held economics { purpose: principal, sourceParty: payer }
@@ -79,6 +106,7 @@ instrument hold(payer: party, payee: party, amount: money = runtime, released_by
   action refund {
     from: funded, to: refunded, actor: { party: payee }
     moves self.amount from self.held to payer economics { purpose: principal, sourceParty: programOperator }
+    when late_fee is set { invoke: [{ selection: { instrument: late_fee, reference: "payer", anchor: self.payer, states: [running], limit: 1, where: { id: { field: self.lateFee } } }, action: stop, input: {} }] }
   }
   action cancel { from: pending, to: cancelled }
 }
@@ -92,12 +120,22 @@ instrument split(payer: party, amount: money = runtime, shares: split = { progra
   action cancel { from: pending, to: cancelled }
 }
 
-instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366) = 12, every: period?) {
-  summary: "Pieces due on listed dates that sum to the total, or one amount each period from a start date."
+instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366)?, every: period?) {
+  summary: "Pieces due on listed dates that sum to the total, or one amount each period from a start date until stopped, or for count periods."
+  dependencies {
+    count {
+      selector: every, is: unset
+      message: "Attachment `{attachment}` charges on a list of dates, so it needs `count`, the number of dates."
+      fix: "Add `count: 3` for three dated pieces, or add `every: 1 month` to charge each month until stopped or cancelled."
+    }
+  }
   fields {
     amount: money = amount
     when every is unset { count: integer = count, dates: list(date, count) }
-    when every is set { startsAt: date }
+    when every is set {
+      startsAt: date
+      when count is set { count: integer = count }
+    }
   }
   lifecycle { states: [draft, active, complete, cancelled], initial: draft }
   action create {
@@ -167,13 +205,13 @@ instrument pool(payer: party, payee: party, target: money, closes: date) {
   action fail {
     from: open, to: failed, actor: clock, due: { at: self.closesAt }
     requires self.held.balance < self.target
-    invoke: [{ selection: { instrument: contribution, reference: "pool", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }]
+    invoke: [{ selection: { instrument: contribution, reference: "pool", anchor: self.id, states: [paid], limit: 253 }, action: refund, input: {} }]
   }
   records {
     contribution: {
       fields { pool: ref<parent>, payer: account of payer, amount: money, remaining: money? }
       lifecycle { states: [pending, paid, refunded], initial: pending }
-      invariants count of { instrument: current(), reference: "pool", anchor: self.pool, states: [paid], limit: 366 } <= 366
+      invariants count of { instrument: current(), reference: "pool", anchor: self.pool, states: [paid], limit: 253 } <= 253
       action create { requires self.pool in [open] }
       action pay { from: pending, to: paid, actor: { party: payer }, deadline: { at: self.pool.closesAt }, requires self.pool in [open], calculate: [{ target: remaining, op: subtract, base: { field: self.pool.target }, subtract: [{ field: self.pool.held.balance }] }], requires self.amount <= self.remaining, moves self.amount from self.payer to self.pool.held economics { purpose: principal, sourceParty: payer } }
       action refund { from: paid, to: refunded, actor: { parent: parent }, moves self.amount from self.pool.held to self.payer economics { purpose: principal, sourceParty: programOperator } }
@@ -239,23 +277,41 @@ instrument late_fee(payer: party, payee: party, amount: money, cap: money, perio
   fields {
     payer: account of payer, payee: account of payee, amount: money = amount, cap: money = cap, ceiling: money = multiply(self.amount, 366)
     dueAt: date, graceEndsAt: date?, firstAt: date?, nextAt: date?, followingAt: date?, charge: money?, left: money?, remaining: money?, stoppedAt: date?
+    stride: integer?, strideAt: date?, elapsed: integer?, lastAt: date?
   }
   lifecycle { states: [running, settling, capped, stopped], initial: running }
   action create {
-    actor: { party: payer }
+    actor: { party: programOperator }
     requires self.amount > "0"
     requires self.cap >= self.amount
     requires self.cap <= self.ceiling
-    calculate: [{ target: graceEndsAt, op: shift, date: { field: self.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: firstAt, op: shift, date: { field: self.graceEndsAt }, milliseconds: { literal: period }, direction: after }]
-    set: { nextAt: { field: self.firstAt }, left: { field: self.cap } }
+    calculate: [{ target: graceEndsAt, op: shift, date: { field: self.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: firstAt, op: shift, date: { field: self.graceEndsAt }, milliseconds: { literal: period }, direction: after }, { target: stride, op: divide, amount: { literal: period }, divisor: { literal: 1000 }, rounding: floor }, { target: strideAt, op: step, date: { field: self.graceEndsAt }, period: { literal: "PT1S" }, times: { field: self.stride } }, { target: elapsed, op: sum, values: [{ literal: 0 }] }]
+    requires self.strideAt == self.firstAt
+    set: { nextAt: { field: self.firstAt }, left: { field: self.cap }, lastAt: { literal: "1970-01-01T00:00:00.000Z" } }
   }
   action charge {
     summary: "Charge late fee"
     from: running, to: running, actor: clock, due: { at: self.nextAt }
-    calculate: [{ target: charge, op: minimum, values: [{ field: self.amount }, { field: self.left }] }, { target: remaining, op: subtract, base: { field: self.left }, subtract: [{ field: self.charge }] }, { target: followingAt, op: shift, date: { field: self.nextAt }, milliseconds: { literal: period }, direction: after }]
-    set: { left: { field: self.remaining }, nextAt: { field: self.followingAt } }
+    calculate: [{ target: charge, op: minimum, values: [{ field: self.amount }, { field: self.left }] }, { target: remaining, op: subtract, base: { field: self.left }, subtract: [{ field: self.charge }] }, { target: followingAt, op: shift, date: { field: self.nextAt }, milliseconds: { literal: period }, direction: after }, { target: elapsed, op: sum, values: [{ field: self.elapsed }, { field: self.stride }] }]
+    set: { left: { field: self.remaining }, nextAt: { field: self.followingAt }, lastAt: { field: self.nextAt } }
     moves self.charge from payer to payee economics { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: payer } }
     invoke: [{ selection: { instrument: current(), reference: "payer", anchor: self.payer, states: [running], limit: 1, where: { id: { field: self.id }, left: { literal: "0" } } }, action: finish, input: {} }]
+  }
+  action reschedule {
+    summary: "Move the due time"
+    from: running, to: running, actor: { party: payee }
+    subject { dueAt: date }
+    invoke: [{ reference: self.id, action: follow, input: {} }]
+  }
+  action follow {
+    summary: "Follow the due time"
+    from: running, to: running, follows: dueAt
+    subject { dueAt: date }
+    // Fees run from the dueAt set at create, so the date only moves later.
+    requires subject.dueAt >= self.dueAt
+    calculate: [{ target: graceEndsAt, op: shift, date: { field: subject.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: firstAt, op: shift, date: { field: self.graceEndsAt }, milliseconds: { literal: period }, direction: after }, { target: followingAt, op: step, date: { field: self.firstAt }, period: { literal: "PT1S" }, times: { field: self.elapsed } }]
+    requires self.followingAt > self.lastAt
+    set: { dueAt: { field: subject.dueAt }, nextAt: { field: self.followingAt } }
   }
   action collect {
     summary: "Collect owed late fee"

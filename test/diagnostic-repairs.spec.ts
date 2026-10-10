@@ -341,7 +341,7 @@ object loan "Loan" {
   );
   expect(result.diagnostics.map((item) => item.message)).toEqual([
     expect.stringMatching(
-      /^financing\.installments has no tunable "profit"\. Tunables: months, /,
+      /^financing\.installments has no tunable "profit"\. Tunables: loan_kind, max_term, months, /,
     ),
   ]);
 });

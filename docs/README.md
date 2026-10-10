@@ -327,7 +327,8 @@ clauses stay outside branches. Calculations and requirements run before moves;
 invocations run after moves. A collections fee therefore uses an internal action
 invoked after payment. Clock and parent actions have no public API name.
 
-`integer(1, 366)` declares an inclusive tunable bound. The compiler-owned manifest
+`integer(1, 366)` declares an inclusive tunable bound, and `integer(1, 366)?`
+keeps the bound on a tunable the author may leave unset. The compiler-owned manifest
 publishes enum values, numeric minima and maxima, and cross-tunable constraints.
 Bounds use minor units for money, basis points for percentages and milliseconds
 for durations. Money spans 0 through 999999999999999999 minor units; percentages
@@ -356,7 +357,9 @@ parameterDiagnostics {
 }
 ```
 
-Each dependency names a declared tunable, an enum selector and one of its choices.
+Each dependency names a declared tunable, an enum selector and one of its choices,
+or an optional selector and `set` or `unset`: `money.schedule` needs `count` when
+`every` is unset.
 The compiler checks selected dependencies before lowering and the manifest retains
 them. `{attachment}` in the message expands to the authored attachment name.
 Parameter diagnostics name a declared tunable and explain its accepted value,

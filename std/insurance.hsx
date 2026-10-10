@@ -16,6 +16,9 @@ header insurance
 // Cover.cancel invokes refund only on paid slices, before each startsAt. It returns
 // insurerPremium from insurer and commission from broker to holder. Active or
 // expired periods are excluded; insufficient recipient funds refuse the reversal.
+// Each refund is two transfers, so cancel refunds 126 paid slices per operation.
+// A cover with more reads cancelling, and its cancel_step clock refunds the next
+// 126 a second later until none remain; then it reads cancelled.
 // Slice refund is parent-owned, not a public alias. Expose cover.cancel instead.
 // Claims require active cover. Expose claim.create, approve, deny and pay as needed.
 // Inspector approves OR denies from submitted. After approval only pay or clock
@@ -25,21 +28,34 @@ header insurance
 
 // Cost: each slice collection or refund declares two transfers. Claim approval
 // reserves once; pay posts once and expiry voids once. Cover cancellation adds
-// bounded slice invocations. Run hsx cost for composed counts, not provider prices.
+// at most 252 transfers per step. Run hsx cost for composed counts, not provider prices.
 
 instrument cover(holder: party, adapter: text, commission: percent = 0%, broker: party = programOperator, covers: ref?, premium: money = runtime, claim_limit: money = runtime) {
   summary: "Recurring cover bound to an outside insurer across an ADL boundary."
-  fields { covers: ref<covers>?, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date, claimLimit: money = claim_limit }
-  lifecycle { states: [pending, active, cancelled, expired], initial: pending }
+  fields { covers: ref<covers>?, holder: account of holder, insurer: account(adapter(adapter), cash, "premium"), expiresAt: date, claimLimit: money = claim_limit, cancelAt: date?, slicesLeft: integer? }
+  lifecycle { states: [pending, active, cancelling, cancelled, expired], initial: pending }
   action create { actor: { party: holder } }
   action activate {
     from: pending, to: active, actor: { party: programOperator }
     subject { adapter: adapter }
   }
   action cancel {
-    from: active, to: cancelled, actor: { party: holder }
-    invoke: [{ selection: { instrument: slice, reference: "cover", anchor: self.id, states: [paid], limit: 366 }, action: refund, input: {} }]
+    from: active, to: cancelling, actor: { party: holder }
+    invoke: [{ reference: self.id, action: cancel_batch, input: {} }]
   }
+  action cancel_step { from: cancelling, to: preserve, actor: clock, due: { at: self.cancelAt }, invoke: [{ reference: self.id, action: cancel_batch, input: {} }] }
+  action cancel_batch {
+    from: cancelling, to: preserve, actor: { parent: current() }
+    calculate: [{ target: cancelAt, op: shift, date: { field: self.now }, milliseconds: { literal: 1000 }, direction: after }]
+    invoke: [{ selection: { instrument: slice, reference: "cover", anchor: self.id, states: [paid], limit: 126, batch: true, order: [startsAt] }, action: refund, input: {} }]
+    invoke: [{ reference: self.id, action: cancel_check, input: {} }]
+  }
+  action cancel_check {
+    from: cancelling, to: preserve, actor: { parent: current() }
+    calculate: [{ target: slicesLeft, op: aggregate, selection: { instrument: slice, reference: "cover", anchor: self.id, states: [paid], limit: 1, batch: true }, measure: count }]
+    invoke: [{ reference: self.id, action: finish_cancel, guard: { kind: compare, left: { field: self.slicesLeft }, operator: "==", right: { literal: 0 } }, input: {} }]
+  }
+  action finish_cancel { from: cancelling, to: cancelled, actor: { parent: current() } }
   action expire { from: active, to: expired, actor: clock, due: { at: self.expiresAt } }
   records {
     slice: {

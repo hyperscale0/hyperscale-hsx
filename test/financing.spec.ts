@@ -16,21 +16,84 @@ const compile = (source: string) =>
         readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
     },
   });
-test("financing range accepts the full schedule domain and costs nested children and the order check", () => {
-  for (const m of [1, 3, 6, 16, 17, 365, 366]) {
-    const res = compile(source.replace("months: 3", `months: ${m}`));
+test("the schedule bound follows max_term, not the months a program picks", () => {
+  for (const [terms, maximum] of [
+    ["months: 1", 84],
+    ["months: 3", 84],
+    ["months: 84", 84],
+    ["loan_kind: short_term, months: 12", 12],
+    ["loan_kind: auto, months: 84", 84],
+    ["loan_kind: mortgage, months: 360", 360],
+    ["loan_kind: mortgage, max_term: 120, months: 3", 120],
+  ] as const) {
+    const res = compile(source.replace("months: 3", terms));
     const doc = res.artifacts?.document;
     if (!doc) throw new Error(JSON.stringify(res.diagnostics));
     expect(
       buildUdlCostManifest(doc).actions["car_plan.create"]!.invocations,
-    ).toBe(m * 3 + 1);
+    ).toBe(maximum * 3 + 1);
   }
 });
 test("financing refuses schedules outside the std bound", () => {
-  for (const months of [0, 367])
+  for (const months of [0, 361])
     expect(
       compile(source.replace("months: 3", `months: ${months}`)).verdict,
     ).toBe("invalid");
+});
+// Mutation: let a tenant raise max_term, or default it above the kind's ceiling.
+test("each loan kind caps the term and a tenant may only lower it", () => {
+  for (const [terms, message] of [
+    ["months: 85", "months must be at_most max_term"],
+    ["loan_kind: short_term, months: 13", "months must be at_most max_term"],
+    ["max_term: 85, months: 3", "max_term for personal is at most 84"],
+    [
+      "loan_kind: auto, max_term: 120, months: 3",
+      "max_term for auto is at most 84",
+    ],
+    [
+      "loan_kind: mortgage, max_term: 24, months: 36",
+      "months must be at_most max_term",
+    ],
+  ] as const) {
+    const res = compile(source.replace("months: 3", terms));
+    expect([terms, res.verdict]).toEqual([terms, "invalid"]);
+    expect(res.diagnostics.map((item) => item.message).join("\n")).toContain(
+      message,
+    );
+  }
+  for (const terms of [
+    "loan_kind: mortgage, months: 360",
+    "loan_kind: auto, max_term: 60, months: 60",
+    "loan_kind: short_term, months: 4",
+  ])
+    expect([
+      terms,
+      compile(source.replace("months: 3", terms)).verdict,
+    ]).toEqual([terms, "valid"]);
+});
+// Mutation: post one transfer per remaining slice or per charge again.
+test("every financing action of a 360-month plan fits one 253-transfer batch", () => {
+  const witness = source
+    .replace("months: 3", "loan_kind: mortgage, months: 360")
+    .replace(
+      /(?=  attach plan = financing\.installments)/,
+      `  attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, borrower: actor }\n`,
+    );
+  const result = compile(witness);
+  if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
+  const actions = buildUdlCostManifest(result.artifacts.document).actions;
+  const over = Object.entries(actions)
+    .filter(([, cost]) => cost.transfers > 253 || cost.invocations >= 8192)
+    .map(([name, cost]) => [name, cost.transfers, cost.invocations]);
+  expect(over).toEqual([]);
+  for (const name of [
+    "car_plan.disburse",
+    "car_plan.payoff",
+    "car_plan.write_off",
+    "car_plan.unwind",
+    "car_plan.unwind_undelivered",
+  ])
+    expect([name, actions[name]!.transfers <= 32]).toEqual([name, true]);
 });
 test("all financing enum policy combinations compile", () => {
   // The example exposes escrow returns; borrower-directed plans exclude them.
@@ -59,7 +122,7 @@ test("all financing enum policy combinations compile", () => {
 
 test("late-charge waterfall derives its expansion bound without an authored override", () => {
   const witness = source
-    .replace("months: 3", "months: 366")
+    .replace("months: 3", "loan_kind: mortgage, months: 360")
     .replace(
       /(?=  attach plan = financing\.installments)/,
       `  attach late = financing.late_charge { on: plan, fines_to: operator, costs_to: operator, borrower: actor }\n`,
@@ -70,7 +133,7 @@ test("late-charge waterfall derives its expansion bound without an authored over
   const cost =
     buildUdlCostManifest(document).actions["car_plan_payment.pay"]!
       .invocations + 1;
-  expect(cost).toBeGreaterThan(4096);
+  expect(cost).toBeGreaterThan(1024);
   expect(cost).toBeLessThanOrEqual(8192);
   expect(JSON.stringify(document)).not.toContain("expansionLimit");
   expect(validateUdl(document).ok).toBe(true);
@@ -124,8 +187,14 @@ object item "Item" {
     "allocatedPayable",
     "borrower",
     "capital",
+    "costReceivable",
+    "debt",
+    "fineReceivable",
     "loss",
+    "principalReceivable",
+    "profitEarned",
     "profitIncome",
+    "profitReceivable",
   ]);
 });
 
@@ -143,6 +212,9 @@ test("pricing selects annuity rows or the flat split and has no default", () => 
   expect(
     (amortizing.actions.create!.calculate ?? []).map((c) => [c.target, c.op]),
   ).toEqual([
+    ["openPrincipal", "sum"],
+    ["openProfit", "sum"],
+    ["earnedProfit", "sum"],
     ["principal", "annuity"],
     ["profit", "annuity"],
     ["instalment", "sum"],

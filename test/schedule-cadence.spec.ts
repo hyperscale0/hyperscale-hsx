@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
+import { templateGuide } from "../src/template-guide.ts";
 import { standardLibrary } from "./fixtures/std-source.ts";
 
 const program = (bindings: string, extra = "") => `program gym "Gym"
@@ -77,18 +78,59 @@ test("an authored count stops the chain after count pieces", () => {
   );
 });
 
-test("without every the schedule keeps its dated form and its default count", () => {
+test("without every the schedule keeps its dated form and needs a count", () => {
   const { schedule, occurrence } = instruments(
-    "payer: owner, payee: operator, amount: 750 SAR",
+    "payer: owner, payee: operator, amount: 750 SAR, count: 4",
   );
   expect(schedule.actions.create!.input).toEqual([
-    { name: "dates", type: "list", item: "date", maxItems: 12 },
+    { name: "dates", type: "list", item: "date", maxItems: 4 },
   ]);
   expect(schedule.actions.create!.invoke![0]).toMatchObject({
-    range: { count: { literal: 12 }, maximum: 12, bind: "position" },
+    range: { count: { literal: 4 }, maximum: 4, bind: "position" },
   });
   expect(occurrence.actions.pay!.invoke ?? []).toEqual([]);
   expect(occurrence.fields.map((field) => field.name)).toContain("base");
+  const result = compile(
+    program("payer: owner, payee: operator, amount: 750 SAR"),
+    { standardLibrary },
+  );
+  expect(result.verdict).toBe("invalid");
+  expect(result.diagnostics[0]).toMatchObject({
+    code: "HSX1001",
+    message:
+      "Attachment `dues` charges on a list of dates, so it needs `count`, the number of dates.",
+    fix: "Add `count: 3` for three dated pieces, or add `every: 1 month` to charge each month until stopped or cancelled.",
+  });
+});
+
+// Channel trials: the catalog showed `count = 12`, so agents wrote count: 366
+// for a membership that runs until the member cancels.
+test("count reads as optional, and only a counted plan keeps its total", () => {
+  const signature = templateGuide("money.schedule")!.signature;
+  expect(signature).toContain("count: integer(1, 366)?");
+  expect(signature).not.toContain("= 12");
+  const count = templateGuide("money.schedule")!.tunables.find(
+    (tunable) => tunable.name === "count",
+  )!;
+  expect(count).toMatchObject({ required: false, type: "integer(1, 366)?" });
+  expect(count).not.toHaveProperty("default");
+  const fields = (bindings: string) =>
+    Object.fromEntries(
+      instruments(bindings).schedule.fields.map((field) => [
+        field.name,
+        "value" in field ? field.value : undefined,
+      ]),
+    );
+  const open = fields(
+    "payer: owner, payee: operator, amount: 150 SAR, every: 1 month",
+  );
+  expect(open).not.toHaveProperty("count");
+  expect(Object.keys(open)).toEqual(["amount", "startsAt"]);
+  expect(
+    fields(
+      "payer: owner, payee: operator, amount: 150 SAR, every: 1 month, count: 12",
+    ),
+  ).toMatchObject({ count: 12 });
 });
 
 test("every takes days, weeks, months and years, and refuses a clock time", () => {

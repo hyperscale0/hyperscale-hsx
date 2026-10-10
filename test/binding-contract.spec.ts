@@ -91,7 +91,8 @@ test("malformed header dependency refuses instead of silently dropping a require
     standardLibrary: { source: () => header.replace("is: held", "is: absent") },
   });
   expect(result.diagnostics[0]).toMatchObject({
-    message: "Dependency must select a declared enum choice.",
+    message:
+      "Dependency must select a declared enum choice, or set or unset of an optional tunable.",
     fix: "Repair the header binding contract.",
   });
 });

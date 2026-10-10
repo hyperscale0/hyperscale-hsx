@@ -119,19 +119,19 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             {
               name: "principal",
-              field: "principalReceivable.balance",
+              field: "openPrincipal",
               type: { kind: "money", currency: "SAR" },
               required: true
             },
             {
               name: "profit",
-              field: "profitReceivable.balance",
+              field: "openProfit",
               type: { kind: "money", currency: "SAR" },
               required: true
             },
             {
               name: "earnedProfit",
-              field: "profitEarned.balance",
+              field: "earnedProfit",
               type: { kind: "money", currency: "SAR" },
               required: true
             },
@@ -468,19 +468,19 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
             },
             {
               name: "principal",
-              field: "principalReceivable.balance",
+              field: "openPrincipal",
               type: { kind: "money", currency: "SAR" },
               required: true
             },
             {
               name: "profit",
-              field: "profitReceivable.balance",
+              field: "openProfit",
               type: { kind: "money", currency: "SAR" },
               required: true
             },
             {
               name: "earnedProfit",
-              field: "profitEarned.balance",
+              field: "earnedProfit",
               type: { kind: "money", currency: "SAR" },
               required: true
             },

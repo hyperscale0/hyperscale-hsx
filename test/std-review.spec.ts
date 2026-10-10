@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
+import { buildUdlCostManifest } from "../src/cost.ts";
 
 const standardLibrary = {
   source: (name: string) =>
@@ -54,7 +55,9 @@ test("opening another wallet does not reset an investor's round cap", () => {
   expect(cap.selection.where).toEqual({ investor: { field: "self.investor" } });
 });
 
-// Mutation: remove the paid-contribution bound.
+// Mutation: remove the paid-contribution bound. r339: the bound is the 253
+// transfers one ledger request takes, since failure refunds every paid
+// contribution in one linked request.
 test("a pool cannot accept more paid contributions than failure can refund", () => {
   const pool = instrument(
     `program p "Pool"
@@ -71,12 +74,44 @@ object campaign "Campaign" {
       reference: "pool",
       anchor: "self.pool",
       states: ["paid"],
-      limit: 366,
+      limit: 253,
     },
     measure: "count",
     operator: "<=",
-    value: { literal: 366 },
+    value: { literal: 253 },
   });
+});
+
+// r339-fix: a round's failure refunds every commitment and a cash
+// distribution pays every share in one ledger request of 253 transfers.
+// Mutation: lift the commitment bound or a round selection back to 366, and
+// a round of 254 commitments can neither fail nor distribute.
+test("a lending round takes no more commitments than one ledger request refunds and distributes", () => {
+  const lending = document(sample("lending"));
+  const commitment = lending.instruments.find(
+    (item) => item.id === "business_investment",
+  )!;
+  expect(commitment.invariants).toContainEqual({
+    kind: "aggregate",
+    selection: {
+      instrument: ["business_investment"],
+      reference: "round",
+      anchor: "self.round",
+      states: ["committed", "funded"],
+      limit: 248,
+    },
+    measure: "count",
+    operator: "<=",
+    value: { literal: 248 },
+  });
+  const { actions } = buildUdlCostManifest(lending);
+  for (const [name, cost] of [
+    ["business_funding.close", 1],
+    ["business_funding.fail", 248],
+    ["business_returns.distribute_cash", 253],
+    ["business_losses.distribute_loss", 250],
+  ] as const)
+    expect([name, actions[name]!.transfers]).toEqual([name, cost]);
 });
 
 // Mutation: remove allowZero from the recovery-cost assessment.
@@ -99,7 +134,7 @@ test("report arrears include earned profit after principal is repaid", () => {
       schedule.columns.find((column) => column.name === "earnedProfit"),
     ).toEqual({
       name: "earnedProfit",
-      field: "profitEarned.balance",
+      field: "earnedProfit",
       type: { kind: "money", currency: "SAR" },
       required: true,
     });

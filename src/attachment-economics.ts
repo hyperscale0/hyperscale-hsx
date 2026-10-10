@@ -1,4 +1,5 @@
 import {
+  resolveField,
   subjectPartyRoles,
   udlMoveSchema,
   type AttachmentPartyBinding,
@@ -153,14 +154,30 @@ export function purposeWarnings(
         )
           continue;
         const path = `${selector.prefix}${actionName}${action.moves.length > 1 ? `.${move.key}` : ""}`;
-        const from = party(move.from);
+        // A self account names its owner, so its money is that owner's.
+        const account = /^self\.\w+$/.test(move.from)
+          ? resolveField(document, instrument, move.from, action.input, action)
+          : undefined;
+        const from =
+          party(move.from) ??
+          (account?.type === "account" &&
+          typeof account.owner === "string" &&
+          account.owner !== "self"
+            ? account.owner
+            : undefined);
         const to = party(move.to);
         const purpose = operator(to)
           ? "earning"
           : operator(from)
             ? "participant_payout"
             : "pass_through";
-        const source = from ? parameter(from) : (parameters[0] ?? "owner");
+        // Money leaving an account of self is the company's: only an earning
+        // into the company may name the customer it was held for.
+        const source = from
+          ? parameter(from)
+          : purpose === "earning"
+            ? (parameters[0] ?? "owner")
+            : "programOperator";
         warnings.push({
           code: "economic_purpose_missing",
           message: `${attach.name}: ${path} moves money with no declared purpose, so the books will not count it as revenue or a payout`,
@@ -278,4 +295,112 @@ export function samePartyMoves(
     }
   }
   return { errors, warnings };
+}
+
+/**
+ * The ledger books a classified move only when its sourceParty owns the
+ * account the money leaves (ledger-facts checkEconomicOwners). An account of
+ * self or of an adapter belongs to the company; a party's account belongs to
+ * that party. The one exception is a held earning: money held in an account of
+ * self that lands in the company's own account may name the customer it was
+ * held for. A mismatch compiles today and refuses every run with
+ * economic_source_unbound, so the action can never run. `owner` and `actor`
+ * can be one person at run time, so only a mismatch that can never resolve is
+ * an error.
+ */
+export function unboundEconomicSources(
+  document: UdlDocument,
+  selectors: ReadonlyMap<string, { prefix: string; root: string }>,
+  attaches: ReadonlyMap<
+    string,
+    { entry: Entry; name: string; template: InstrumentDecl }
+  >,
+): Diagnostic[] {
+  const errors: Diagnostic[] = [];
+  const company = (name: string) =>
+    name === "operator" ||
+    name === "programOperator" ||
+    document.parties[name]?.role === "program_operator";
+  const identity = (name: string) => (company(name) ? "company" : name);
+  const customer = (name: string) => name === "owner" || name === "actor";
+  const bindings = new Map(
+    document.objects.flatMap((object) =>
+      object.attachments.map((item) => [item.instrument, item.parties]),
+    ),
+  );
+  for (const instrument of document.instruments) {
+    const selector = selectors.get(instrument.id);
+    const attach = selector && attaches.get(selector.root);
+    if (!selector || !attach) continue;
+    const parties =
+      bindings.get(instrument.id) ?? bindings.get(selector.root) ?? {};
+    // The founder's own parameter name, such as member for owner.
+    const spell = (name: string) =>
+      (!company(name) &&
+        Object.entries(parties).find(
+          ([, binding]) =>
+            ("role" in binding ? binding.role : binding.party) === name,
+        )?.[0]) ||
+      name;
+    for (const actionName of instrument.actionOrder) {
+      const action = instrument.actions[actionName]!;
+      for (const move of action.moves) {
+        // Only this instrument's own accounts: a path through another
+        // record names that record's parties, not this attachment's.
+        if (
+          !move.economics ||
+          !("amount" in move) ||
+          !/^(?:party|self)\.\w+$/.test(move.from)
+        )
+          continue;
+        const account = resolveField(
+          document,
+          instrument,
+          move.from,
+          action.input,
+          action,
+        );
+        if (account?.type !== "account") continue;
+        const owner =
+          account.owner === "self" || typeof account.owner !== "string"
+            ? "company"
+            : identity(account.owner);
+        const source = identity(move.economics.sourceParty);
+        if (owner === source || (customer(owner) && customer(source))) continue;
+        // A path to another record's account, such as a payment's held
+        // profit landing in self.plan.profitIncome, counts when that account
+        // is the company's or cannot be resolved here.
+        const destination = /^party\.\w+$/.test(move.to)
+          ? undefined
+          : resolveField(document, instrument, move.to, action.input, action);
+        const toCompany = /^party\.\w+$/.test(move.to)
+          ? company(move.to.slice("party.".length))
+          : destination?.type !== "account" ||
+            typeof destination.owner !== "string" ||
+            destination.owner === "self" ||
+            company(destination.owner);
+        const heldEarning =
+          move.economics.purpose === "earning" &&
+          !move.economics.reversalOf &&
+          account.owner === "self" &&
+          source !== "company" &&
+          toCompany;
+        if (heldEarning) continue;
+        const path = `${selector.prefix}${actionName}${action.moves.length > 1 ? `.${move.key}` : ""}`;
+        const owned =
+          owner === "company" ? "your company's" : `the ${spell(owner)}'s`;
+        const fix = owner === "company" ? "programOperator" : owner;
+        errors.push({
+          code: "economic_source_unbound",
+          message: `${attach.name}: ${path} moves money out of ${move.from.startsWith("party.") ? spell(move.from.slice(6)) : move.from}, which is ${owned} account, but names ${spell(move.economics.sourceParty)} as the source. Every run of this action would refuse with economic_source_unbound.`,
+          fix: `Set sourceParty: ${fix === "programOperator" ? fix : spell(fix)} on economics ${path}, or move the money from an account ${spell(move.economics.sourceParty)} owns.`,
+          span: {
+            start: attach.entry.span.start,
+            end: attach.entry.span.start + `attach ${attach.name}`.length,
+          },
+        });
+      }
+    }
+  }
+  return errors;
 }

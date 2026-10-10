@@ -83,7 +83,12 @@ export function headerManifest(
                   ? { values: type.args.map(spelling) }
                   : {}),
                 ...tunableBounds(type),
-                required: !fallback && !(type.kind === "type" && type.optional),
+                required:
+                  !fallback &&
+                  !(
+                    (type.kind === "type" || type.kind === "call") &&
+                    type.optional
+                  ),
                 ...(fallback ? { default: spelling(fallback) } : {}),
               };
             });

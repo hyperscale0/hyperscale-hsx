@@ -460,7 +460,8 @@ function valueMeaning(
       : []),
     ...(set.length
       ? [
-          `Sets ${set.map((entry) => `${entry.key}: ${fieldValue(entry, spell)}`).join(", ")}.`,
+          // Two branches can set one field the same way.
+          `Sets ${[...new Set(set.map((entry) => `${entry.key}: ${fieldValue(entry, spell)}`))].join(", ")}.`,
         ]
       : []),
     ...(uses.length ? [`Read by ${uses.slice(0, 6).join("; ")}.`] : []),

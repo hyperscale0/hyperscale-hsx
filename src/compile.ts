@@ -44,6 +44,7 @@ import {
   applyAttachmentEconomics,
   purposeWarnings,
   samePartyMoves,
+  unboundEconomicSources,
 } from "./attachment-economics.ts";
 import { parseHeader } from "./header-source.ts";
 import {
@@ -1003,7 +1004,8 @@ export function compile(
         const typeName =
           type.kind === "type" || type.kind === "call" ? type.name : text(type);
         const partyParameter = attachmentInfo && typeName === "party";
-        const optional = type.kind === "type" && type.optional;
+        const optional =
+          (type.kind === "type" || type.kind === "call") && !!type.optional;
         // An optional party stays unset unless the attachment binds it, so a
         // program party that shares its name does not switch it on.
         const byName: Expr | undefined =
@@ -1061,11 +1063,10 @@ export function compile(
       }
       for (const dependency of dependencies) {
         const selected = environment.get(dependency.when);
-        if (
-          selected?.kind === "name" &&
-          selected.value === dependency.is &&
-          !environment.has(dependency.binding)
-        ) {
+        const holds = enums.has(dependency.when)
+          ? selected?.kind === "name" && selected.value === dependency.is
+          : tunables.get(dependency.when) === (dependency.is === "set");
+        if (holds && !environment.has(dependency.binding)) {
           throw new CompileFailure({
             code: "HSX1001",
             message: dependency.message.replaceAll(
@@ -1246,7 +1247,10 @@ export function compile(
                 .filter(
                   (p) =>
                     p.value.kind !== "default" &&
-                    !(p.value.kind === "type" && p.value.optional),
+                    !(
+                      (p.value.kind === "type" || p.value.kind === "call") &&
+                      p.value.optional
+                    ),
                 )
                 .map((p) => p.key) ?? [];
             fail(
@@ -1606,6 +1610,41 @@ export function compile(
         throw new CompileFailure(parameterErrors[0]!);
       }
       const body = entries(decl.body);
+      // A ceiling caps a tunable by the value of an enum tunable, such as the
+      // longest term per loan kind. An unset tunable takes the ceiling; a
+      // supplied one may lower it, never raise it.
+      for (const ceiling of asBlock(body.get("ceilings")).entries) {
+        const table = entries(asBlock(ceiling.value));
+        const by = table.get("by");
+        const selected = by && environment.get(text(by));
+        if (!by || selected?.kind !== "name")
+          fail(
+            ceiling,
+            `ceiling ${ceiling.key} needs by: an enum tunable`,
+            "write by: kind and one maximum per enum value",
+          );
+        const maximum = table.get(selected.value);
+        if (maximum?.kind !== "number")
+          fail(
+            ceiling,
+            `ceiling ${ceiling.key} has no maximum for ${selected.value}`,
+            `add ${selected.value}: number to the ceiling`,
+          );
+        if (!tunables.get(ceiling.key)) {
+          environment.set(ceiling.key, { ...maximum, span: origin });
+          continue;
+        }
+        const supplied = environment.get(ceiling.key)!;
+        if (
+          supplied.kind !== "number" ||
+          BigInt(supplied.value) > BigInt(maximum.value)
+        )
+          fail(
+            supplied,
+            `${ceiling.key} for ${selected.value} is at most ${maximum.value}`,
+            `choose ${ceiling.key} of ${maximum.value} or less, or omit it`,
+          );
+      }
       for (const constraint of asBlock(body.get("constraints")).entries) {
         const rule = constraint.value;
         if (
@@ -1626,6 +1665,13 @@ export function compile(
             "constraint needs two declared tunables",
             "name the compared tunables",
           );
+        // A runtime value is checked when the agreement is created.
+        if (
+          [left, right].some(
+            (expr) => expr.kind === "name" && expr.value === "runtime",
+          )
+        )
+          continue;
         const numericKind = (expr: Expr) =>
           expr.kind === "name" && /^P(?:\d|T)/.test(expr.value)
             ? "duration"
@@ -1666,6 +1712,7 @@ export function compile(
             "summary",
             "invariants",
             "constraints",
+            "ceilings",
             "dependencies",
             "parameterDiagnostics",
             "reports",
@@ -4776,11 +4823,18 @@ export function compile(
       attachedSelectors,
       attachEntries,
     );
-    if (sameParty.errors.length)
+    const unbound = unboundEconomicSources(
+      document,
+      attachedSelectors,
+      attachEntries,
+    );
+    if (sameParty.errors.length || unbound.length)
       return {
         verdict: "invalid",
         warnings: [],
-        diagnostics: sameParty.errors.map((d) => diagnostic(d, "check")),
+        diagnostics: [...sameParty.errors, ...unbound].map((d) =>
+          diagnostic(d, "check"),
+        ),
       };
     return {
       verdict: "valid",

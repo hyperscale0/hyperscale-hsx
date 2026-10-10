@@ -25,7 +25,13 @@ export type Expr =
     }
   | { kind: "list"; items: Expr[]; span: Span }
   | { kind: "block"; entries: Entry[]; span: Span }
-  | { kind: "call"; name: string; args: Expr[]; span: Span }
+  | {
+      kind: "call";
+      name: string;
+      args: Expr[];
+      optional?: boolean;
+      span: Span;
+    }
   | {
       kind: "type";
       name: string;

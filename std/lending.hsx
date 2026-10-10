@@ -26,6 +26,9 @@ header lending
 // Cost: round.create declares one owned account. Close transfers its balance
 // and invokes commitments; failure invokes their refunds. Distribution adds moves
 // and bounded share invocations. Run hsx cost for counts after policy selection.
+// A round takes at most 248 commitments, so failure refunds them in 248 ledger
+// transfers and a cash distribution pays every share in 253, the most one
+// ledger request takes.
 
 instrument round(borrower: party, plan: ref<financing.installments> = object(financing.installments), operator: party = programOperator, minimum_ticket: money = 100 SAR, investor_cap: percent = 20%, commitments: ref<lending.commitment> = object(lending.commitment)) {
   summary: "A threshold funding round; failed rounds return each original wallet contribution."
@@ -38,14 +41,14 @@ instrument round(borrower: party, plan: ref<financing.installments> = object(fin
   action create { actor: { party: operator }, requires unique "funding_plan" on [self.plan]; requires self.borrower == self.plan.borrower }
   action close {
     from: open, to: funded, actor: { party: operator }
-    requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 } == self.price
+    requires sum "amount" of { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 248 } == self.price
     requires self.held.balance == self.price
     moves self.price from self.held to self.plan.capital economics { purpose: principal, sourceParty: programOperator }
-    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: fund, input: {} }]
+    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 248 }, action: fund, input: {} }]
   }
   action fail {
     from: open, to: failed, actor: clock, due: { at: self.closesAt }
-    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 366 }, action: refund, input: {} }]
+    invoke: [{ selection: { instrument: commitments, reference: "round", anchor: self.id, states: [committed], limit: 248 }, action: refund, input: {} }]
   }
 }
 
@@ -53,8 +56,9 @@ instrument commitment(round: ref<lending.round>, wallet: ref<wallet.balance>, in
   summary: "One investor's original-wallet contribution, capped cumulatively within the round."
   fields { round: ref<round>, wallet: ref<wallet>, investor: account of investor, amount: money, loss: account(investor, claim, "loss") }
   lifecycle { states: [committed, funded, withdrawn, refunded], initial: committed }
-  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366, where: { investor: { field: self.investor } } } <= self.round.maximumTicket
-  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 366 } <= self.round.price
+  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 248, where: { investor: { field: self.investor } } } <= self.round.maximumTicket
+  invariants sum "amount" of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 248 } <= self.round.price
+  invariants count of { instrument: all(lending.commitment), reference: "round", anchor: self.round, states: [committed, funded], limit: 248 } <= 248
   action create {
     actor: { party: investor }
     requires self.round in [open]
@@ -108,9 +112,9 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   action distribute_cash { allowZero: true,
     from: cash_ready, to: distributed, actor: { party: operator }
     requires self.source in [recorded]; requires unique "settlement_consumption" on [self.source.plan, self.source.identity]
-    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
+    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 248 } == self.round.price
     moves self.principal from self.source.capital to self.held; moves self.profit from self.source.profitIncome to self.held; moves self.charge from self.held to programOperator economics { purpose: internal, sourceParty: programOperator }; moves self.vat from self.held to programTax economics { purpose: pass_through, sourceParty: programOperator }
-    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
+    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 248 }, action: cash, input: {} }, { reference: self.id, action: residual_cash, input: {} }]
   }
   action residual_cash { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }
@@ -119,9 +123,9 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   action distribute_loss { allowZero: true,
     from: loss_ready, to: distributed, actor: { party: operator }
     requires self.source in [recorded]; requires unique "settlement_consumption" on [self.source.plan, self.source.identity]
-    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 } == self.round.price
+    requires sum "weight" of { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 248 } == self.round.price
     moves self.net from self.source.lossAccount to self.losses
-    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 366 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
+    invoke: [{ reference: self.source, action: distribute, input: {} }, { selection: { instrument: share, reference: "distribution", anchor: self.id, states: [pending], limit: 248 }, action: loss, input: {} }, { reference: self.id, action: residual_loss, input: {} }]
   }
   action residual_loss { allowZero: true,
     from: distributed, to: distributed, actor: { parent: current() }

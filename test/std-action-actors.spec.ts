@@ -78,8 +78,9 @@ test("standard library money actions name the accountable party", () => {
   expect(find("item_hold", "refund")).toEqual({ party: "owner" });
   expect(find("item_escrowed", "release")).toEqual({ party: "actor" });
   expect(find("item_escrowed", "refund")).toEqual({ party: "owner" });
-  // Mutation: let the payee consent for its payer, or let the payer stop its fee.
-  expect(find("item_overdue", "create")).toEqual({ party: "actor" });
+  // Mutation: put create back on the payer, or let the payer stop its fee.
+  // Tracking would wait on the customer, or the customer could end its own fee.
+  expect(find("item_overdue", "create")).toEqual({ party: "programOperator" });
   expect(find("item_overdue", "stop")).toEqual({ party: "owner" });
   expect(find("item_overdue", "charge")).toBe("clock");
   // Mutation: drop the actor from any of these. A customer or seller could

@@ -255,6 +255,13 @@ class Parser {
       }
       if (this.eat("expose")) {
         const action = this.identifier();
+        // r340: the Architect wrote expose occurrence.pay seven times against
+        // a bare "expected a name" and never found the program-level form.
+        if (this.at("."))
+          this.fail(
+            `expose inside an attachment takes one of its own actions, not ${action}.<action>`,
+            `delete this line, or expose a caller action of ${action} at program level: expose <object>.<attachment>.${action}.<action> as <name>`,
+          );
         let publicName = action;
         if (this.eat("as")) {
           publicName = this.identifier();
@@ -557,7 +564,15 @@ class Parser {
         args.push(this.expression());
         this.separators();
       }
-      return { kind: "call", name, args, span: this.span(start) };
+      // `integer(1, 366)?` keeps its bounds and may stay unset.
+      const optional = this.eat("?");
+      return {
+        kind: "call",
+        name,
+        args,
+        ...(optional ? { optional } : {}),
+        span: this.span(start),
+      };
     }
     let target: string | undefined;
     let owner: string | undefined;

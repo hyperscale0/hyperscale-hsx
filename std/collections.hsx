@@ -26,7 +26,7 @@ instrument case(on: ref<financing.installments>[], agency: party, capital: party
   action create {
     due: { at: self.eligibleAt }
     requires self.plan == self.slice.plan
-    requires self.slice.principalReceivable.balance > "0"
+    requires self.slice.openPrincipal > "0"
     requires unique "overdue_referral" on [self.slice]
   }
   action assign { from: opened, to: assigned, actor: { party: capital } }
@@ -74,17 +74,17 @@ instrument reminder(on: ref<financing.installments>[], operator: party = program
   action before_due {
     from: ready, to: ready, actor: clock
     due: { at: self.slice.dueAt, localDay: { days: before_days, direction: "before", hour: send_from, timezone: timezone } }
-    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.principalReceivable.balance }, operator: ">", right: { literal: "0" } }, input: {} }]
+    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.openPrincipal }, operator: ">", right: { literal: "0" } }, input: {} }]
   }
   action overdue {
     from: ready, to: ready, actor: clock
     due: { at: self.slice.dueAt, localDay: { days: overdue_days, direction: "after", hour: send_from, timezone: timezone } }
-    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.principalReceivable.balance }, operator: ">", right: { literal: "0" } }, input: {} }]
+    invoke: [{ selection: { instrument: current(), reference: "slice", anchor: self.slice, states: [ready], limit: 1, where: { slice.plan.status: { literal: "active" } } }, action: send, guard: { kind: compare, left: { field: self.slice.openPrincipal }, operator: ">", right: { literal: "0" } }, input: {} }]
   }
   action send {
     from: ready, to: ready, actor: { parent: current() }
     requires self.slice.plan in [active]
-    requires self.slice.principalReceivable.balance > "0"
+    requires self.slice.openPrincipal > "0"
     reminder: { installment: self.slice, recipient: self.slice.plan.borrower, dueAt: self.slice.dueAt, channel: "email", template: "payment_reminder", beforeDays: before_days, overdueDays: overdue_days, maxPerDay: max_per_day, startHour: send_from, endHour: send_until, timezone: timezone }
   }
 }
