@@ -60,6 +60,9 @@ import type { ProviderAdapter } from "@hyperscale0/adl";
 export interface CompileDiagnostic extends Diagnostic {
   line: number;
   column: number;
+  /** One past the span's last character, as rustc's `column_end`. */
+  endLine: number;
+  endColumn: number;
   severity: "error";
   stage: "parse" | "check" | "lower";
 }
@@ -432,12 +435,18 @@ export function compile(
   const diagnostic = (
     d: Diagnostic,
     stage: CompileDiagnostic["stage"],
-  ): CompileDiagnostic => ({
-    ...d,
-    ...lineColAt(sources.get(d.source ?? "program") ?? source, d.span.start),
-    severity: "error",
-    stage,
-  });
+  ): CompileDiagnostic => {
+    const text = sources.get(d.source ?? "program") ?? source;
+    const end = lineColAt(text, d.span.end);
+    return {
+      ...d,
+      ...lineColAt(text, d.span.start),
+      endLine: end.line,
+      endColumn: end.column,
+      severity: "error",
+      stage,
+    };
+  };
   // A program instrument lowers once standalone and once per attachment, so
   // one authored mistake can fail each copy at the same place.
   const distinct = (list: Diagnostic[]) =>
@@ -4447,6 +4456,54 @@ export function compile(
           "give each exposed action a distinct public name",
         );
     }
+    // Every attachment of an object shares one public action namespace, so
+    // two attachments that both `expose create` collide.
+    const collisions: Diagnostic[] = [];
+    for (const kind of document.objects) {
+      const exposedBy = new Map<string, string>();
+      for (const instrument of document.instruments) {
+        if (instrument.subject !== kind.id) continue;
+        const attachment =
+          kind.attachments.find((item) => item.instrument === instrument.id)
+            ?.name ?? instrument.id;
+        for (const [name, action] of Object.entries(instrument.actions)) {
+          if (!action.publicAction) continue;
+          const first = exposedBy.get(action.publicAction);
+          if (first === undefined) {
+            exposedBy.set(action.publicAction, attachment);
+            continue;
+          }
+          const declared = program.decls.find(
+            (decl) =>
+              decl.kind === "expose" &&
+              decl.target.split(".").slice(0, -1).join("_") === instrument.id &&
+              decl.target.endsWith(`.${name}`),
+          );
+          const node =
+            declared ??
+            exposures.find(
+              (exposure) =>
+                exposure.instrument === instrument.id &&
+                exposure.action === name,
+            )?.entry ??
+            objects.get(kind.id)!;
+          const target = declared?.kind === "expose" ? declared.target : name;
+          collisions.push({
+            code: "HSX1001",
+            message: `\`${attachment}\` exposes \`${action.publicAction}\`, which \`${first}\` already exposes on \`${kind.id}\``,
+            fix: `Give it its own public name, for example \`expose ${target} as ${attachment}_${name}\`.`,
+            span: node.span,
+          });
+        }
+      }
+    }
+    if (collisions.length)
+      return {
+        verdict: "invalid",
+        diagnostics: collisions
+          .sort((a, b) => a.span.start - b.span.start)
+          .map((d) => diagnostic(d, "check")),
+      };
     // A public action on a fresh attachment creates it first with no input
     // (in the engine executor), so creation that needs input must be public.
     for (const kind of document.objects)
@@ -4508,10 +4565,19 @@ export function compile(
             ),
         );
     const validated = validateUdl(document);
+    // A value repeated three times reports the same duplicate twice.
+    const issues = validated.ok
+      ? []
+      : validated.issues.filter(
+          (i, index, all) =>
+            all.findIndex(
+              (other) => other.path === i.path && other.message === i.message,
+            ) === index,
+        );
     if (!validated.ok)
       return {
         verdict: "invalid",
-        diagnostics: validated.issues.map((i) => {
+        diagnostics: issues.map((i) => {
           const origin = [...origins]
             .reverse()
             .find((o) => i.path.startsWith(o.path));
@@ -4557,12 +4623,27 @@ export function compile(
               "lower",
             );
           }
+          // Objects and parties keep no origin entry; point at their declaration.
+          const object = /^\$\.objects(?:\[(\d+)\]|\.(\w+))(?:\.(\w+))?/.exec(
+            i.path,
+          );
+          const objectDecl =
+            object &&
+            objects.get(object[2] ?? document.objects[Number(object[1])]!.id);
+          const party = /^\$\.parties\.(\w+)/.exec(i.path)?.[1];
+          const declaration = objectDecl
+            ? (objectDecl.body.entries.find(
+                (entry) => entry.key === object![3],
+              ) ?? objectDecl)
+            : program.decls.find(
+                (decl) => decl.kind === "party" && decl.name === party,
+              );
           return diagnostic(
             {
               code: i.code,
               message: `${i.path}: ${i.message}`,
               fix: i.fix,
-              span: origin?.span ?? program.span,
+              span: origin?.span ?? declaration?.span ?? program.span,
             },
             "lower",
           );
