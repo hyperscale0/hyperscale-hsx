@@ -340,6 +340,8 @@ object loan "Loan" {
     { standardLibrary },
   );
   expect(result.diagnostics.map((item) => item.message)).toEqual([
-    "unknown tunable profit",
+    expect.stringMatching(
+      /^financing\.installments has no tunable "profit"\. Tunables: months, /,
+    ),
   ]);
 });

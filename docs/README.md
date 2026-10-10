@@ -459,12 +459,22 @@ attach visit = wallet.spend {
 ```
 
 Name the original action, before its public alias. If it has several moves,
-select a move key, for example `economics pay.move1 { ... }`. The compiler
+select a move key, for example `economics pay.move1 { ... }`. A record's
+action takes the record name first: a schedule's payments are
+`economics occurrence.pay { ... }`. The compiler
 refuses an unknown action or move, a repeated selection, a void, or economics
 that conflict with the instrument or its reservation. Cash purposes require
 cash accounts. `sourceParty` resolves a party parameter, a subject role or a
 declared business. The attachment retains this binding even when only economics
 uses it. The credited account supplies the destination participant.
+
+Stock transfers, splits and schedules declare no purpose, because the purpose
+depends on how the attach binds its parties. When an attached move that
+creates or reserves money has none, `hsx check` and `composer.check` return an
+`economic_purpose_missing` warning on the attach line. Its fix is the line to
+add, with `earning` when the payee binds `operator`, `participant_payout` when
+the payer does, and `pass_through` otherwise. A warning does not block a
+freeze, but the books leave an unclassified payment out of revenue.
 
 The compiler writes the declaration into that attachment's UDL move. Imported
 instruments stay generic. New Builds carry the purpose; existing agreements

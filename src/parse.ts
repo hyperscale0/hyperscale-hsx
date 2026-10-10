@@ -514,6 +514,21 @@ class Parser {
         };
       if (/[a-z]$/.test(token.text))
         return { kind: "duration", value: token.text, span: token.span };
+      // `1 month` reads as one value, so the checker names the tunable it
+      // was given to instead of failing on the next line. A unit followed by
+      // `:` is the next entry's key, as in `count: 2` then `months: 2`.
+      if (
+        /^(?:minute|hour|day|week|month|year)s?$/.test(this.peek().text) &&
+        this.peek().kind === "name" &&
+        this.tokens[this.index + 1]?.text !== ":"
+      ) {
+        const unit = this.take().text;
+        return {
+          kind: "duration",
+          value: `${token.text} ${unit}`,
+          span: this.span(start),
+        };
+      }
       if (/^[A-Z]{3}$/.test(this.peek().text)) {
         const currency = this.take().text;
         return {

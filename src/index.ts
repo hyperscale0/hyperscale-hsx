@@ -3,6 +3,7 @@ export {
   type CompileDiagnostic,
   type CompileOptions,
   type CompileResult,
+  type CompileWarning,
   type CompileOriginMapEntry,
   type AdapterBindingTarget,
 } from "./compile.ts";

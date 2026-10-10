@@ -85,9 +85,9 @@ export async function runCli(argv: readonly string[], io: Io): Promise<number> {
       text = result.formatted;
     } else {
       const result = compile(source, { standardLibrary });
-      for (const d of result.diagnostics)
+      for (const d of [...result.diagnostics, ...result.warnings])
         io.err(
-          `${d.source && d.source !== "program" ? d.source : file}:${d.line}:${d.column}: ${d.code} ${d.message.replace(/[^.?!]$/, "$&.")} ${d.fix}`,
+          `${d.source && d.source !== "program" ? d.source : file}:${d.line}:${d.column}: ${d.severity === "warning" ? "warning " : ""}${d.code} ${d.message.replace(/[^.?!]$/, "$&.")} ${d.fix}`,
         );
       if (!result.artifacts || result.verdict !== "valid") return 1;
       if (command === "check") return 0;

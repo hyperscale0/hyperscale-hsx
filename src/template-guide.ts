@@ -49,6 +49,14 @@ export interface TemplateGuide {
 const RUN_BY_NOTE =
   "runBy names who runs each action: a party is whoever the attach binds to it (owner, actor, operator or a declared business), clock is the platform when the action falls due, parent runs only inside its parent record's action, and caller is anyone the exposed action admits.";
 
+/**
+ * A stock money move declares no purpose, because the purpose follows how
+ * the attach binds its parties; the guide shows the line for this example.
+ */
+function economicsNote(lines: string[]) {
+  return `economics declares what a payment is for the books. Add ${lines.map((line) => `\`${line}\``).join(" and ")} inside the attach. Use purpose earning when operator receives the money as revenue, participant_payout when operator pays a participant, and pass_through when money passes between participants. Without it hsx check warns and the books report leaves the payment out.`;
+}
+
 const SUBJECT_NOTE =
   "subject names fields the attached object must carry, or rename to with rename { field: yourField }, before the actions that read them can run.";
 
@@ -110,8 +118,13 @@ export function templateGuide(
     )
     .map((action) => `expose ${action.name}`);
   const program = example.render(exposes);
-  const create = compiledAttachment(program, example.attachment, options)
-    .actions.create;
+  const compiled = compiledAttachment(program, example.attachment, options);
+  const create = compiled.actions.create;
+  const economics = compiled.warnings.flatMap((warning) =>
+    warning.message.startsWith(`${example.attachment}: `)
+      ? [/economics [^}]+\}/.exec(warning.fix)![0]]
+      : [],
+  );
   return {
     qualifiedName,
     summary: manifest.summary,
@@ -135,7 +148,11 @@ export function templateGuide(
     subject: manifest.subject,
     actions,
     example: program,
-    notes: [RUN_BY_NOTE, ...(manifest.subject.length ? [SUBJECT_NOTE] : [])],
+    notes: [
+      RUN_BY_NOTE,
+      ...(manifest.subject.length ? [SUBJECT_NOTE] : []),
+      ...(economics.length ? [economicsNote(economics)] : []),
+    ],
   };
 }
 
@@ -553,7 +570,7 @@ function compiledAttachment(
     (candidate) => candidate.id === instrumentId,
   );
   if (!instrument) throw new Error(`${attachment} example has no instrument`);
-  return instrument;
+  return Object.assign(instrument, { warnings: result.warnings });
 }
 
 function inputType(field: Record<string, unknown>) {

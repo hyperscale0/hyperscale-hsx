@@ -40,7 +40,10 @@ import {
 } from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
 import { parseProgram } from "./parse.ts";
-import { applyAttachmentEconomics } from "./attachment-economics.ts";
+import {
+  applyAttachmentEconomics,
+  purposeWarnings,
+} from "./attachment-economics.ts";
 import { parseHeader } from "./header-source.ts";
 import {
   lineColAt,
@@ -79,9 +82,14 @@ export interface CompileOptions {
   standardLibrary?: StandardLibrary;
   adapterRegistry?: Readonly<Record<string, AdapterBindingTarget>>;
 }
+export interface CompileWarning extends Omit<CompileDiagnostic, "severity"> {
+  severity: "warning";
+}
 export interface CompileResult {
   verdict: "valid" | "invalid";
   diagnostics: CompileDiagnostic[];
+  /** Advice that does not block a freeze, such as a money move with no purpose. */
+  warnings: CompileWarning[];
   artifacts?: {
     document: UdlDocument;
     costManifest: UdlCostManifest;
@@ -392,8 +400,10 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
     if (!Number.isSafeInteger(n) || n <= 0)
       fail(
         expr,
-        "invalid duration",
-        "write a positive fixed duration such as 48h or 3d",
+        expr.value.includes(" ")
+          ? `${expr.value} is not a fixed duration`
+          : "invalid duration",
+        "write a positive fixed duration such as 48h, 3d or 30d",
       );
     return n;
   }
@@ -463,6 +473,7 @@ export function compile(
     return {
       verdict: "invalid",
       diagnostics: parsed.diagnostics.map((d) => diagnostic(d, "parse")),
+      warnings: [],
     };
   const program = parsed.program;
   const bindingDiagnostics: Diagnostic[] = [];
@@ -489,6 +500,15 @@ export function compile(
         "write currency SAR or omit currency",
       );
     const templates = new Map<string, InstrumentDecl>();
+    // Attached instruments, for the warning on a money move with no purpose.
+    const attachedSelectors = new Map<
+      string,
+      { prefix: string; root: string }
+    >();
+    const attachEntries = new Map<
+      string,
+      { entry: Entry; name: string; template: InstrumentDecl }
+    >();
     const declarationSources = new Map<InstrumentDecl, string>();
     const standardOrigins = new Map<
       InstrumentDecl,
@@ -746,6 +766,11 @@ export function compile(
         attachments: UdlObjectAttachment[];
         economics: Entry[];
         child?: boolean;
+        /** How an economics selector names this instrument: "" or "occurrence.". */
+        selectorPrefix?: string;
+        rootInstrument?: string;
+        /** The template as the founder wrote it, such as money.schedule. */
+        template?: string;
       },
       familyDeclaration?: {
         module: string;
@@ -933,6 +958,7 @@ export function compile(
           enums.set(parameter.key, type.args.map(text));
       }
       const supplied = new Map<string, Expr>();
+      const suppliedEntries = new Map<string, Entry>();
       for (const entry of arguments_.entries) {
         if (supplied.has(entry.key))
           fail(
@@ -941,6 +967,7 @@ export function compile(
             "supply each parameter once",
           );
         supplied.set(entry.key, entry.value);
+        suppliedEntries.set(entry.key, entry);
       }
       const environment = new Map<string, Expr>(inherited);
       const parameterErrors: Diagnostic[] = [];
@@ -1082,10 +1109,11 @@ export function compile(
             `Remove \`${key}\`. To use your object's money field, add \`rename { ${field}: ${target} }\`.`,
           );
         }
+        const tunables = decl.parameters.map((p) => p.key);
         fail(
-          suppliedValue,
-          `unknown tunable ${key}`,
-          `choose ${decl.parameters.map((p) => p.key).join(", ")}`,
+          suppliedEntries.get(key) ?? suppliedValue,
+          `${assignments.get(id)?.target ?? attachmentInfo?.template ?? decl.name} has no tunable "${key}".${didYouMean(key, tunables)} Tunables: ${tunables.join(", ")}`,
+          `remove ${key}, or set one of ${tunables.join(", ")}`,
         );
       }
       const isParty = (name: string) =>
@@ -3205,14 +3233,39 @@ export function compile(
             );
             if (receipt) move.transfer = `self.${receipt}`;
           }
-      if (attachmentInfo && !attachmentInfo.child)
+      // `economics occurrence.pay` classifies a record's move; an action of
+      // the attached instrument wins over a record of the same name.
+      const recordEconomics = new Map<string, Entry[]>();
+      if (attachmentInfo) {
+        const own: Entry[] = [];
+        for (const declaration of attachmentInfo.economics) {
+          const [first = "", ...rest] = declaration.key
+            .slice("economics ".length)
+            .split(".");
+          if (
+            rest.length &&
+            !Object.hasOwn(inst.actions, first) &&
+            records.has(first)
+          )
+            recordEconomics.set(first, [
+              ...(recordEconomics.get(first) ?? []),
+              { ...declaration, key: `economics ${rest.join(".")}` },
+            ]);
+          else own.push(declaration);
+        }
         applyAttachmentEconomics(
           document,
           inst,
           attachmentInfo.parties,
-          attachmentInfo.economics,
+          own,
           data,
+          [...records.keys()],
         );
+        attachedSelectors.set(inst.id, {
+          prefix: attachmentInfo.selectorPrefix ?? "",
+          root: attachmentInfo.rootInstrument ?? inst.id,
+        });
+      }
       for (const key of [
         "invariants",
         "reports",
@@ -3292,6 +3345,9 @@ export function compile(
               attachmentName: `${attachmentInfo.attachmentName}_${key}`,
               child: true,
               exposed: new Map<string, string>(),
+              economics: recordEconomics.get(key) ?? [],
+              selectorPrefix: `${attachmentInfo.selectorPrefix ?? ""}${key}.`,
+              rootInstrument: attachmentInfo.rootInstrument ?? id,
             }
           : undefined;
         if (childAttachment)
@@ -3450,6 +3506,7 @@ export function compile(
 
         const parties: Record<string, AttachmentPartyBinding> = {};
         attachments.push({ name: attachmentName, instrument: instId, parties });
+        attachEntries.set(instId, { entry, name: attachmentName, template });
 
         const tunableBlock: BlockExpr = {
           kind: "block",
@@ -3475,6 +3532,7 @@ export function compile(
               parties,
               attachments,
               economics,
+              template: targetTemplate,
             },
             templateFamily ? { ...templateFamily } : undefined,
             standardOrigins.get(template),
@@ -3689,6 +3747,7 @@ export function compile(
     if (bindingDiagnostics.length)
       return {
         verdict: "invalid",
+        warnings: [],
         diagnostics: distinct(bindingDiagnostics)
           .sort((a, b) => a.span.start - b.span.start)
           .map((d) => diagnostic(d, "check")),
@@ -4500,6 +4559,7 @@ export function compile(
     if (collisions.length)
       return {
         verdict: "invalid",
+        warnings: [],
         diagnostics: collisions
           .sort((a, b) => a.span.start - b.span.start)
           .map((d) => diagnostic(d, "check")),
@@ -4577,6 +4637,7 @@ export function compile(
     if (!validated.ok)
       return {
         verdict: "invalid",
+        warnings: [],
         diagnostics: issues.map((i) => {
           const origin = [...origins]
             .reverse()
@@ -4652,6 +4713,9 @@ export function compile(
     return {
       verdict: "valid",
       diagnostics: [],
+      warnings: purposeWarnings(document, attachedSelectors, attachEntries).map(
+        (d) => ({ ...diagnostic(d, "check"), severity: "warning" }),
+      ),
       artifacts: {
         document: validated.value,
         costManifest: buildUdlCostManifest(validated.value),
@@ -4662,6 +4726,7 @@ export function compile(
     if (error instanceof CompileFailure)
       return {
         verdict: "invalid",
+        warnings: [],
         diagnostics: distinct([...bindingDiagnostics, error.diagnostic]).map(
           (d) => diagnostic(d, "check"),
         ),

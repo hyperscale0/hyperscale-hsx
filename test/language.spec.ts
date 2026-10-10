@@ -27,7 +27,11 @@ test("unknown tunables refuse at the founder's declaration", () => {
     result.artifacts,
     result.diagnostics[0]?.line,
     result.diagnostics[0]?.message,
-  ]).toEqual([undefined, 5, "unknown tunable ammount"]);
+  ]).toEqual([
+    undefined,
+    5,
+    'money.transfer has no tunable "ammount". Did you mean `amount`? Tunables: payer, payee, amount',
+  ]);
 });
 
 test("exposure renames one action without granting authority", () => {
