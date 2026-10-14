@@ -2,15 +2,6 @@ import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 
 const program = `program p "All"
-use money
-use escrow
-use purchase
-use financing
-use insurance
-use lending
-use wallet
-use cards
-use collections
 party supplier: business
 party inspector: staff role claim_inspector
 party investor: business
@@ -102,12 +93,6 @@ test("standard library money actions name the accountable party", () => {
 // party's record, or anyone who reaches the record could draw on the facility.
 test("each party that starts an agreement can enter through its create", () => {
   const result = compile(`program entry "Entry"
-use escrow
-use purchase
-use financing
-use insurance
-use wallet
-use savings
 object item "Item" {
   entryActions: [pay, cap, finance, open_line, cover, open_wallet, join]
   fields { price: money }

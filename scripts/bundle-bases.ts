@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parseProgram } from "../src/parse.ts";
+import { namedHeaders } from "../src/headers.ts";
 import { scan } from "../src/lex.ts";
 import type { HsxBase } from "../src/bases.ts";
 
@@ -32,9 +33,7 @@ export function readBases(): HsxBase[] {
         id: name.slice(0, -4),
         title: parsed.program.title,
         summary,
-        headers: parsed.program.decls
-          .filter((d) => d.kind === "use")
-          .map((d) => d.name),
+        headers: namedHeaders(source),
         source,
       };
     });

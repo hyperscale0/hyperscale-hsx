@@ -2,8 +2,6 @@ import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 
 const wallet = `program p "P"
-use wallet
-use money
 object member "Member" {
   attach wallet = wallet.balance { holder: owner, expose create as open_wallet }
   attach spend = wallet.spend { wallet: wallet, payee: operator, holder: owner, expose create as spend }
@@ -103,7 +101,6 @@ test("an attachment that needs creation input must expose its create", () => {
 
 test("a rename of a record field names the record instead of promising a binding", () => {
   const [diagnostic] = compile(`program p "P"
-use insurance
 object trip "Trip" {
   attach cover = insurance.cover {
     holder: owner, adapter: "conformance_boundary", claim_limit: 1000 SAR
@@ -122,7 +119,6 @@ object trip "Trip" {
 // write-off request and the late charge then cannot name one slice or plan.
 test("creation offers each agreement reference as an optional selector", () => {
   const document = lowered(`program p "P"
-use financing
 object purchase "Purchase" {
   fields { price: money }
   attach limits = financing.limits { borrower: owner, per_borrower: 60000 SAR, expose create as limits }

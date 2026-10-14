@@ -7,7 +7,7 @@ test("manifest separates adapter bindings from authored subject fields", () => {
 instrument review {
  action check { subject { adapter: verification, reference: text } }
 }`;
-  const manifest = headerManifest({ source: () => source }, ["custom"]);
+  const manifest = headerManifest(new Map([["custom", source]]), ["custom"]);
   expect(manifest.headers[0]?.objects[0]?.subject).toEqual([
     { name: "reference", type: "text" },
   ]);
@@ -17,7 +17,7 @@ instrument review {
 test("metadata refuses duplicate parameters before presenting a signature", () => {
   const source =
     "header custom instrument review(count: integer, count: integer) {}";
-  expect(() => headerManifest({ source: () => source }, ["custom"])).toThrow(
-    "duplicate parameter count",
-  );
+  expect(() =>
+    headerManifest(new Map([["custom", source]]), ["custom"]),
+  ).toThrow("parameter count is declared twice, at 1:33 and 1:49");
 });

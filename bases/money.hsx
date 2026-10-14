@@ -1,6 +1,5 @@
 // Collect a payment from a customer.
 program money_base "Collect a payment"
-use money
 
 object purchase "Purchase" {
   attach payment = money.transfer {

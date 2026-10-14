@@ -4,19 +4,6 @@
  * std-headers.spec proves the whole program compiles.
  */
 export const catalogProgramSource = `program catalog "Template catalog"
-use money
-use escrow
-use purchase
-use booking
-use marketplace
-use financing
-use insurance
-use lending
-use wallet
-use cards
-use collections
-use savings
-use reporting
 party supplier: business
 party inspector: staff role claim_inspector
 party investor: business

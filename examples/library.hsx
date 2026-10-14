@@ -1,9 +1,6 @@
 // Boston used van finance funds a 34,500 SAR van over three monthly instalments.
 // The dealer is paid after delivery and acceptance; a verified return unwinds financing before the buyer gets a refund.
 program cars "Boston used van finance"
-use escrow
-use financing
-use purchase
 party dealer: business
 
 // Bind dealer to the vehicle seller. Set price to its gross 34,500 SAR invoice;

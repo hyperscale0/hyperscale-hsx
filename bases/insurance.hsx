@@ -1,6 +1,5 @@
 // Collect cover premiums and reserve approved claims for payment.
 program insurance_base "Protect a purchase"
-use insurance
 
 object purchase "Purchase" {
   attach cover = insurance.cover {

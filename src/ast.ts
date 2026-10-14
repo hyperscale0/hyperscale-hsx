@@ -80,15 +80,68 @@ export type Decl =
       role?: string;
       span: Span;
     }
-  | { kind: "use"; name: string; span: Span }
-  | { kind: "expose"; target: string; name: string; span: Span }
-  | { kind: "hide"; target: string; span: Span };
+  | { kind: "expose"; target: string; name: string; span: Span };
+/** A name as written, so a check diagnostic points at it. */
+export interface Named {
+  name: string;
+  span: Span;
+}
+/** One statement of a `check` block. Every step may end with `balances { }`. */
+export type CheckStatement = { span: Span; balances?: BlockExpr } & (
+  | {
+      kind: "customer";
+      id: Named;
+      title: string;
+      organization: boolean;
+      fund?: Expr;
+      binds: Named[];
+    }
+  | {
+      kind: "clock";
+      at: Expr;
+      until?: {
+        object: Named;
+        attachment?: Named;
+        recordPath?: string;
+        state: Named;
+      };
+    }
+  | {
+      kind: "object";
+      id: Named;
+      objectKind: Named;
+      owner: Named;
+      fields?: BlockExpr;
+    }
+  | {
+      kind: "action";
+      actor?: Named;
+      object: Named;
+      action: Named;
+      input?: BlockExpr;
+      fields?: BlockExpr;
+      instance?: Named;
+      remember?: Named;
+      state?: Named;
+      status?: Expr;
+      code?: string;
+    }
+  | { kind: "close"; customer: Named }
+  | { kind: "expect"; held?: Expr; pending?: BlockExpr }
+);
+export interface CheckDecl {
+  name: string;
+  statements: CheckStatement[];
+  span: Span;
+}
 export interface Program {
   name: string;
   title: string;
   currency: string;
   header: boolean;
   decls: Decl[];
+  /** Build data beside the document; compile never lowers them into it. */
+  checks: CheckDecl[];
   span: Span;
 }
 export const lineColAt = (source: string, offset: number) => {

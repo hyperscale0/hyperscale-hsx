@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 // Mutation: lower adapter(...) to a party name instead of an adapter owner.
 test("account adapter binding resolves a text tunable without declaring a party", () => {
@@ -14,13 +15,8 @@ instrument balance(provider: text) {
 }`;
   const result = compile(
     `program accounts "Accounts"
-use custody
 object policy "Policy" { attach funds = custody.balance { provider: "insurer" } }`,
-    {
-      standardLibrary: {
-        source: (name) => (name === "custody" ? header : undefined),
-      },
-    },
+    testToolchain([header]),
   );
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;
@@ -37,14 +33,8 @@ object policy "Policy" { attach funds = custody.balance { provider: "insurer" } 
 test("insurance pays and refunds insurer and broker as separate funded portions", () => {
   const result = compile(
     readFileSync(new URL("../examples/insurance.hsx", import.meta.url), "utf8")
-      .replace("use money\n", "use money\nparty broker: business\n")
+      .replace(/^program .*$/m, "$&\nparty broker: business")
       .replace("broker: operator", "broker: broker"),
-    {
-      standardLibrary: {
-        source: (name) =>
-          readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-      },
-    },
   );
   expect(result.diagnostics).toEqual([]);
   const doc = result.artifacts!.document;

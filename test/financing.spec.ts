@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { compile as compileHsx } from "../src/compile.ts";
+import { compile } from "../src/compile.ts";
 import { validateUdl } from "@hyperscale0/udl";
 import { buildUdlCostManifest } from "../src/cost.ts";
 
@@ -8,14 +8,6 @@ const source = readFileSync(
   new URL("../examples/library.hsx", import.meta.url),
   "utf8",
 );
-// Read the std source, not the generated bundle.
-const compile = (source: string) =>
-  compileHsx(source, {
-    standardLibrary: {
-      source: (name) =>
-        readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-    },
-  });
 test("the schedule bound follows max_term, not the months a program picks", () => {
   for (const [terms, maximum] of [
     ["months: 1", 84],
@@ -43,8 +35,8 @@ test("financing refuses schedules outside the std bound", () => {
 // Mutation: let a tenant raise max_term, or default it above the kind's ceiling.
 test("each loan kind caps the term and a tenant may only lower it", () => {
   for (const [terms, message] of [
-    ["months: 85", "months must be at_most max_term"],
-    ["loan_kind: short_term, months: 13", "months must be at_most max_term"],
+    ["months: 85", "sets `months` above `max_term`"],
+    ["loan_kind: short_term, months: 13", "sets `months` above `max_term`"],
     ["max_term: 85, months: 3", "max_term for personal is at most 84"],
     [
       "loan_kind: auto, max_term: 120, months: 3",
@@ -52,7 +44,7 @@ test("each loan kind caps the term and a tenant may only lower it", () => {
     ],
     [
       "loan_kind: mortgage, max_term: 24, months: 36",
-      "months must be at_most max_term",
+      "sets `months` above `max_term`",
     ],
   ] as const) {
     const res = compile(source.replace("months: 3", terms));
@@ -141,13 +133,6 @@ test("late-charge waterfall derives its expansion bound without an authored over
 
 test("source-backed compilation accepts all five changed std modules", () => {
   const p = `program p "All"
-use money
-use escrow
-use purchase
-use financing
-use insurance
-use lending
-use wallet
 party supplier: business
 party inspector: staff role claim_inspector
 party investor: business

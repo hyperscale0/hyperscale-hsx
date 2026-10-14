@@ -1,17 +1,23 @@
 export {
   compile,
   type CompileDiagnostic,
-  type CompileOptions,
   type CompileResult,
   type CompileWarning,
   type CompileOriginMapEntry,
-  type AdapterBindingTarget,
+  type CompileTerm,
+  type CompileTermOverride,
 } from "./compile.ts";
+export type { CompiledCheck, CompiledCheckStep } from "./checks.ts";
+export {
+  defaultToolchain,
+  toolchain,
+  type AdapterBindingTarget,
+  type Toolchain,
+} from "./toolchain.ts";
 export type { ProviderAdapter } from "@hyperscale0/adl";
 export { parseProgram } from "./parse.ts";
 export { lex, KEYWORDS } from "./lex.ts";
 export { format } from "./format.ts";
-export { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
 export { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 export type {
   Program,
@@ -24,7 +30,7 @@ export type {
   Diagnostic,
 } from "./ast.ts";
 
-export { headerManifest, HEADER_NAMES } from "./headers.ts";
+export { headerManifest, HEADER_NAMES, namedHeaders } from "./headers.ts";
 export {
   templateGuide,
   templateIndex,

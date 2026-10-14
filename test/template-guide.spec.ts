@@ -1,15 +1,5 @@
 import { expect, test } from "bun:test";
-import { genericAdapter } from "../../adl/src/boundary-fixture.ts";
 import { templateGuide, templateIndex } from "../src/template-guide.ts";
-
-const options = {
-  adapterRegistry: {
-    conformance_boundary: {
-      adapter: genericAdapter,
-      operation: "boundary.observe",
-    },
-  },
-};
 
 // Mutation: drop an attach from catalog-program.ts, or expose an action its
 // bindings exclude. That template's guide throws instead of answering.
@@ -19,19 +9,19 @@ test("every template's guide compiles its own example", () => {
   // Claude Code moves a tool result over 50,000 characters out of reach.
   expect(JSON.stringify(index).length).toBeLessThan(8_000);
   for (const { qualifiedName } of index) {
-    const guide = templateGuide(qualifiedName, options);
+    const guide = templateGuide(qualifiedName);
     expect(guide?.qualifiedName).toBe(qualifiedName);
     expect(JSON.stringify(guide).length).toBeLessThan(50_000);
     expect(guide!.example).toContain(`= ${qualifiedName} {`);
   }
-  expect(templateGuide("money.nothing", options)).toBeUndefined();
-  expect(templateGuide("money", options)).toBeUndefined();
+  expect(templateGuide("money.nothing")).toBeUndefined();
+  expect(templateGuide("money")).toBeUndefined();
 }, 60_000);
 
 // Round 4 F9 and D4: an agent read amount as one piece and could not tell
 // when the first piece is charged. Round 8 F4: a monthly plan is one line.
 test("money.schedule says what amount means in each form, who runs each action and when a piece is charged", () => {
-  const guide = templateGuide("money.schedule", options)!;
+  const guide = templateGuide("money.schedule")!;
   expect(JSON.stringify(guide).length).toBeLessThan(8_000);
   const tunable = (name: string) =>
     guide.tunables.find((entry) => entry.name === name)!.meaning;
@@ -78,7 +68,7 @@ test("money.schedule says what amount means in each form, who runs each action a
 });
 
 test("an escrow guide names the subject fields and keeps deadline offsets", () => {
-  const guide = templateGuide("escrow.hold", options)!;
+  const guide = templateGuide("escrow.hold")!;
   expect(guide.subject.map((field) => field.name)).toContain("price");
   expect(
     guide.actions.find((action) => action.name === "accept")?.deadline,

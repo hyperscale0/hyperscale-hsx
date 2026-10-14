@@ -2,7 +2,6 @@ import type { Diagnostic, Span } from "./ast.ts";
 export const KEYWORDS = [
   "program",
   "header",
-  "use",
   "party",
   "role",
   "currency",
@@ -11,12 +10,11 @@ export const KEYWORDS = [
   "lifecycle",
   "action",
   "expose",
-  "hide",
   "as",
   "cap",
   "of",
   "when",
-  "constraints",
+  "checks",
   "requires",
   "invariants",
   "moves",
@@ -131,10 +129,10 @@ export function scan(
       }
       kind = "string";
       text = quoted[0];
-    } else if (/^(==|!=|<=|>=)/.test(tail)) {
+    } else if (/^(==|!=|<=|>=|->)/.test(tail)) {
       kind = "punct";
       text = tail.slice(0, 2);
-    } else if (/^[{}()[\]:,;=<>?.|]/.test(tail)) {
+    } else if (/^[{}()[\]:,;=<>?.|+]/.test(tail)) {
       kind = "punct";
       text = tail[0]!;
     } else {

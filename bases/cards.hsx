@@ -1,6 +1,5 @@
 // Reserve a card payment within its spending limit before capture.
 program cards_base "Control card spending"
-use cards
 party seller: business
 
 object card "Card" {

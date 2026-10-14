@@ -1,6 +1,5 @@
 // Fund a purchase and collect its scheduled repayments.
 program financing_base "Split a purchase into instalments"
-use financing
 party seller: business
 
 object purchase "Purchase" {

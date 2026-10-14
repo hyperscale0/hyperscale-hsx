@@ -1,8 +1,6 @@
 // Portland device cover sells a 1,725 SAR tablet and a 115 SAR annual protection period.
 // The retailer keeps 10% of each premium; cancelled future periods reverse that commission and the insurer's portion.
 program device_insurance "Portland device cover"
-use insurance
-use money
 
 // The retailer invoices the tablet at 1,500 SAR plus 15% VAT outside
 // money.transfer. Purchase fee: 0%. The transfer pays the gross 1,725 SAR.

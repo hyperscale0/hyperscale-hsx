@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { parseProgram } from "../src/parse.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 const instrument = (clauses: string) => `program review "Review"
 instrument review {
@@ -15,11 +16,11 @@ instrument review(${parameters}) {
  action create {}
  ${body}
 }`;
-  const source = `program p "P"\nuse custom\nreview = custom.review { ${supplied} }`;
+  const source = `program p "P"\nreview = custom.review { ${supplied} }`;
   return {
     header,
     source,
-    options: { standardLibrary: { source: () => header } },
+    toolchain: testToolchain([header]),
   };
 };
 
@@ -119,7 +120,7 @@ test("duration-shaped quoted text remains text while duration tunables lower to 
     'label: "P1D", delay: "P1D"',
     "fields { label: text = label, delay: duration = delay }",
   );
-  const result = compile(fixture.source, fixture.options);
+  const result = compile(fixture.source, fixture.toolchain);
   expect(result.diagnostics).toEqual([]);
   expect(result.artifacts?.document.instruments[0]?.fields).toEqual([
     { name: "label", type: "text", value: "P1D" },
@@ -131,14 +132,16 @@ test("duration-shaped quoted text remains text while duration tunables lower to 
 test("an incomplete ISO time component is an invalid duration", () => {
   const fixture = headerProgram("delay: duration", "delay: P1DT");
   expect(
-    compile(fixture.source, fixture.options).diagnostics.map((d) => d.message),
+    compile(fixture.source, fixture.toolchain).diagnostics.map(
+      (d) => d.message,
+    ),
   ).toEqual(["delay: invalid duration"]);
 });
 
 // Mutation: throw a plain Error in tunableBounds or re-anchor it at the supplied value.
 test("malformed integer bounds name the header declaration", () => {
   const fixture = headerProgram("count: integer(9, 1)", "count: 2");
-  const result = compile(fixture.source, fixture.options);
+  const result = compile(fixture.source, fixture.toolchain);
   expect(result.diagnostics).toHaveLength(1);
   const d = result.diagnostics[0]!;
   expect([
@@ -157,7 +160,7 @@ test("unused tunables still require a declared type and matching value", () => {
   ] as const) {
     const fixture = headerProgram(`flag: ${type}`, `flag: ${value}`);
     expect(
-      compile(fixture.source, fixture.options).diagnostics.map(
+      compile(fixture.source, fixture.toolchain).diagnostics.map(
         (d) => d.message,
       ),
     ).toEqual([message]);
@@ -168,13 +171,13 @@ test("unused tunables still require a declared type and matching value", () => {
     "fields { flag: boolean = flag }",
   );
   expect(
-    compile(fixture.source, fixture.options).artifacts?.document.instruments[0]
-      ?.fields,
+    compile(fixture.source, fixture.toolchain).artifacts?.document
+      .instruments[0]?.fields,
   ).toEqual([{ name: "flag", type: "boolean", value: true }]);
 });
 
 // Mutation: pass constraint operands straight to BigInt, ignoring their types.
-test("constraints refuse nonnumeric or unlike tunables without throwing", () => {
+test("checks refuse nonnumeric or unlike tunables without throwing", () => {
   for (const [parameters, supplied] of [
     ["first: text, second: text", 'first: "a", second: "b"'],
     ["first: money, second: integer", "first: 1 SAR, second: 2"],
@@ -186,13 +189,13 @@ test("constraints refuse nonnumeric or unlike tunables without throwing", () => 
     const fixture = headerProgram(
       parameters!,
       supplied!,
-      "constraints { first: less_than(second) }",
+      'checks { first < second { message: "m", fix: "f" } }',
     );
     expect(
-      compile(fixture.source, fixture.options).diagnostics.map(
+      compile(fixture.source, fixture.toolchain).diagnostics.map(
         (d) => d.message,
       ),
-    ).toEqual(["constraint needs numeric tunables of the same type"]);
+    ).toEqual(["check compares values of different types"]);
   }
 });
 
@@ -200,14 +203,25 @@ test("constraints refuse nonnumeric or unlike tunables without throwing", () => 
 test("header declarations refuse duplicate instruments and parameters", () => {
   const fixture = headerProgram("count: integer, count: integer", "count: 1");
   expect(
-    compile(fixture.source, fixture.options).diagnostics.map((d) => d.message),
-  ).toEqual(["duplicate parameter count"]);
+    compile(fixture.source, fixture.toolchain).diagnostics.map(
+      (d) => d.message,
+    ),
+  ).toEqual([
+    expect.stringMatching(
+      /^parameter count is declared twice, at 2:\d+ and 2:\d+$/,
+    ),
+  ]);
   const header = fixture.header.replace("count: integer, count: integer", "");
   expect(
-    compile(fixture.source, {
-      standardLibrary: { source: () => `${header}\ninstrument review {}` },
-    }).diagnostics.map((d) => d.message),
-  ).toEqual(["duplicate instrument custom.review"]);
+    compile(
+      fixture.source,
+      testToolchain([`${header}\ninstrument review {}`]),
+    ).diagnostics.map((d) => d.message),
+  ).toEqual([
+    expect.stringMatching(
+      /^instrument custom\.review is declared twice, at \d+:1 and \d+:1$/,
+    ),
+  ]);
 });
 
 // Mutation: scan literal values as if they were executable subject references.

@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { instrument } from "./fixtures/std-source.ts";
 
 const rental = (binding: string) => `program camera_rentals "Camera rentals"
-use money
 object rental "Camera rental" {
   fields { camera: text, returnBy: date }
   attach deposit = money.hold {
@@ -50,6 +49,11 @@ test("a hold bound to a late fee stops that fee, only while it runs, when it ref
   expect(hold.actions.refund!.invoke).toEqual([
     {
       selection: {
+        family: {
+          module: "money",
+          exportPath: "late_fee",
+          digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
         instrument: "rental_late",
         reference: "payer",
         anchor: "self.payer",

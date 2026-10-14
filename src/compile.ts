@@ -1,15 +1,19 @@
 import {
   CompileFailure,
+  conflict,
   didYouMean,
   fail,
   failWithCode,
+  type Site,
 } from "./diagnostics.ts";
-import { hash as sha256 } from "fast-sha256";
 import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
+  canonicalJson,
+  digest,
   validateUdl,
   resolveField,
   sameAccount,
+  sameFamily,
   sameObjectField,
   subjectPartyRoles,
   RESERVED_OBJECT_NAMES,
@@ -33,20 +37,16 @@ import {
   type UdlSubjectRequirement,
   type UdlValue,
 } from "@hyperscale0/udl";
-import {
-  bindingDependencies,
-  parameterDiagnostics,
-  BindingContractError,
-} from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
-import { parseProgram } from "./parse.ts";
+import { lowerChecks, type CompiledCheck } from "./checks.ts";
+import { parseExpression, parseProgram } from "./parse.ts";
 import {
   applyAttachmentEconomics,
   purposeWarnings,
   samePartyMoves,
   unboundEconomicSources,
 } from "./attachment-economics.ts";
-import { parseHeader } from "./header-source.ts";
+import { instrumentChecks, parseHeader } from "./header-source.ts";
 import {
   lineColAt,
   type AssignmentDecl,
@@ -58,9 +58,11 @@ import {
   type ObjectDecl,
   type Span,
 } from "./ast.ts";
-import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
-
-import type { ProviderAdapter } from "@hyperscale0/adl";
+import {
+  defaultToolchain,
+  type AdapterBindingTarget,
+  type Toolchain,
+} from "./toolchain.ts";
 
 export interface CompileDiagnostic extends Diagnostic {
   line: number;
@@ -71,18 +73,42 @@ export interface CompileDiagnostic extends Diagnostic {
   severity: "error";
   stage: "parse" | "check" | "lower";
 }
+/** A std header parameter's value in force on one instrument, and who set it. */
+export interface CompileTerm {
+  name: string;
+  /** program: the author bound it. party: a party of the same name bound it. std: the header's default. */
+  from: "program" | "party" | "std";
+  /** The value as written, or "unset" for an optional parameter nothing set. */
+  text: string;
+  /** "program", or the header that holds the default. */
+  source: string;
+  line: number;
+  column: number;
+}
+/** One std term on one instrument, set as another compile had it. */
+export type CompileTermOverride = Pick<
+  CompileTerm,
+  "name" | "from" | "text"
+> & {
+  instrument: string;
+};
 export interface CompileOriginMapEntry {
   path: string;
   span: Span & { line: number; column: number };
-  standardBlock?: { key: string; recordPath: string; headerDigest: string };
+  /** The std declaration an instrument lowers from, by its declaration digest. */
+  standardBlock?: { key: string; recordPath: string; digest: string };
+  /** One row per header parameter of a std instrument. */
+  terms?: CompileTerm[];
 }
-export interface AdapterBindingTarget {
-  adapter: ProviderAdapter;
-  operation: string;
-}
-export interface CompileOptions {
-  standardLibrary?: StandardLibrary;
-  adapterRegistry?: Readonly<Record<string, AdapterBindingTarget>>;
+/**
+ * A parameter's value in force where it was written. An optional parameter
+ * nothing set has no value; a std term is unset for `when x is set`.
+ */
+interface Term {
+  value?: Expr;
+  from: CompileTerm["from"];
+  span: Span;
+  source: string;
 }
 export interface CompileWarning extends Omit<CompileDiagnostic, "severity"> {
   severity: "warning";
@@ -96,6 +122,8 @@ export interface CompileResult {
     document: UdlDocument;
     costManifest: UdlCostManifest;
     originMap: CompileOriginMapEntry[];
+    /** `check` blocks, beside the document and never inside it. */
+    checks: CompiledCheck[];
   };
 }
 function fieldType(row: Entry): { type: Expr; sensitive: boolean } {
@@ -228,27 +256,11 @@ function lowerObjectField(
     );
   return result.data;
 }
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => (item === undefined ? "null" : canonicalJson(item))).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record)
-    .filter((k) => record[k] !== undefined)
-    .sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`).join(",")}}`;
-}
-
 const emptyBlock: BlockExpr = {
   kind: "block",
   entries: [],
   span: { start: 0, end: 0 },
 };
-const camel = (name: string) =>
-  name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 /** Clock and parent actors run without a caller, so they have no public name. */
 const automatic = (actor: UdlAction["actor"]) =>
   actor === "clock" ||
@@ -273,32 +285,73 @@ function namedParties(instrument: UdlInstrument): string[] {
   }
   return names;
 }
-function entries(block: BlockExpr): Map<string, Expr> {
-  const map = new Map<string, Expr>();
+/**
+ * How a block merges a key given twice: `concat` joins the values, `equal`
+ * keeps one value given twice alike, and `unique` refuses a second. A key not
+ * listed is unique; tunable arguments are equal.
+ */
+type Merge = "unique" | "concat" | "equal";
+const MERGE: Readonly<Record<string, Merge>> = {
+  requires: "concat",
+  moves: "concat",
+  invariants: "concat",
+  invoke: "concat",
+  calculate: "concat",
+  expose: "concat",
+};
+// The sources of the compile in progress, so a conflict prints line:column.
+let texts: ReadonlyMap<string, string> = new Map();
+/** An expression with spans, sources and comments dropped. */
+const normal = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(normal)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value).flatMap(([key, item]) =>
+            key === "span" || key === "source" || item === undefined
+              ? []
+              : [[key, normal(item)]],
+          ),
+        )
+      : value;
+function given(
+  block: BlockExpr,
+  merge = (key: string): Merge => MERGE[key] ?? "unique",
+): Map<string, Entry> {
+  const map = new Map<string, Entry>();
   for (const row of block.entries) {
     const previous = map.get(row.key);
-    if (previous) {
-      if (
-        ![
-          "requires",
-          "moves",
-          "invariants",
-          "invoke",
-          "calculate",
-          "expose",
-        ].includes(row.key)
-      )
-        fail(row, `duplicate ${row.key}`, "keep one value for this name");
+    const rule = merge(row.key);
+    if (!previous) map.set(row.key, row);
+    else if (rule === "concat") {
       const items = (expr: Expr) =>
         expr.kind === "list" ? expr.items : [expr];
       map.set(row.key, {
-        kind: "list",
-        items: [...items(previous), ...items(row.value)],
-        span: row.span,
+        ...row,
+        value: {
+          kind: "list",
+          items: [...items(previous.value), ...items(row.value)],
+          span: row.span,
+        },
       });
-    } else map.set(row.key, row.value);
+    } else if (
+      rule === "unique" ||
+      JSON.stringify(normal(previous.value)) !==
+        JSON.stringify(normal(row.value))
+    )
+      conflict(
+        texts,
+        `${row.key} is ${rule === "equal" ? "set" : "given"} twice`,
+        previous,
+        row,
+        "keep one",
+        rule === "equal" ? { values: [previous.value, row.value] } : {},
+      );
   }
   return map;
+}
+function entries(block: BlockExpr): Map<string, Expr> {
+  return new Map([...given(block)].map(([key, row]) => [key, row.value]));
 }
 function asBlock(expr: Expr | undefined): BlockExpr {
   if (!expr) return emptyBlock;
@@ -456,12 +509,26 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
   return fail(expr, "expected a literal", "write a typed constant");
 }
 
+/** A std declaration's identity: its AST with spans, sources and comments dropped. */
+function declarationDigest(decl: InstrumentDecl): string {
+  return digest(normal(decl));
+}
+
+/**
+ * An override compiles the program as if one std term held other text, so a
+ * plan can see what that term alone moves.
+ */
 export function compile(
   source: string,
-  options: CompileOptions = {},
+  toolchain: Toolchain = defaultToolchain,
+  override?: CompileTermOverride,
 ): CompileResult {
   const parsed = parseProgram(source);
-  const sources = new Map([["program", source]]);
+  const sources = new Map([
+    ["program", source],
+    ...(override ? [["override", override.text] as const] : []),
+  ]);
+  texts = sources;
   const diagnostic = (
     d: Diagnostic,
     stage: CompileDiagnostic["stage"],
@@ -498,8 +565,8 @@ export function compile(
   const program = parsed.program;
   const bindingDiagnostics: Diagnostic[] = [];
   const adapterTarget = (binding: string): AdapterBindingTarget | undefined => {
-    const registry = options.adapterRegistry;
-    if (!registry || !Object.hasOwn(registry, binding)) return;
+    const registry = toolchain.adapters;
+    if (!Object.hasOwn(registry, binding)) return;
     const target = registry[binding];
     return target &&
       Object.hasOwn(target.adapter.operationMap, target.operation)
@@ -530,6 +597,8 @@ export function compile(
       { entry: Entry; name: string; template: InstrumentDecl }
     >();
     const declarationSources = new Map<InstrumentDecl, string>();
+    // Declaration digest by std path, such as financing.installments.payment.
+    const familyDigests = new Map<string, string>();
     const standardOrigins = new Map<
       InstrumentDecl,
       NonNullable<CompileOriginMapEntry["standardBlock"]>
@@ -541,40 +610,27 @@ export function compile(
     // Instruments that lost a std action to an empty all() parent. Their
     // lifecycles drop the states only that action reached.
     const trimmed = new Set<string>();
-    const used = new Set<string>();
-    for (const use of program.decls.filter((d) => d.kind === "use")) {
-      if (used.has(use.name))
-        fail(
-          use,
-          `header ${use.name} is used twice`,
-          "remove the duplicate use line",
-        );
-      used.add(use.name);
-      const content = (
-        options.standardLibrary ?? bundledStandardLibrary
-      ).source(use.name);
-      if (!content)
-        fail(use, `unknown header ${use.name}`, "choose a published header");
-      sources.set(use.name, content);
-      const bundled = bundledStandardLibrary.source(use.name);
-      const headerDigest =
-        bundled === content
-          ? Array.from(sha256(new TextEncoder().encode(content)), (byte) =>
-              byte.toString(16).padStart(2, "0"),
-            ).join("")
-          : undefined;
+    // A qualified name such as booking.reservation loads its header the first
+    // time the compile reaches it. A header nothing names never loads.
+    const loaded = new Set<string>();
+    const loadHeader = (name: string, site?: Site) => {
+      if (loaded.has(name)) return true;
+      const content = toolchain.std.get(name);
+      if (content === undefined) return false;
+      loaded.add(name);
+      sources.set(name, content);
       let header;
       try {
-        header = parseHeader(content, use.name);
+        header = parseHeader(content, name);
       } catch (error) {
-        if (!(error instanceof CompileFailure)) throw error;
+        if (!(error instanceof CompileFailure) || !site) throw error;
         throw new CompileFailure({
           ...error.diagnostic,
           related: [
             {
-              source: "program",
-              span: use.span,
-              message: `Imported header ${use.name}`,
+              source: site.source ?? "program",
+              span: site.span,
+              message: `Header ${name} is named here`,
             },
           ],
         });
@@ -583,22 +639,25 @@ export function compile(
         parentDecl: InstrumentDecl,
         prefix: string,
       ) => {
-        if (templates.has(prefix))
-          fail(
+        const first = templates.get(prefix);
+        if (first)
+          conflict(
+            texts,
+            `instrument ${prefix} is declared twice`,
+            first,
             parentDecl,
-            `duplicate instrument ${prefix}`,
             "give each instrument a distinct name",
           );
         templates.set(prefix, parentDecl);
-        declarationSources.set(parentDecl, use.name);
-        if (headerDigest) {
-          const [, root, ...record] = prefix.split(".");
-          standardOrigins.set(parentDecl, {
-            key: `${use.name}.${root}`,
-            recordPath: record.join("."),
-            headerDigest,
-          });
-        }
+        declarationSources.set(parentDecl, name);
+        const digest = declarationDigest(parentDecl);
+        familyDigests.set(prefix, digest);
+        const [, root, ...record] = prefix.split(".");
+        standardOrigins.set(parentDecl, {
+          key: `${name}.${root}`,
+          recordPath: record.join("."),
+          digest,
+        });
         const recs = entries(asBlock(entries(parentDecl.body).get("records")));
         for (const [recName, recBlock] of recs) {
           const recDecl: InstrumentDecl = {
@@ -612,10 +671,47 @@ export function compile(
         }
       };
       for (const decl of header.decls)
-        if (decl.kind === "instrument") {
-          registerTemplates(decl, `${use.name}.${decl.name}`);
-        }
-    }
+        if (decl.kind === "instrument")
+          registerTemplates(decl, `${name}.${decl.name}`);
+      return true;
+    };
+    const loadPath = (path: string, site?: Site) => {
+      const dot = path.indexOf(".");
+      return dot > 0 && loadHeader(path.slice(0, dot), site);
+    };
+    const templateAt = (path: string, site?: Site) => {
+      loadPath(path, site);
+      return templates.get(path);
+    };
+    // The template a qualified name names, or the reason it names none.
+    const requireTemplate = (path: string, site: Site) => {
+      const found = templateAt(path, site);
+      if (found) return found;
+      const root = path.split(".")[0]!;
+      const unknown = (noun: string, name: string, candidates: string[]) => {
+        const hint = didYouMean(name, candidates);
+        return hint
+          ? `unknown ${noun} ${name}.${hint}`
+          : `unknown ${noun} ${name}`;
+      };
+      if (path.includes(".") && !toolchain.std.has(root))
+        fail(
+          site,
+          unknown("header", root, [...toolchain.std.keys()]),
+          "name a published header",
+        );
+      return fail(
+        site,
+        unknown(
+          "instrument",
+          path,
+          [...templates.keys()].filter((name) => name.startsWith(`${root}.`)),
+        ),
+        path.includes(".")
+          ? `choose an instrument header ${root} declares`
+          : "choose a declared instrument",
+      );
+    };
     for (const decl of program.decls)
       if (decl.kind === "instrument") templates.set(decl.name, decl);
     const document: UdlDocument = {
@@ -634,7 +730,7 @@ export function compile(
     const objects = new Map<string, ObjectDecl>();
     const assignments = new Map<string, AssignmentDecl>();
     const attachmentSubjects = new Map<string, string>();
-    const names = new Set<string>();
+    const names = new Map<string, Site>();
     // A record's create turns public only through a program-level expose,
     // which applies after lowering, so creation input needs the list first.
     const exposedCreates = new Set(
@@ -645,15 +741,17 @@ export function compile(
       ),
     );
     for (const decl of program.decls) {
-      if (decl.kind === "expose" || decl.kind === "hide" || decl.kind === "use")
-        continue;
-      if (names.has(decl.name))
-        fail(
+      if (decl.kind === "expose") continue;
+      const first = names.get(decl.name);
+      if (first)
+        conflict(
+          texts,
+          `${decl.name} is declared twice`,
+          first,
           decl,
-          `duplicate declaration ${decl.name}`,
           "give this declaration a distinct name",
         );
-      names.add(decl.name);
+      names.set(decl.name, decl);
       if (decl.kind === "object") {
         objects.set(decl.name, decl);
         for (const entry of decl.body.entries) {
@@ -718,10 +816,9 @@ export function compile(
           "use module.instrument or module.instrument.record",
         );
       }
-      const moduleName = parts[0]!;
-      const exportPath = parts.slice(1).join(".");
-      const targetTemplate = templates.get(rawPath);
-      if (!targetTemplate) {
+      loadPath(rawPath, expr);
+      const digest = familyDigests.get(rawPath);
+      if (!digest) {
         if (!required) return undefined;
         failWithCode(
           expr,
@@ -730,45 +827,11 @@ export function compile(
           "choose a declared standard instrument",
         );
       }
-      const topTemplate = templates.get(`${moduleName}.${parts[1]!}`);
-      if (!topTemplate) {
-        if (!required) return undefined;
-        failWithCode(
-          expr,
-          "HSX1001",
-          `unknown family declaration ${moduleName}.${parts[1]!}`,
-          "choose a declared standard instrument",
-        );
-      }
-      const topBody = entries(topTemplate.body);
-      let revision: number | undefined;
-      if (topBody.has("familyRevision")) {
-        const val = literal(topBody.get("familyRevision")!);
-        if (typeof val === "number") revision = val;
-      }
-      let currentBody = topTemplate.body;
-      for (const recName of parts.slice(2)) {
-        const recs = entries(asBlock(entries(currentBody).get("records")));
-        const child = recs.get(recName);
-        if (child) {
-          currentBody = asBlock(child);
-          const cBody = entries(currentBody);
-          if (cBody.has("familyRevision")) {
-            const val = literal(cBody.get("familyRevision")!);
-            if (typeof val === "number") revision = val;
-          }
-        }
-      }
-      if (revision === undefined) {
-        if (!required) return undefined;
-        failWithCode(
-          expr,
-          "HSX1001",
-          `declaration ${rawPath} has no familyRevision declared`,
-          "declare familyRevision on the standard instrument",
-        );
-      }
-      return { module: moduleName, exportPath, revision };
+      return {
+        module: parts[0]!,
+        exportPath: parts.slice(1).join("."),
+        digest,
+      };
     };
     const addInstrument = (
       decl: InstrumentDecl,
@@ -792,14 +855,10 @@ export function compile(
         /** The template as the founder wrote it, such as money.schedule. */
         template?: string;
       },
-      familyDeclaration?: {
-        module: string;
-        exportPath: string;
-        revision?: number | undefined;
-      },
+      familyDeclaration?: UdlFamily,
       standardOrigin?: NonNullable<CompileOriginMapEntry["standardBlock"]>,
-      /** Declared tunables, true where the author bound them. */
-      inheritedTunables = new Map<string, boolean>(),
+      /** A child record's terms are its parent's. */
+      inheritedTerms = new Map<string, Term>(),
     ) => {
       const resolveFamilyInstruments = (
         family: UdlFamily,
@@ -836,7 +895,8 @@ export function compile(
             inst.family &&
             inst.family.module === family.module &&
             inst.family.exportPath === family.exportPath &&
-            inst.family.revision === family.revision
+            "digest" in inst.family &&
+            inst.family.digest === family.digest
           ) {
             found.add(inst.id);
           }
@@ -900,7 +960,8 @@ export function compile(
 
       const getInstrumentFamily = (targetId: string): UdlFamily | undefined => {
         const existing = document.instruments.find((i) => i.id === targetId);
-        if (existing?.family) return existing.family;
+        // This document is format 2, so every family it holds is a digest.
+        if (existing?.family) return existing.family as UdlFamily;
 
         if (targetId.startsWith(`${id}_`) && familyDeclaration) {
           const sub = resolveChildExportPath(
@@ -919,7 +980,7 @@ export function compile(
 
         for (const [asgnName, asgn] of assignments) {
           if (targetId === asgnName || targetId.startsWith(`${asgnName}_`)) {
-            const tmpl = templates.get(asgn.target);
+            const tmpl = templateAt(asgn.target);
             if (!tmpl) continue;
             const mod = declarationSources.get(tmpl);
             if (!mod || mod === "program") continue;
@@ -954,16 +1015,11 @@ export function compile(
               "name a declared instrument or a list of instruments",
             );
           const fam = getInstrumentFamily(tid);
-          if (
-            !fam ||
-            fam.module !== expectedFamily.module ||
-            fam.exportPath !== expectedFamily.exportPath ||
-            fam.revision !== expectedFamily.revision
-          ) {
+          if (!sameFamily(fam, expectedFamily)) {
             failWithCode(
               expr,
               "HSX1001",
-              `target instrument ${tid} family does not match expected family ${expectedFamily.module}.${expectedFamily.exportPath} (revision ${expectedFamily.revision})`,
+              `target instrument ${tid} family does not match expected family ${expectedFamily.module}.${expectedFamily.exportPath}`,
               "ensure target instrument matches the declared family",
             );
           }
@@ -979,28 +1035,27 @@ export function compile(
         if (type.kind === "call" && type.name === "enum")
           enums.set(parameter.key, type.args.map(text));
       }
-      const supplied = new Map<string, Expr>();
-      const suppliedEntries = new Map<string, Entry>();
-      for (const entry of arguments_.entries) {
-        if (supplied.has(entry.key))
-          fail(
-            entry,
-            `duplicate tunable ${entry.key}`,
-            "supply each parameter once",
-          );
-        supplied.set(entry.key, entry.value);
-        suppliedEntries.set(entry.key, entry);
-      }
+      const suppliedEntries = given(arguments_, () => "equal");
+      const supplied = new Map(
+        [...suppliedEntries].map(([key, entry]) => [key, entry.value]),
+      );
       const environment = new Map<string, Expr>(inherited);
       // `when every is set` asks whether the author bound a tunable; a
       // default leaves it unset.
-      const tunables = new Map(inheritedTunables);
+      const terms = new Map(inheritedTerms);
+      const isSet = (key: string) => (terms.get(key)?.from ?? "std") !== "std";
       const parameterErrors: Diagnostic[] = [];
+      // A std default set back is the header as it was, so its digest too.
+      let revertedHeader: InstrumentDecl | undefined;
       for (const param of decl.parameters) {
         const type =
           param.value.kind === "default" ? param.value.type : param.value;
+        const overridden =
+          override?.instrument === id && override.name === param.key;
         const fallback =
-          param.value.kind === "default" ? param.value.value : undefined;
+          param.value.kind === "default" && !overridden
+            ? param.value.value
+            : undefined;
         const typeName =
           type.kind === "type" || type.kind === "call" ? type.name : text(type);
         const partyParameter = attachmentInfo && typeName === "party";
@@ -1011,18 +1066,76 @@ export function compile(
         const byName: Expr | undefined =
           partyParameter &&
           !optional &&
+          !overridden &&
           (subjectPartyRoles.includes(param.key as SubjectPartyRole) ||
             document.parties[param.key])
             ? { kind: "name", value: param.key, span: origin }
             : undefined;
-        tunables.set(param.key, supplied.has(param.key) || !!byName);
+        const header = declarationSources.get(decl) ?? "program";
+        const forced =
+          !overridden || override.text === "unset"
+            ? undefined
+            : {
+                ...(parseExpression(override.text) ??
+                  fail(
+                    { span: origin },
+                    `${param.key} cannot hold ${override.text}`,
+                    "override with text the term once held",
+                  )),
+                source: "override",
+              };
+        const written = overridden ? forced : supplied.get(param.key);
+        if (overridden && override.from === "std")
+          revertedHeader = {
+            ...decl,
+            parameters: decl.parameters.map((entry) =>
+              entry !== param
+                ? entry
+                : {
+                    ...entry,
+                    value: forced
+                      ? {
+                          kind: "default",
+                          type,
+                          value: forced,
+                          span: entry.span,
+                        }
+                      : type,
+                  },
+            ),
+          };
+        terms.set(
+          param.key,
+          overridden
+            ? {
+                ...(forced ? { value: forced } : {}),
+                from: override.from,
+                span: forced?.span ?? origin,
+                source: "override",
+              }
+            : written
+              ? {
+                  value: written,
+                  from: "program",
+                  span: written.span,
+                  source: "program",
+                }
+              : byName
+                ? {
+                    value: byName,
+                    from: "party",
+                    span: origin,
+                    source: "program",
+                  }
+                : {
+                    ...(fallback ? { value: fallback } : {}),
+                    from: "std",
+                    span: (fallback ?? param).span,
+                    source: header,
+                  },
+        );
         const actual =
-          supplied.get(param.key) ??
-          byName ??
-          (fallback && {
-            ...fallback,
-            source: declarationSources.get(decl) ?? "program",
-          });
+          written ?? byName ?? (fallback && { ...fallback, source: header });
         if (!actual) {
           if (optional) continue;
           parameterErrors.push({
@@ -1046,45 +1159,21 @@ export function compile(
         }
         environment.set(param.key, actual);
       }
-      let policyDiagnostics: ReturnType<typeof parameterDiagnostics>;
-      let dependencies: ReturnType<typeof bindingDependencies>;
-      try {
-        policyDiagnostics = parameterDiagnostics(decl);
-        dependencies = bindingDependencies(decl);
-      } catch (error) {
-        if (!(error instanceof BindingContractError)) throw error;
-        throw new CompileFailure({
-          code: "HSX1001",
-          message: error.message,
-          fix: "Repair the header binding contract.",
-          span: error.entry.span,
-          source: declarationSources.get(decl) ?? "program",
-        });
-      }
-      for (const dependency of dependencies) {
-        const selected = environment.get(dependency.when);
-        const holds = enums.has(dependency.when)
-          ? selected?.kind === "name" && selected.value === dependency.is
-          : tunables.get(dependency.when) === (dependency.is === "set");
-        if (holds && !environment.has(dependency.binding)) {
-          throw new CompileFailure({
-            code: "HSX1001",
-            message: dependency.message.replaceAll(
-              "{attachment}",
-              attachmentInfo?.attachmentName ?? id,
-            ),
-            fix: dependency.fix,
-            span: origin,
-            related: [
-              {
-                source: declarationSources.get(decl) ?? "program",
-                span: dependency.span,
-                message: "Conditional binding requirement",
-              },
-            ],
-          });
+      const checks = instrumentChecks(decl);
+      const say = (message: string) =>
+        message
+          .replaceAll("{attachment}", attachmentInfo?.attachmentName ?? id)
+          .replaceAll("{instrument}", assignments.get(id)?.target ?? decl.name);
+      const collect = (run: () => void) => {
+        try {
+          run();
+        } catch (error) {
+          if (!(error instanceof CompileFailure)) throw error;
+          parameterErrors.push(error.diagnostic);
         }
-      }
+      };
+      // Each tunable that failed its type rule, so no check compares it.
+      const broken = new Set<string>();
       for (const key of supplied.keys()) {
         if (decl.parameters.some((p) => p.key === key)) continue;
         const suppliedValue = supplied.get(key)!;
@@ -1241,7 +1330,7 @@ export function compile(
                 const subject = attachmentSubjects.get(assignment.name)!;
                 return `\`${subject}.${assignment.name.slice(subject.length + 1)}\``;
               });
-            const target = templates.get(type);
+            const target = templateAt(type);
             const required =
               target?.parameters
                 .filter(
@@ -1429,7 +1518,7 @@ export function compile(
                 "reference union needs 1 to 16 objects",
                 "use at most 16 distinct object names",
               );
-            const seen = new Set<string>();
+            const seen = new Map<string, Expr>();
             for (const value of values) {
               if (value.kind !== "name")
                 fail(
@@ -1456,7 +1545,7 @@ export function compile(
                   !value.value.startsWith(`${instance}_`)
                 )
                   continue;
-                const template = templates.get(target);
+                const template = templateAt(target);
                 if (!template) continue;
                 const suffix = value.value
                   .slice(instance.length + 1)
@@ -1473,9 +1562,16 @@ export function compile(
                   `${param.key} has the wrong object type`,
                   `use an object of type ${t.kind === "type" ? t.target : "ref"}`,
                 );
-              if (seen.has(value.value))
-                fail(value, "duplicate reference", "list each object once");
-              seen.add(value.value);
+              const first = seen.get(value.value);
+              if (first)
+                conflict(
+                  texts,
+                  `${param.key} lists ${value.value} twice`,
+                  first,
+                  value,
+                  "list each object once",
+                );
+              seen.set(value.value, value);
             }
             // A many-reference tunable is a list even when one object is bound,
             // so report datasets and other value positions never see a bare name.
@@ -1538,17 +1634,12 @@ export function compile(
                   `For a varying deposit, ${advice} and add \`rename { ${param.key}: ${target} }\`. Use a literal only for a fixed charge.`,
                 );
               }
-              if (type === "money" && v.kind === "percent") {
-                const policy = policyDiagnostics.find(
-                  (policy) => policy.parameter === param.key,
-                );
+              if (type === "money" && v.kind === "percent")
                 fail(
                   v,
-                  `\`${assignments.get(id)?.target ?? decl.name}.${param.key}\` accepts ${policy?.accepts ?? "a fixed amount"}. It cannot express ${policy?.percentage ?? "a percentage-based charge"}.`,
-                  policy?.fix ??
-                    "Use a fixed amount only if that is the intended policy. A percentage charge needs an authored rate calculation; do not approximate it with a cash amount.",
+                  `\`${assignments.get(id)?.target ?? decl.name}.${param.key}\` accepts a fixed amount. It cannot express a percentage-based charge.`,
+                  "Use a fixed amount only if that is the intended policy. A percentage charge needs an authored rate calculation; do not approximate it with a cash amount.",
                 );
-              }
               fail(v, `${param.key} needs ${type}`, `write a ${type} literal`);
             }
             try {
@@ -1602,119 +1693,163 @@ export function compile(
               span: party.span,
               message: `Declared party ${party.name}`,
             });
-          parameterErrors.push({ ...error.diagnostic, related });
+          // A header's `x is <type>` check explains this tunable's type rule.
+          const typed = checks.find(
+            ({ test }) => test.kind === "type" && test.tunable === param.key,
+          );
+          broken.add(param.key);
+          parameterErrors.push({
+            ...error.diagnostic,
+            ...(typed ? { message: say(typed.message), fix: typed.fix } : {}),
+            related,
+          });
         }
-      }
-      if (parameterErrors.length) {
-        bindingDiagnostics.push(...parameterErrors.slice(1));
-        throw new CompileFailure(parameterErrors[0]!);
       }
       const body = entries(decl.body);
       // A ceiling caps a tunable by the value of an enum tunable, such as the
       // longest term per loan kind. An unset tunable takes the ceiling; a
       // supplied one may lower it, never raise it.
-      for (const ceiling of asBlock(body.get("ceilings")).entries) {
-        const table = entries(asBlock(ceiling.value));
-        const by = table.get("by");
-        const selected = by && environment.get(text(by));
-        if (!by || selected?.kind !== "name")
-          fail(
-            ceiling,
-            `ceiling ${ceiling.key} needs by: an enum tunable`,
-            "write by: kind and one maximum per enum value",
-          );
-        const maximum = table.get(selected.value);
-        if (maximum?.kind !== "number")
-          fail(
-            ceiling,
-            `ceiling ${ceiling.key} has no maximum for ${selected.value}`,
-            `add ${selected.value}: number to the ceiling`,
-          );
-        if (!tunables.get(ceiling.key)) {
-          environment.set(ceiling.key, { ...maximum, span: origin });
-          continue;
-        }
-        const supplied = environment.get(ceiling.key)!;
-        if (
-          supplied.kind !== "number" ||
-          BigInt(supplied.value) > BigInt(maximum.value)
-        )
-          fail(
-            supplied,
-            `${ceiling.key} for ${selected.value} is at most ${maximum.value}`,
-            `choose ${ceiling.key} of ${maximum.value} or less, or omit it`,
-          );
-      }
-      for (const constraint of asBlock(body.get("constraints")).entries) {
-        const rule = constraint.value;
-        if (
-          rule.kind !== "call" ||
-          rule.args.length !== 1 ||
-          !["less_than", "at_most", "greater_than"].includes(rule.name)
-        )
-          fail(
-            rule,
-            "invalid tunable constraint",
-            "use less_than(name), at_most(name), or greater_than(name)",
-          );
-        const left = environment.get(constraint.key),
-          right = environment.get(text(rule.args[0]!));
-        if (!left || !right)
-          fail(
-            rule,
-            "constraint needs two declared tunables",
-            "name the compared tunables",
-          );
-        // A runtime value is checked when the agreement is created.
-        if (
-          [left, right].some(
-            (expr) => expr.kind === "name" && expr.value === "runtime",
+      for (const ceiling of asBlock(body.get("ceilings")).entries)
+        collect(() => {
+          const table = entries(asBlock(ceiling.value));
+          const by = table.get("by");
+          const selected = by && environment.get(text(by));
+          if (!by || selected?.kind !== "name")
+            fail(
+              ceiling,
+              `ceiling ${ceiling.key} needs by: an enum tunable`,
+              "write by: kind and one maximum per enum value",
+            );
+          const maximum = table.get(selected.value);
+          if (maximum?.kind !== "number")
+            fail(
+              ceiling,
+              `ceiling ${ceiling.key} has no maximum for ${selected.value}`,
+              `add ${selected.value}: number to the ceiling`,
+            );
+          if (!isSet(ceiling.key)) {
+            const term = terms.get(ceiling.key);
+            if (term)
+              terms.set(ceiling.key, {
+                ...term,
+                value: maximum,
+                span: maximum.span,
+              });
+            environment.set(ceiling.key, { ...maximum, span: origin });
+            return;
+          }
+          const supplied = environment.get(ceiling.key)!;
+          if (
+            supplied.kind !== "number" ||
+            BigInt(supplied.value) > BigInt(maximum.value)
           )
-        )
-          continue;
-        const numericKind = (expr: Expr) =>
-          expr.kind === "name" && /^P(?:\d|T)/.test(expr.value)
-            ? "duration"
-            : expr.kind;
-        if (
-          !["money", "number", "percent", "duration"].includes(
-            numericKind(left),
-          ) ||
-          numericKind(left) !== numericKind(right)
-        )
-          fail(
-            rule,
-            "constraint needs numeric tunables of the same type",
-            "compare two amounts, integers, percentages or durations",
-          );
-        const a = BigInt(String(literal(left))),
-          b = BigInt(String(literal(right)));
-        if (
-          !(rule.name === "less_than"
-            ? a < b
-            : rule.name === "at_most"
-              ? a <= b
-              : a > b)
-        )
-          fail(
-            left,
-            `${constraint.key} must be ${rule.name} ${text(rule.args[0]!)}`,
-            "choose values satisfying the header constraint",
-          );
+            fail(
+              supplied,
+              `${ceiling.key} for ${selected.value} is at most ${maximum.value}`,
+              `choose ${ceiling.key} of ${maximum.value} or less, or omit it`,
+            );
+        });
+      // Every check runs, so one attach reports each broken rule at once.
+      for (const check of checks)
+        collect(() => {
+          const { test, when } = check;
+          if (when) {
+            const selected = environment.get(when.selector);
+            const holds = enums.has(when.selector)
+              ? selected?.kind === "name" && selected.value === when.is
+              : terms.has(when.selector) &&
+                isSet(when.selector) === (when.is === "set");
+            if (!holds) return;
+          }
+          if (test.kind === "type") return;
+          let at: Entry | undefined;
+          if (test.kind === "set") {
+            if (isSet(test.tunable)) return;
+          } else {
+            const terms = [...test.left, ...test.right];
+            const value = (term: Expr) =>
+              term.kind === "name" ? environment.get(term.value) : term;
+            // An unset or broken tunable has nothing to compare, and a
+            // runtime value is checked when the agreement is created.
+            if (
+              terms.some(
+                (term) =>
+                  (term.kind === "name" && broken.has(term.value)) ||
+                  !value(term) ||
+                  (value(term)!.kind === "name" &&
+                    (value(term) as { value: string }).value === "runtime"),
+              )
+            )
+              return;
+            const kind = (term: Expr) => {
+              const expr = value(term)!;
+              return expr.kind === "name" && /^P(?:\d|T)/.test(expr.value)
+                ? "duration"
+                : expr.kind;
+            };
+            const kinds = new Set(terms.map(kind));
+            if (
+              kinds.size !== 1 ||
+              !["money", "number", "percent", "duration"].includes(
+                kind(terms[0]!),
+              )
+            )
+              fail(
+                check.rule,
+                "check compares values of different types",
+                "compare amounts, integers, percentages or durations of one type",
+              );
+            const total = (side: Expr[]) =>
+              side.reduce(
+                (sum, term) => sum + BigInt(String(literal(value(term)!))),
+                0n,
+              );
+            const [a, b] = [total(test.left), total(test.right)];
+            const holds = {
+              "<": a < b,
+              "<=": a <= b,
+              ">": a > b,
+              ">=": a >= b,
+              "==": a === b,
+              "!=": a !== b,
+            }[test.operator];
+            if (holds) return;
+            at = terms
+              .map((term) =>
+                term.kind === "name"
+                  ? suppliedEntries.get(term.value)
+                  : undefined,
+              )
+              .find(Boolean);
+          }
+          throw new CompileFailure({
+            code: "HSX1001",
+            message: say(check.message),
+            fix: check.fix,
+            span: at?.value.span ?? origin,
+            related: [
+              {
+                source: check.source ?? "program",
+                span: check.span,
+                message: "Header check",
+              },
+            ],
+          });
+        });
+      if (parameterErrors.length) {
+        bindingDiagnostics.push(...parameterErrors.slice(1));
+        throw new CompileFailure(parameterErrors[0]!);
       }
       for (const key of body.keys())
         if (
           ![
-            "familyRevision",
             "fields",
             "lifecycle",
             "records",
             "summary",
             "invariants",
-            "constraints",
+            "checks",
             "ceilings",
-            "dependencies",
-            "parameterDiagnostics",
             "reports",
             "revisioned",
             "scope",
@@ -1726,24 +1861,6 @@ export function compile(
             `unknown instrument clause ${key}`,
             "use fields, lifecycle, actions, invariants, or records",
           );
-      if (body.has("familyRevision")) {
-        const revExpr = body.get("familyRevision")!;
-        const revVal = literal(revExpr);
-        if (
-          typeof revVal !== "number" ||
-          !Number.isInteger(revVal) ||
-          revVal <= 0
-        ) {
-          fail(
-            revExpr,
-            "familyRevision must be a positive integer",
-            "use a positive integer revision",
-          );
-        }
-        if (familyDeclaration) {
-          familyDeclaration.revision = revVal;
-        }
-      }
       const records = entries(asBlock(body.get("records")));
       if (!inherited.size)
         environment.set("parent", { kind: "name", value: id, span: origin });
@@ -1962,10 +2079,10 @@ export function compile(
         if (
           relation === "is" &&
           (choice === "set" || choice === "unset") &&
-          tunables.has(tunable!) &&
+          terms.has(tunable!) &&
           !enums.has(tunable!)
         )
-          return tunables.get(tunable!) === (choice === "set");
+          return isSet(tunable!) === (choice === "set");
         const binding = environment.get(tunable!);
         if (!binding)
           fail(
@@ -1980,7 +2097,7 @@ export function compile(
           const [root, ...children] = text(bound).split(".");
           const assignment = assignments.get(root!);
           let target = assignment
-            ? templates.get(assignment.target)?.body
+            ? templateAt(assignment.target)?.body
             : program.decls
                 .filter(
                   (decl): decl is InstrumentDecl => decl.kind === "instrument",
@@ -2468,14 +2585,9 @@ export function compile(
                       operation,
                       requirements: validatedRequirements,
                     };
-                    const digest = sha256(
-                      new TextEncoder().encode(canonicalJson(declaration)),
-                    );
                     const snapshot: UdlAdapterSubjectSnapshot = {
                       ...declaration,
-                      declarationDigest: Array.from(digest, (byte) =>
-                        byte.toString(16).padStart(2, "0"),
-                      ).join(""),
+                      declarationDigest: digest(declaration),
                     };
                     const adapterRenames: Record<string, string> = {};
                     if (attachmentInfo?.renames) {
@@ -2606,7 +2718,6 @@ export function compile(
           summary: slots.has("summary")
             ? String(data(slots.get("summary")!))
             : title(name),
-          publicAction: camel(`${name}_${id}`),
           event: `${id}.${name}`,
           actor: "caller",
           input: lowerFields(asBlock(slots.get("input"))),
@@ -3234,20 +3345,16 @@ export function compile(
         }
         if (moveCalculations.length)
           a.calculate = [...(a.calculate ?? []), ...moveCalculations];
-        if (attachmentInfo) {
-          if (attachmentInfo.exposed.has(name)) {
-            if (automatic(a.actor))
-              fail(
-                row,
-                `${name} runs on the clock or its parent, not a caller`,
-                "expose only caller actions",
-              );
-            a.publicAction = attachmentInfo.exposed.get(name)!;
-          } else {
-            delete a.publicAction;
-          }
+        // An action is hidden until an expose line names it.
+        if (attachmentInfo?.exposed.has(name)) {
+          if (automatic(a.actor))
+            fail(
+              row,
+              `${name} runs on the clock or its parent, not a caller`,
+              "expose only caller actions",
+            );
+          a.publicAction = attachmentInfo.exposed.get(name)!;
         }
-        if (automatic(a.actor)) delete a.publicAction;
         const checkSubjectPaths = (obj: unknown, key = "") => {
           if (typeof obj === "string") {
             if (
@@ -3434,15 +3541,33 @@ export function compile(
       origins.push({
         path: `$.instruments[${document.instruments.length}]`,
         span: { ...origin, ...lineColAt(source, origin.start) },
-        ...(standardOrigin ? { standardBlock: standardOrigin } : {}),
+        ...(standardOrigin
+          ? {
+              standardBlock: standardOrigin,
+              terms: [...terms].map(([name, term]) => {
+                const text = sources.get(term.source)!;
+                return {
+                  name,
+                  from: term.from,
+                  text: !term.value
+                    ? "unset"
+                    : term.from === "party"
+                      ? name
+                      : text.slice(term.span.start, term.span.end),
+                  source: term.source,
+                  ...lineColAt(text, term.span.start),
+                };
+              }),
+            }
+          : {}),
       });
-      if (familyDeclaration && familyDeclaration.revision !== undefined) {
+      if (familyDeclaration)
         inst.family = {
-          module: familyDeclaration.module,
-          exportPath: familyDeclaration.exportPath,
-          revision: familyDeclaration.revision,
+          ...familyDeclaration,
+          ...(revertedHeader
+            ? { digest: declarationDigest(revertedHeader) }
+            : {}),
         };
-      }
       document.instruments.push(inst);
       declarations.set(inst, decl);
       for (const [key, definition] of records) {
@@ -3476,13 +3601,11 @@ export function compile(
           declarationSources.get(decl) ?? "program",
         );
         const childFamily = familyDeclaration
-          ? {
-              module: familyDeclaration.module,
-              exportPath: `${familyDeclaration.exportPath}.${key}`,
-              ...(familyDeclaration.revision !== undefined
-                ? { revision: familyDeclaration.revision }
-                : {}),
-            }
+          ? resolveFamily(
+              `${familyDeclaration.module}.${familyDeclaration.exportPath}.${key}`,
+              { span: origin },
+              false,
+            )
           : undefined;
         addInstrument(
           child,
@@ -3504,7 +3627,7 @@ export function compile(
                   .join("."),
               }
             : undefined,
-          tunables,
+          terms,
         );
       }
     };
@@ -3554,14 +3677,7 @@ export function compile(
         }
         const attachmentName = match[1]!;
         const targetTemplate = match[2]!;
-        const template = templates.get(targetTemplate);
-        if (!template) {
-          fail(
-            entry,
-            `unknown instrument ${targetTemplate}`,
-            `add use ${targetTemplate.split(".")[0]} and choose a declared instrument`,
-          );
-        }
+        const template = requireTemplate(targetTemplate, entry);
         const instId = `${decl.name}_${attachmentName}`;
 
         const attachmentBlock = asBlock(entry.value);
@@ -3576,11 +3692,15 @@ export function compile(
             economics.push(row);
           } else if (row.key === "rename") {
             for (const r of asBlock(row.value).entries) {
-              if (renames.has(r.key))
-                fail(
+              const first = renameEntries.get(r.key);
+              if (first)
+                conflict(
+                  texts,
+                  `rename ${r.key} is given twice`,
+                  first,
                   r,
-                  `duplicate rename ${r.key}`,
                   "rename each subject field once",
+                  { values: [first.value, r.value] },
                 );
               renames.set(r.key, text(r.value));
               renameEntries.set(r.key, r);
@@ -3589,16 +3709,28 @@ export function compile(
             if (row.value.kind === "call") {
               const actionName = row.value.name;
               const publicName = text(row.value.args[0]!);
+              const first = exposures.find(
+                (exposure) =>
+                  exposure.instrument === instId &&
+                  exposure.action === actionName,
+              );
+              if (first)
+                conflict(
+                  texts,
+                  `${actionName} is exposed twice`,
+                  first.entry,
+                  row,
+                  "expose each action once",
+                );
               if (
-                exposed.has(actionName) ||
                 !template.body.entries.some(
                   (entry) => entry.key === `action ${actionName}`,
                 )
               )
                 fail(
                   row,
-                  `unknown or repeated action ${actionName}`,
-                  "expose one declared action once",
+                  `unknown action ${actionName}`,
+                  "expose one declared action",
                 );
               exposed.set(actionName, publicName);
               exposures.push({
@@ -3642,7 +3774,7 @@ export function compile(
               economics,
               template: targetTemplate,
             },
-            templateFamily ? { ...templateFamily } : undefined,
+            templateFamily,
             standardOrigins.get(template),
           );
         } catch (error) {
@@ -3828,13 +3960,7 @@ export function compile(
         addInstrument(decl, decl.name, emptyBlock, decl.span);
       }
       if (decl.kind === "assignment") {
-        const template = templates.get(decl.target);
-        if (!template)
-          fail(
-            decl,
-            `unknown instrument ${decl.target}`,
-            `add use ${decl.target.split(".")[0]} and choose a declared instrument`,
-          );
+        const template = requireTemplate(decl.target, decl);
         const templateFamily = resolveFamily(decl.target, decl, false);
         addInstrument(
           template,
@@ -3844,7 +3970,7 @@ export function compile(
           new Map(),
           new Map(),
           undefined,
-          templateFamily ? { ...templateFamily } : undefined,
+          templateFamily,
           standardOrigins.get(template),
         );
       }
@@ -3877,10 +4003,12 @@ export function compile(
         if (
           family &&
           families.every(
-            (item) => canonicalJson(item) === canonicalJson(family),
+            (item) =>
+              item !== undefined &&
+              canonicalJson(item) === canonicalJson(family),
           )
         )
-          selection.family = family;
+          selection.family = family as UdlFamily;
       }
       for (const child of Object.values(record)) retainSelectionFamilies(child);
     };
@@ -4251,7 +4379,7 @@ export function compile(
     const declaredMembers = (selection: UdlSelection) => {
       const members = [selection.instrument].flat();
       const header = selection.family
-        ? templates.get(
+        ? templateAt(
             `${selection.family.module}.${selection.family.exportPath}`,
           )
         : undefined;
@@ -4580,48 +4708,63 @@ export function compile(
           `action ${exposure.action} is excluded by these bindings`,
           "expose an action available with these tunables",
         );
-    const changed = new Set<string>();
+    const changed = new Map<string, Site>();
     for (const decl of program.decls)
-      if (decl.kind === "hide" || decl.kind === "expose") {
+      if (decl.kind === "expose") {
         const parts = decl.target.split(".");
         const key = parts.pop();
         const id = parts.join("_");
         const action = document.instruments.find((i) => i.id === id)?.actions[
           key ?? ""
         ];
-        if (!action || changed.has(decl.target))
+        const first = changed.get(decl.target);
+        if (first)
+          conflict(
+            texts,
+            `${decl.target} is exposed twice`,
+            first,
+            decl,
+            "expose each action once",
+          );
+        if (!action)
           fail(
             decl,
-            `unknown or repeated action ${decl.target}`,
-            "name one declared object.action once",
+            `unknown action ${decl.target}`,
+            "name one declared object.action",
           );
-        changed.add(decl.target);
-        if (decl.kind === "hide") delete action!.publicAction;
-        else if (automatic(action!.actor))
+        changed.set(decl.target, decl);
+        if (automatic(action.actor))
           fail(
             decl,
             `${decl.target} runs on the clock or its parent, not a caller`,
             "expose only caller actions",
           );
-        else action!.publicAction = decl.name!;
+        action.publicAction = decl.name;
       }
+    // Two actions of one instrument cannot share a public name.
+    const published = new Map<string, Site>();
     for (const decl of program.decls) {
       if (decl.kind !== "expose") continue;
-      const parts = decl.target.split(".");
-      parts.pop();
-      const instrument = document.instruments.find(
-        (item) => item.id === parts.join("_"),
-      )!;
-      if (
-        Object.values(instrument.actions).filter(
-          (action) => action.publicAction === decl.name,
-        ).length > 1
-      )
-        fail(
+      const instrument = decl.target.split(".").slice(0, -1).join("_");
+      const key = `${instrument} ${decl.name}`;
+      const first =
+        published.get(key) ??
+        exposures.find(
+          ({ instrument: id, action, entry }) =>
+            id === instrument &&
+            `${decl.target}`.split(".").pop() !== action &&
+            entry.value.kind === "call" &&
+            text(entry.value.args[0]!) === decl.name,
+        )?.entry;
+      if (first)
+        conflict(
+          texts,
+          `public action ${decl.name} is given twice on ${instrument}`,
+          first,
           decl,
-          `public action ${decl.name} is used more than once on ${parts.join(".")}`,
           "give each exposed action a distinct public name",
         );
+      published.set(key, decl);
     }
     // Every attachment of an object shares one public action namespace, so
     // two attachments that both `expose create` collide.
@@ -4836,6 +4979,7 @@ export function compile(
           diagnostic(d, "check"),
         ),
       };
+    const checks = lowerChecks(program.checks, validated.value, literal);
     return {
       verdict: "valid",
       diagnostics: [],
@@ -4847,6 +4991,7 @@ export function compile(
         document: validated.value,
         costManifest: buildUdlCostManifest(validated.value),
         originMap: origins,
+        checks,
       },
     };
   } catch (error) {

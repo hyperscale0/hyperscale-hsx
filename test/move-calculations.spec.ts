@@ -111,7 +111,6 @@ test("a fee on an amount held from create stays an instrument calculation", () =
 const diagnostics = (source: string) =>
   compile(source).diagnostics.map(({ message, line }) => [message, line]);
 const attach = (header: string, tunables: string) => `program shop "Shop"
-use ${header.split(".")[0]}
 party merchant: business
 object sale "Sale" {
   fields { price: money }
@@ -131,7 +130,7 @@ test("a negative amount says it cannot be negative", () => {
         "payer: owner, payee: operator, amount: -150 SAR",
       ),
     ),
-  ).toEqual([["amount: literal cannot be negative", 7]]);
+  ).toEqual([["amount: literal cannot be negative", 6]]);
 });
 
 // Mutation: drop the runtime case from literal. The author reads "expected a literal".
@@ -146,7 +145,7 @@ test("runtime on a compile-time tunable says the value is fixed", () => {
   ).toEqual([
     [
       "this value is fixed when the program compiles, so it cannot be runtime",
-      7,
+      6,
     ],
   ]);
   expect(
@@ -156,7 +155,7 @@ test("runtime on a compile-time tunable says the value is fixed", () => {
         "payer: owner, payee: operator, amount: 100 SAR, count: 0",
       ),
     ),
-  ).toEqual([["count: value is outside 1..366", 7]]);
+  ).toEqual([["count: value is outside 1..366", 6]]);
 });
 
 // Mutation: drop the held-account check. The prover then blames settle_release.
@@ -171,7 +170,7 @@ test("a buyer fee on a held account names the fee", () => {
   ).toEqual([
     [
       "a buyer fee cannot come from `held`, which holds only the moved amount",
-      7,
+      6,
     ],
   ]);
 });

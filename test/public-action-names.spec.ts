@@ -9,26 +9,37 @@ instrument record {
 }
 `;
 
-// Mutation: emit duplicate aliases on a standalone instrument after exposure.
-test("an alias cannot shadow another action's generated public name", () => {
-  const exposure = "expose record.check as createRecord";
+// Mutation: give a program instrument's caller actions an automatic public name.
+test("a program instrument publishes only the action an expose line names", () => {
+  const three = source.replace(
+    " action check { from: open, to: open }",
+    " action check { from: open, to: open }\n action close { from: open, to: open }",
+  );
+  const actions = compile(three + "expose record.check as check_record")
+    .artifacts?.document.instruments[0]?.actions;
+  expect(
+    Object.entries(actions ?? {}).flatMap(([name, action]) =>
+      action.publicAction ? [[name, action.publicAction]] : [],
+    ),
+  ).toEqual([["check", "check_record"]]);
+});
+
+// Mutation: let a second expose silently replace the first's public name.
+test("two actions cannot share one public name", () => {
+  const exposure =
+    "expose record.create as open_record\nexpose record.check as open_record";
   const result = compile(source + exposure);
   expect(result.artifacts).toBeUndefined();
   const diagnostic = result.diagnostics[0]!;
   expect(diagnostic.message).toBe(
-    "public action createRecord is used more than once on record",
+    "public action open_record is given twice on record, at 7:1 and 8:1",
   );
-  expect(
-    (source + exposure).slice(diagnostic.span.start, diagnostic.span.end),
-  ).toBe(exposure);
-  expect(
-    compile(source + exposure + "\nhide record.create").diagnostics,
-  ).toEqual([]);
+  expect(diagnostic.related?.[0]?.span.start).toBe(
+    (source + exposure).indexOf("expose record.create"),
+  );
 });
 
 const rental = (deposit: string, fee: string) => `program lensday "Lensday"
-use money
-use booking
 object rental "Rentals" {
   fields { camera: text }
   attach booking = booking.reservation { customer: owner, expose create, expose pay_deposit, expose pay_balance }
@@ -43,12 +54,12 @@ test("a public action exposed by two attachments points at the second expose", (
   const result = compile(source);
   expect(result.diagnostics).toHaveLength(1);
   const diagnostic = result.diagnostics[0]!;
-  const column = source.split("\n")[6]!.indexOf("expose create") + 1;
+  const column = source.split("\n")[4]!.indexOf("expose create") + 1;
   expect(diagnostic).toMatchObject({
     code: "HSX1001",
-    line: 7,
+    line: 5,
     column,
-    endLine: 7,
+    endLine: 5,
     endColumn: column + "expose create".length,
     message:
       "`deposit` exposes `create`, which `booking` already exposes on `rental`",
@@ -69,15 +80,14 @@ test("each colliding expose reports once at its own line", () => {
   expect(
     result.diagnostics.map((d) => [d.line, d.message.split(",")[0]]),
   ).toEqual([
-    [7, "`deposit` exposes `create`"],
-    [8, "`late_fee` exposes `create`"],
+    [5, "`deposit` exposes `create`"],
+    [6, "`late_fee` exposes `create`"],
   ]);
 });
 
 // Mutation: map object issues to program.span or drop the issue dedupe.
 test("an object-level UDL issue points at its row, once", () => {
   const source = `program p "P"
-use money
 object rental "Rentals" {
   fields { camera: text }
   columns: [camera, camera, camera]
@@ -87,5 +97,5 @@ object rental "Rentals" {
   const result = compile(source);
   expect(
     result.diagnostics.map((d) => [d.code, d.message, d.line, d.column]),
-  ).toEqual([["UDL2001", "$.objects[0].columns: duplicate camera", 5, 3]]);
+  ).toEqual([["UDL2001", "$.objects[0].columns: duplicate camera", 4, 3]]);
 });

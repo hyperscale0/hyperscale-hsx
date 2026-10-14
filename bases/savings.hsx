@@ -1,6 +1,5 @@
 // Collect contributions into a shared pot and pay each member in turn.
 program savings_base "Save as a group"
-use savings
 
 object pot "Pot" {
   attach circle = savings.circle {

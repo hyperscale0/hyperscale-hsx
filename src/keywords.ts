@@ -7,7 +7,6 @@ export const KEYWORD_HELP = {
     "Product contract",
   ],
   header: ["Names a reusable library of instruments."],
-  use: ["Makes a header's instruments available to this program."],
   party: [
     "Declares a person, business or staff party. Staff authority requires a permission role.",
     "Parties",
@@ -31,7 +30,6 @@ export const KEYWORD_HELP = {
     "Makes an attached action available under a public name.",
     "Object action bindings",
   ],
-  hide: ["Removes an action from the program's public actions."],
   as: ["Gives an exposed action its public name."],
   cap: ["Limits a percentage charge to a maximum money amount.", "Capped rate"],
   of: [
@@ -40,8 +38,8 @@ export const KEYWORD_HELP = {
   when: [
     "Includes clauses for a selected enum value or a field present on a bound reference.",
   ],
-  constraints: [
-    "Requires parameter values to agree with each other before the program can be used.",
+  checks: [
+    "Rules each attachment's tunables must pass, each with its own message and fix.",
   ],
   requires: [
     "Rejects an action unless the stated condition holds.",
@@ -66,7 +64,10 @@ export const KEYWORD_HELP = {
   is: ["Selects rules for one named parameter choice."],
   has: ["Selects clauses when a bound reference declares the named field."],
   family: ["Names an instrument family or the family of an evidence check."],
-  check: ["Names the provider check whose evidence the action requires."],
+  check: [
+    "Declares a Build check: customers, steps and the balances they end on. Inside evidence, names the provider check the action requires.",
+    "Build checks",
+  ],
   result: ["Names the required outcome of an evidence check."],
   maxAge: ["Limits how old the required evidence may be."],
   instruction: ["Binds evidence to the captured boundary instruction."],

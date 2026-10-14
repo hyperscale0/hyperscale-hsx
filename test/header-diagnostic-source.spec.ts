@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 // Mutation: pass only row.span to failWithCode in checkSubjectPaths.
 test("undeclared subject paths retain the imported action's source location", () => {
@@ -14,8 +15,8 @@ instrument review {
  ${action}
 }`;
   const result = compile(
-    'program p "P"\nuse custom\nobject item { attach review = custom.review {} }',
-    { standardLibrary: { source: () => header } },
+    'program p "P"\nobject item { attach review = custom.review {} }',
+    testToolchain([header]),
   );
   expect(result.diagnostics).toHaveLength(1);
   const diagnostic = result.diagnostics[0]!;

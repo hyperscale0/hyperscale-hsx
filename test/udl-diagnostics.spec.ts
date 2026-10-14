@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 const program = (body: string) => `program p "P"
 instrument record {
@@ -96,9 +97,10 @@ test("UDL1004 bounds expanded documents independently of source size", () => {
     { length: 256 },
     (_, index) => `record${index} = custom.record {}`,
   ).join("\n");
-  const result = compile(`program p "P"\nuse custom\n${instances}`, {
-    standardLibrary: { source: () => header },
-  });
+  const result = compile(
+    `program p "P"\n${instances}`,
+    testToolchain([header]),
+  );
   expect(result.diagnostics.map((d) => d.code)).toEqual(["UDL1004"]);
   expect(result.artifacts).toBeUndefined();
 });

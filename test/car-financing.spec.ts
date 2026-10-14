@@ -1,23 +1,11 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { compile as compileHsx } from "../src/compile.ts";
-
-// Read the std source, not the generated bundle.
-const compile = (source: string) =>
-  compileHsx(source, {
-    standardLibrary: {
-      source: (name) =>
-        readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-    },
-  });
+import { compile } from "../src/compile.ts";
 
 const carFields = `fields { make: text, model: text, year: integer, vin: text, price: money }
   columns: [make, model, year, vin, price]`;
 
 const minimalCarFinancing = `program car_financing "Car financing"
-use escrow
-use purchase
-use financing
 object car "Car" {
   ${carFields}
   attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: operator }
@@ -39,11 +27,6 @@ const servicedCarFinancing = readFileSync(
 );
 
 const institutionalCarFinancing = `program car_financing "Car financing"
-use escrow
-use purchase
-use financing
-use collections
-use insurance
 object facility "Credit facility" {
   fields { name: text, limit: money }
   columns: [name, limit]
@@ -76,7 +59,6 @@ object car "Car" {
 }`;
 
 const directCarLoan = `program car_loan "Car loan"
-use financing
 object car "Car" {
   ${carFields}
   attach limits = financing.limits { borrower: actor, per_borrower: 250000 SAR }
@@ -88,9 +70,10 @@ object car "Car" {
   }
 }`;
 
-const reportedCarFinancing = minimalCarFinancing
-  .replace("use financing", "use financing\nuse reporting")
-  .replace(/\}$/, "  attach book = reporting.portfolio { on: plan }\n}");
+const reportedCarFinancing = minimalCarFinancing.replace(
+  /\}$/,
+  "  attach book = reporting.portfolio { on: plan }\n}",
+);
 
 const valid = (name: string, source: string) => {
   const result = compile(source);

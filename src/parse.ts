@@ -1,9 +1,12 @@
 import { lex, type Token } from "./lex.ts";
 import type {
   BlockExpr,
+  CheckDecl,
+  CheckStatement,
   Diagnostic,
   Entry,
   Expr,
+  Named,
   Program,
   Span,
 } from "./ast.ts";
@@ -23,6 +26,7 @@ export function parseProgram(source: string): {
     currency: "SAR",
     header: false,
     decls: [],
+    checks: [],
     span: { start: 0, end: source.length },
   };
   if (new TextEncoder().encode(source).length > 262144)
@@ -60,6 +64,17 @@ export function parseProgram(source: string): {
   } catch (error) {
     if (error instanceof ParseFailure)
       return { program: empty, diagnostics: [error.diagnostic] };
+    throw error;
+  }
+}
+/** One value as a header parameter takes it, such as `10%`; undefined if it is not one. */
+export function parseExpression(source: string): Expr | undefined {
+  const result = lex(source);
+  if (result.diagnostics.length) return undefined;
+  try {
+    return new Parser(result.tokens).value();
+  } catch (error) {
+    if (error instanceof ParseFailure) return undefined;
     throw error;
   }
 }
@@ -114,6 +129,12 @@ class Parser {
   private span(start: number): Span {
     return { start, end: this.tokens[Math.max(0, this.index - 1)]!.span.end };
   }
+  value(): Expr {
+    const value = this.expression();
+    if (this.peek().kind !== "eof")
+      this.fail("expected one value", "write one value");
+    return value;
+  }
   program(program: Program): Program {
     if (this.eat("header")) program.header = true;
     else this.expect("program");
@@ -142,14 +163,6 @@ class Parser {
         program.currency = this.identifier();
         continue;
       }
-      if (this.eat("use")) {
-        program.decls.push({
-          kind: "use",
-          name: this.identifier(),
-          span: this.span(start),
-        });
-        continue;
-      }
       if (this.eat("party")) {
         const name = this.identifier();
         this.expect(":");
@@ -164,19 +177,20 @@ class Parser {
         });
         continue;
       }
-      if (this.at("expose") || this.at("hide")) {
-        const kind = this.take().text as "expose" | "hide";
+      if (this.eat("expose")) {
         const target = this.path();
-        let name: string | undefined;
-        if (kind === "expose") {
-          this.expect("as");
-          name = this.identifier();
-        }
-        program.decls.push(
-          kind === "expose"
-            ? { kind, target, name: name!, span: this.span(start) }
-            : { kind, target, span: this.span(start) },
-        );
+        this.expect("as");
+        const name = this.identifier();
+        program.decls.push({
+          kind: "expose",
+          target,
+          name,
+          span: this.span(start),
+        });
+        continue;
+      }
+      if (this.at("check") && this.tokens[this.index + 1]?.kind === "string") {
+        program.checks.push(this.check());
         continue;
       }
       if (this.eat("instrument")) {
@@ -221,6 +235,133 @@ class Parser {
       });
     }
     return program;
+  }
+  private named(): Named {
+    const span = this.peek().span;
+    return { name: this.identifier(), span };
+  }
+  private text(): string {
+    if (this.peek().kind !== "string")
+      this.fail("expected a quoted name", 'write a name in quotes, as "Alice"');
+    return JSON.parse(this.take().text) as string;
+  }
+  /**
+   * `check "Name" { ... }`: customers, steps in order, then `expect`. A step
+   * is `clock`, `object`, `close` or `[actor] object.action ... -> state`.
+   */
+  private check(): CheckDecl {
+    const start = this.take().span.start;
+    const name = this.text();
+    this.expect("{");
+    const statements: CheckStatement[] = [];
+    while (!this.eat("}")) {
+      this.separators();
+      if (this.eat("}")) break;
+      if (this.peek().kind === "eof")
+        this.fail("unclosed check, expected }", "add }");
+      const at = this.peek().span.start;
+      const statement = this.checkStatement();
+      if (statement.kind !== "customer" && this.eat("balances"))
+        statement.balances = this.block();
+      statement.span = this.span(at);
+      statements.push(statement);
+      this.separators();
+    }
+    return { name, statements, span: this.span(start) };
+  }
+  private checkStatement(): CheckStatement {
+    const span = this.peek().span;
+    if (this.eat("customer")) {
+      const id = this.named();
+      const title = this.text();
+      const organization = this.eat("organization");
+      const fund = this.eat("funded") ? this.atom() : undefined;
+      const binds: Named[] = [];
+      while (this.eat("binds")) binds.push(this.named());
+      return {
+        kind: "customer",
+        id,
+        title,
+        organization,
+        ...(fund ? { fund } : {}),
+        binds,
+        span,
+      };
+    }
+    if (this.eat("clock")) {
+      const at = this.atom();
+      if (!this.eat("until")) return { kind: "clock", at, span };
+      const object = this.named();
+      const attachment = this.eat(".") ? this.named() : undefined;
+      const recordPath = this.eat("record") ? this.path() : undefined;
+      this.expect("is");
+      const state = this.named();
+      return {
+        kind: "clock",
+        at,
+        until: {
+          object,
+          ...(attachment ? { attachment } : {}),
+          ...(recordPath ? { recordPath } : {}),
+          state,
+        },
+        span,
+      };
+    }
+    if (this.eat("object")) {
+      const id = this.named();
+      this.expect(":");
+      const objectKind = this.named();
+      if (!this.eat("for"))
+        this.fail("an object needs its owner", "write for <customer>");
+      const owner = this.named();
+      const fields = this.at("{") ? this.block() : undefined;
+      return {
+        kind: "object",
+        id,
+        objectKind,
+        owner,
+        ...(fields ? { fields } : {}),
+        span,
+      };
+    }
+    if (this.eat("close"))
+      return { kind: "close", customer: this.named(), span };
+    if (this.eat("expect")) {
+      const statement: Extract<CheckStatement, { kind: "expect" }> = {
+        kind: "expect",
+        span,
+      };
+      for (;;) {
+        if (this.eat("balances")) statement.balances = this.block();
+        else if (this.eat("held")) statement.held = this.atom();
+        else if (this.eat("pending")) statement.pending = this.block();
+        else break;
+      }
+      return statement;
+    }
+    const first = this.named();
+    const actor = this.at(".") ? undefined : first;
+    const object = actor ? this.named() : first;
+    this.expect(".");
+    const action = this.named();
+    const statement: Extract<CheckStatement, { kind: "action" }> = {
+      kind: "action",
+      ...(actor ? { actor } : {}),
+      object,
+      action,
+      span,
+    };
+    if (this.at("{")) statement.input = this.block();
+    if (this.eat("fields")) statement.fields = this.block();
+    if (this.eat("on")) statement.instance = this.named();
+    if (this.eat("remember")) statement.remember = this.named();
+    this.expect("->");
+    if (this.eat("status")) {
+      statement.status = this.atom();
+      if (this.peek().kind === "string") statement.code = this.text();
+    } else statement.state = this.named();
+    return statement;
   }
   private entries(end: string): Entry[] {
     const entries: Entry[] = [];
@@ -297,6 +438,11 @@ class Parser {
         this.separators();
         continue;
       }
+      if (key === "checks" && this.at("{")) {
+        entries.push({ key, value: this.checks(), span: this.span(start) });
+        this.separators();
+        continue;
+      }
       if (key === "action" && !this.at(":")) key += " " + this.identifier();
       if (key === "economics" && !this.at(":") && !this.at("{"))
         key += " " + this.path();
@@ -343,8 +489,16 @@ class Parser {
       span,
     };
   }
-  private operand(): BlockExpr {
+  private operand(sums = false): BlockExpr {
     const value = this.atom();
+    // A header check may add tunables, as in `first + second <= limit`.
+    if (sums && this.at("+")) {
+      const items = [value];
+      while (this.eat("+")) items.push(this.atom());
+      return this.record({
+        sum: { kind: "list", items, span: this.span(value.span.start) },
+      });
+    }
     return this.record({
       [value.kind === "name" &&
       /^(self|input|party|subject)\./.test(value.value)
@@ -362,7 +516,45 @@ class Parser {
       );
     return { kind: "text", value: operator.text, span: operator.span };
   }
-  private requirement(): BlockExpr {
+  /**
+   * `checks { late_from < early_until { message: "...", fix: "..." } }`. A rule
+   * is a comparison, `x is set` or `x is <its type>`, and `when s is c` scopes it.
+   */
+  private checks(): BlockExpr {
+    const start = this.peek().span.start;
+    this.expect("{");
+    const entries: Entry[] = [];
+    while (!this.eat("}")) {
+      this.separators();
+      if (this.eat("}")) break;
+      if (this.peek().kind === "eof")
+        this.fail("unclosed checks, expected }", "add }");
+      const at = this.peek().span.start;
+      let rule: BlockExpr;
+      if (this.tokens[this.index + 1]?.text === "is") {
+        const tunable = this.atom();
+        this.expect("is");
+        rule = this.record({ kind: this.node("is"), tunable, is: this.atom() });
+      } else rule = this.requirement(true);
+      const values: Record<string, Expr> = {
+        rule: { ...rule, span: this.span(at) },
+      };
+      if (this.eat("when")) {
+        const selector = this.atom();
+        this.expect("is");
+        values.when = this.record({ selector, is: this.atom() });
+      }
+      values.explain = this.block();
+      entries.push({
+        key: "check",
+        value: { ...this.record(values), span: this.span(at) },
+        span: this.span(at),
+      });
+      this.separators();
+    }
+    return { kind: "block", entries, span: this.span(start) };
+  }
+  private requirement(sums = false): BlockExpr {
     if (this.eat("unique")) {
       const namespace = this.atom();
       this.expect("on");
@@ -416,7 +608,7 @@ class Parser {
       if (this.eat("instruction")) values.instruction = this.atom();
       return this.record(values);
     }
-    const left = this.operand();
+    const left = this.operand(sums);
     if (this.eat("in")) {
       const reference = left.entries.find(
         (entry) => entry.key === "field",
@@ -437,7 +629,7 @@ class Parser {
       kind: this.node("compare"),
       left,
       operator,
-      right: this.operand(),
+      right: this.operand(sums),
     });
   }
   private move(): BlockExpr {

@@ -43,7 +43,6 @@ test.each([
   "%s resolves its attachment's source parameter",
   (purpose, payer, payee) => {
     const result = compile(`program service "Service"
-use money
 object purchase "Purchase" {
  attach payment = money.transfer {
   payer: ${payer}, payee: ${payee}
@@ -128,7 +127,6 @@ test("an attachment cannot replace the standard instrument's economics", () => {
 
 test("a split requires an explicit move instead of classifying every recipient", () => {
   const source = `program split_payment "Split"
-use money
 party studio: business
 party seller: business
 object purchase "Purchase" {

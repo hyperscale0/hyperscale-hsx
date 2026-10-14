@@ -1,7 +1,6 @@
 // Riyadh camera shop holds a 1,000 SAR deposit on each rental and charges 50 SAR
 // for each day a camera comes back late, after one day of grace, up to 300 SAR.
 program camera_rentals "Camera rentals"
-use money
 
 // The customer owns the rental and pays both the deposit and any late fee.
 // The shop is payee, so its own session keeps a damaged camera's deposit with

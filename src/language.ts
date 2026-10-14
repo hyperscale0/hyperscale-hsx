@@ -1,10 +1,10 @@
-import type { Entry, Expr, Span } from "./ast.ts";
+import type { CheckDecl, Entry, Expr, Span } from "./ast.ts";
+import { compile, type CompileTerm } from "./compile.ts";
 import { headerManifest } from "./headers.ts";
 import { KEYWORD_HELP } from "./keywords.ts";
 import { KEYWORDS, scan, type Token } from "./lex.ts";
 import { parseProgram } from "./parse.ts";
-import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
-export type { StandardLibrary } from "./std-library.ts";
+import { defaultToolchain, type Toolchain } from "./toolchain.ts";
 
 export type HsxTokenClass =
   | "keyword"
@@ -44,6 +44,24 @@ export interface HsxHover {
 type Help = Omit<HsxHover, "span">;
 type Header = ReturnType<typeof headerManifest>["headers"][number];
 const keywords = new Set<string>(KEYWORDS);
+const CHECK_WORDS = new Set([
+  "customer",
+  "organization",
+  "funded",
+  "binds",
+  "clock",
+  "until",
+  "record",
+  "close",
+  "remember",
+  "status",
+  "balances",
+  "expect",
+  "held",
+  "pending",
+]);
+const CHECK_HELP =
+  "A check step. Promote runs every check in an isolated world and refuses a Build whose check fails.";
 const types = new Set([
   "money",
   "account",
@@ -59,20 +77,20 @@ const types = new Set([
   "list",
   "policy",
 ]);
-// Cache by source bytes, not library identity: callers can edit their own headers.
+// Cache by source bytes, not toolchain identity: callers can edit their own headers.
 const headerCache = new Map<
   string,
   { source: string; value: Header | undefined }
 >();
-function header(name: string, library: StandardLibrary): Header | undefined {
+function header(name: string, toolchain: Toolchain): Header | undefined {
   try {
-    const source = library.source(name);
+    const source = toolchain.std.get(name);
     if (!source) return;
     const cached = headerCache.get(name);
     if (cached?.source === source) return cached.value;
     let value: Header | undefined;
     try {
-      value = headerManifest({ source: () => source }, [name]).headers[0];
+      value = headerManifest(new Map([[name, source]]), [name]).headers[0];
     } catch {
       /* Half-written headers have no metadata yet. */
     }
@@ -105,6 +123,10 @@ function instrumentHelp(
         label: a.name,
         value: `${a.summary} Actor: ${a.actor}`,
       })),
+      ...object.checks.map((check) => ({
+        label: "check",
+        value: `${check.rule}${check.when ? ` when ${check.when.selector} is ${check.when.is}` : ""}: ${check.message}`,
+      })),
     ],
   };
 }
@@ -119,14 +141,26 @@ interface Analysis {
   highlights: HsxHighlight[];
   hovers: Map<number, HsxHover>;
 }
-function analyze(source: string, library: StandardLibrary): Analysis {
+function analyze(source: string, toolchain: Toolchain): Analysis {
   const all = scan(source).tokens.filter((t) => t.kind !== "eof");
   const tokens = all.filter((t) => t.kind !== "comment");
   const helps = new Map<number, Help>();
   const classes = new Map<number, HsxTokenClass>();
   const bindings = new Map<string, Binding[]>();
-  const imports = new Map<string, Header>();
-  const headerHelp = new Map<string, Help>();
+  // A qualified name such as booking.reservation names its header directly.
+  const headerHelp = (value: Header): Help => ({
+    kind: "header",
+    title: value.name,
+    header: value.name,
+    summary: value.objects
+      .map((o) => o.summary)
+      .slice(0, 2)
+      .join(" "),
+    details: value.objects.map((o) => ({
+      label: o.qualifiedName,
+      value: o.summary,
+    })),
+  });
   const whole = { start: 0, end: source.length };
   const text = (span: Span) => source.slice(span.start, span.end);
   const mark = (token: Token | undefined, kind: HsxTokenClass, help?: Help) => {
@@ -177,31 +211,6 @@ function analyze(source: string, library: StandardLibrary): Analysis {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
     const previous = tokens[i - 1]?.text;
-    if (previous === "use") {
-      const value = header(token.text, library);
-      if (value) imports.set(token.text, value);
-      mark(
-        token,
-        "header",
-        value
-          ? {
-              kind: "header",
-              title: value.name,
-              header: value.name,
-              summary: value.objects
-                .map((o) => o.summary)
-                .slice(0, 2)
-                .join(" "),
-              details: value.objects.map((o) => ({
-                label: o.qualifiedName,
-                value: o.summary,
-              })),
-            }
-          : undefined,
-      );
-      const help = helps.get(token.span.start);
-      if (help) headerHelp.set(token.text, help);
-    }
     if (
       previous === "program" ||
       previous === "object" ||
@@ -240,7 +249,6 @@ function analyze(source: string, library: StandardLibrary): Analysis {
       previous === "action" ||
       previous === "attach" ||
       previous === "expose" ||
-      previous === "hide" ||
       previous === "as"
     )
       mark(
@@ -266,9 +274,9 @@ function analyze(source: string, library: StandardLibrary): Analysis {
   }
   const attachment = (target: string, scope: Span) => {
     const [owner, name] = target.split(".");
-    const object = imports
-      .get(owner ?? "")
-      ?.objects.find((o) => o.name === name);
+    const object = header(owner ?? "", toolchain)?.objects.find(
+      (o) => o.name === name,
+    );
     if (!object) return;
     for (const parameter of object.tunables)
       bind(
@@ -425,6 +433,42 @@ function analyze(source: string, library: StandardLibrary): Analysis {
       walk(expr.cap, scope);
     }
   };
+  const at = (span: Span) => tokens[atStart.get(span.start) ?? -1];
+  // A check's step words are keywords inside the check alone.
+  const checkHelp = (check: CheckDecl) => {
+    for (const token of tokens)
+      if (
+        token.span.start > check.span.start &&
+        token.span.end < check.span.end &&
+        CHECK_WORDS.has(token.text)
+      )
+        mark(token, "keyword", {
+          kind: "keyword",
+          title: token.text,
+          summary: CHECK_HELP,
+        });
+    for (const statement of check.statements) {
+      if (statement.kind === "customer")
+        mark(
+          at(statement.id.span),
+          "party",
+          declared(
+            statement.id.name,
+            "party",
+            check.span,
+            statement.id.span,
+            `customer ${statement.id.name}`,
+            `${statement.title}, a customer of check "${check.name}".`,
+          ),
+        );
+      if (statement.kind === "action") {
+        mark(at(statement.action.span), "action");
+        if (statement.state) mark(at(statement.state.span), "state");
+      }
+      if (statement.kind === "clock" && statement.until)
+        mark(at(statement.until.state.span), "state");
+    }
+  };
   // The parser owns declarations and scopes. A parse failure leaves lexical context intact.
   try {
     const parsed = parseProgram(source);
@@ -476,6 +520,7 @@ function analyze(source: string, library: StandardLibrary): Analysis {
         walk(decl.body, decl.span);
       }
     }
+    for (const check of parsed.program.checks) checkHelp(check);
   } catch {
     /* Arbitrary editor input must not interrupt typing. */
   }
@@ -486,12 +531,12 @@ function analyze(source: string, library: StandardLibrary): Analysis {
     const previous = tokens[i - 1]?.text;
     const next = tokens[i + 1]?.text;
     const owner = previous === "." ? tokens[i - 2]?.text : undefined;
-    const imported = owner ? imports.get(owner) : undefined;
+    const imported = owner ? header(owner, toolchain) : undefined;
     const object = imported?.objects.find((o) => o.name === token.text);
+    const named = next === "." ? header(token.text, toolchain) : undefined;
     if (object && owner)
       mark(token, "instrument", instrumentHelp(object, owner));
-    else if (imports.has(token.text) && next === ".")
-      mark(token, "header", headerHelp.get(token.text));
+    else if (named) mark(token, "header", headerHelp(named));
     else if (!helps.has(token.span.start)) {
       const candidates = bindings
         .get(token.text)
@@ -514,7 +559,6 @@ function analyze(source: string, library: StandardLibrary): Analysis {
         !keywords.has(token.text) ||
         previous === "." ||
         previous === "expose" ||
-        previous === "hide" ||
         next === ":" ||
         [":", "=", "fee", "moves", "from", "to", "(", ",", "["].includes(
           previous ?? "",
@@ -583,48 +627,89 @@ function analyze(source: string, library: StandardLibrary): Analysis {
   return { highlights, hovers };
 }
 // One editor document is retained. Hovering never reparses the same keystroke.
-let last:
-  | { source: string; library: StandardLibrary; result: Analysis }
-  | undefined;
-function analysis(source: string, library: StandardLibrary): Analysis {
-  // Custom libraries may change without changing identity; only the bundled library is immutable.
-  if (
-    library === bundledStandardLibrary &&
-    last?.source === source &&
-    last.library === library
-  )
+let last: { source: string; result: Analysis } | undefined;
+function analysis(source: string, toolchain: Toolchain): Analysis {
+  // A test toolchain may change its headers in place; the default never does.
+  if (toolchain === defaultToolchain && last?.source === source)
     return last.result;
-  const result = analyze(source, library);
-  if (library === bundledStandardLibrary) last = { source, library, result };
+  const result = analyze(source, toolchain);
+  if (toolchain === defaultToolchain) last = { source, result };
   return result;
 }
 /** Total, sorted, non-overlapping UTF-16 spans, including incomplete source. */
 export function highlight(
   source: string,
-  library: StandardLibrary = bundledStandardLibrary,
+  toolchain: Toolchain = defaultToolchain,
 ): HsxHighlight[] {
-  return analysis(source, library).highlights.map((span) => ({ ...span }));
+  return analysis(source, toolchain).highlights.map((span) => ({ ...span }));
 }
+// The terms of the attach line around an offset, from the last valid compile.
+let compiled:
+  | {
+      source: string;
+      toolchain: Toolchain;
+      terms: (offset: number) => CompileTerm[] | undefined;
+    }
+  | undefined;
+function termsAt(
+  source: string,
+  offset: number,
+  toolchain: Toolchain,
+): CompileTerm[] | undefined {
+  if (compiled?.source !== source || compiled.toolchain !== toolchain) {
+    const origins = compile(source, toolchain).artifacts?.originMap ?? [];
+    compiled = {
+      source,
+      toolchain,
+      // A record shares its attach line's span; the attach comes first.
+      terms: (at) =>
+        origins.find(
+          (entry) =>
+            entry.terms && entry.span.start <= at && at < entry.span.end,
+        )?.terms,
+    };
+  }
+  return compiled.terms(offset);
+}
+const inForce = (term: CompileTerm) =>
+  `${term.text} (${term.from === "std" ? `${term.source} default` : term.from === "party" ? "the party of that name" : "set by the program"})`;
 /** Offsets use half-open UTF-16 spans. Whitespace and out-of-range offsets return null. */
 export function describe(
   source: string,
   offset: number,
-  library: StandardLibrary = bundledStandardLibrary,
+  toolchain: Toolchain = defaultToolchain,
 ): HsxHover | null {
   if (!Number.isInteger(offset) || offset < 0 || offset >= source.length)
     return null;
-  const result = analysis(source, library);
+  const result = analysis(source, toolchain);
   const span = result.highlights.find(
     (s) => s.start <= offset && offset < s.end,
   );
   const hover = span && result.hovers.get(span.start);
-  return hover
-    ? {
-        ...hover,
-        span: { ...hover.span },
-        ...(hover.details
-          ? { details: hover.details.map((d) => ({ ...d })) }
-          : {}),
-      }
-    : null;
+  if (!hover) return null;
+  const details = hover.details?.map((d) => ({ ...d }));
+  // A std tunable and an attach line show the value in force and who set it.
+  const terms =
+    (hover.kind === "parameter" && hover.header) ||
+    (hover.kind === "instrument" &&
+      source.lastIndexOf("attach", offset) > source.lastIndexOf("{", offset))
+      ? termsAt(source, offset, toolchain)
+      : undefined;
+  const term = terms?.find((t) => t.name === hover.title);
+  const added =
+    hover.kind === "parameter"
+      ? term
+        ? [{ label: "In force", value: inForce(term) }]
+        : []
+      : (terms ?? []).map((t) => ({
+          label: `${t.name} in force`,
+          value: inForce(t),
+        }));
+  return {
+    ...hover,
+    span: { ...hover.span },
+    ...(details || added.length
+      ? { details: [...(details ?? []), ...added] }
+      : {}),
+  };
 }

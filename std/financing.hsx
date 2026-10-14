@@ -112,22 +112,22 @@ header financing
 // tariff.
 
 instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = personal, max_term: integer(1, 360) = 360, months: integer(1, 360) = runtime, max_history: integer(2, 366) = 366, pricing: enum(amortizing, flat_total), profit_rate: percent, charge_limit: integer(1, 24) = 12, disburse_to: enum(funds, borrower, seller) = funds, seller: party?, profit_earned: enum(on_payment, by_schedule, at_disbursement) = on_payment, apply: enum(fines_profit_principal, principal_profit, pro_rata) = fines_profit_principal, payoff_rebate: percent = 100%, write_off_after: duration = 90d, max_extension: duration = 90d, max_amendments: integer(0, 366) = 2, waiver_limit: percent = 100%, amendment_expiry: duration = 7d, payoff_quote_expiry: duration = 1h, refund_within: duration = 30d, returned_goods: enum(keep_profit, refund_all) = keep_profit, allow_overdue: enum(allowed, blocked) = allowed, assessed_fines: enum(carry, require_waiver) = carry, down_payment: percent = 0%, funds: ref?, borrower: party = party(person), capital: party = programOperator, share: percent = 0%, limits: ref<financing.limits> = object(financing.limits), portfolio: ref<financing.portfolio_limit> = object(financing.portfolio_limit)) {
-  dependencies {
-    funds {
-      selector: disburse_to, is: funds
+  checks {
+    funds is set when disburse_to is funds {
       message: "Attachment `{attachment}` disburses into a hold, but `funds` is not bound."
       fix: "Bind `funds: checkout` to a funding composition. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly."
     }
-    seller {
-      selector: disburse_to, is: seller
+    seller is set when disburse_to is seller {
       message: "Attachment `{attachment}` pays a seller, but `seller` is not bound."
       fix: "Bind `seller: merchant` to the declared business that receives the principal."
     }
+    months <= max_term {
+      message: "Attachment `{attachment}` sets `months` above `max_term`, the longest term its loan kind allows."
+      fix: "Choose `months` of `max_term` or fewer, or set `max_term` up to the ceiling of its `loan_kind`."
+    }
   }
   ceilings { max_term { by: loan_kind, mortgage: 360, auto: 84, personal: 84, short_term: 12 } }
-  constraints { months: at_most(max_term) }
   revisioned: true
-  familyRevision: 1
   summary: "Funding, profit recognition and payment order chosen by the program."
   fields {
     funds: ref<funds>?, borrower: account of borrower, settlementIdentity: text, borrowerLimit: ref<limits>, portfolioLimit: ref<portfolio>
@@ -803,15 +803,13 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
 // waiver and refund post one claim transfer each, and payoff and amendment post
 // one per attachment or kind, not one per charge.
 instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, fine: money = 50 SAR, cap: money = 25 SAR, fines_to: party = programOperator, costs_to: party = programOperator, borrower: party = party(person)) {
-  parameterDiagnostics {
-    fine {
-      accepts: "a fixed amount"
-      percentage: "a percentage of overdue debt"
+  checks {
+    fine is money {
+      message: "`{instrument}.fine` accepts a fixed amount. It cannot express a percentage of overdue debt."
       fix: "Use a fixed amount only if that is the intended policy. A percentage charge needs an authored rate calculation; do not approximate it with a cash amount."
     }
   }
   revisioned: true
-  familyRevision: 1
   summary: "Separate fine and evidenced recovery claims on an overdue installment."
   fields {
     plan: ref<on>, slice: ref<on.slice>, borrower: account of borrower, fine: money = fine, overdueAt: date?, payoffAmount: money?, payoffReceipt: text?, payoffLed: integer?
@@ -1008,7 +1006,6 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
 }
 
 instrument limits(per_borrower: money, borrower: party = party(person), active_plans: integer = 1) {
-  familyRevision: 1
   scope: product
   summary: "One outstanding balance ceiling per borrower."
   fields { borrower: account of borrower, limit: money = per_borrower, activePlans: integer = active_plans }
@@ -1018,7 +1015,6 @@ instrument limits(per_borrower: money, borrower: party = party(person), active_p
 }
 
 instrument portfolio_limit(limit: money) {
-  familyRevision: 1
   scope: product
   summary: "One shared ceiling on the principal the product may hold."
   fields { key: text = "portfolio", limit: money = limit }
@@ -1028,7 +1024,6 @@ instrument portfolio_limit(limit: money) {
 }
 
 instrument credit_line(borrower: party = programOperator, adapter: text, limit: money, expires: date) {
-  familyRevision: 1
   summary: "A revolving facility from an outside lender; each draw is a separate immutable advance."
   fields { borrower: account of borrower, facility: account(borrower, cash, "facility"), debt: account(borrower, claim, contra, "debt"), limit: money = limit, expiresAt: date = expires }
   lifecycle { states: [pending, active, suspended, closed], initial: pending }
@@ -1043,7 +1038,6 @@ instrument credit_line(borrower: party = programOperator, adapter: text, limit: 
 }
 
 instrument advance(line: ref<financing.credit_line>, amount: money = runtime, borrower: party = programOperator) {
-  familyRevision: 1
   summary: "A single facility draw with an immutable principal and full repayment."
   fields { line: ref<line>, borrower: account of borrower, amount: money = amount, principalReceivable: account(self, claim) }
   lifecycle { states: [pending, drawn, repaid, cancelled], initial: pending }

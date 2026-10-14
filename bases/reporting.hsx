@@ -1,7 +1,5 @@
 // Report outstanding balances and overdue repayments on financed purchases.
 program reporting_base "Track repayments"
-use reporting
-use financing
 
 object purchase "Purchase" {
   fields { price: money }

@@ -1,8 +1,5 @@
 // Pool member commitments to fund a loan and distribute repayments or losses.
 program lending_base "Pool funds for lending"
-use lending
-use financing
-use wallet
 
 object plan "Plan" {
   fields { price: money }

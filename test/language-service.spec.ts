@@ -6,10 +6,9 @@ import { KEYWORD_HELP } from "../src/keywords.ts";
 import { KEYWORDS, lex, scan } from "../src/lex.ts";
 import { HEADER_NAMES } from "../src/headers.ts";
 import { parseProgram } from "../src/parse.ts";
-import { bundledStandardLibrary } from "../src/std-library.ts";
+import { defaultToolchain } from "../src/toolchain.ts";
 
 const source = `program shop "Shop"
-use escrow
 party buyer: person
 object order "Order" {
  fields { price: money }
@@ -46,7 +45,7 @@ test("keywords have business help and executable TextMate patterns", () => {
 
 test("every standard instrument authors its summary instead of relying on a name fallback", () => {
   for (const name of HEADER_NAMES) {
-    const parsed = parseProgram(bundledStandardLibrary.source(name)!);
+    const parsed = parseProgram(defaultToolchain.std.get(name)!);
     expect(parsed.diagnostics).toEqual([]);
     for (const decl of parsed.program.decls)
       if (decl.kind === "instrument") {
@@ -62,7 +61,7 @@ test("every standard instrument authors its summary instead of relying on a name
 
 test("attachments resolve headers, instruments, parameters, parties and actions", () => {
   const cases = [
-    ["use escrow", 4, "header"],
+    ["escrow.hold", 0, "header"],
     ["escrow.hold", 7, "instrument"],
     ["payer:", 0, "parameter"],
     ["payer: buyer", 7, "party"],
@@ -145,7 +144,7 @@ test("editor scanning retains comments and partial strings without changing comp
     ["==", "operator"],
     ['"unfinished // text', "string"],
   ]);
-  const complete = 'use escrow // comment\n"😀"';
+  const complete = 'escrow.hold // comment\n"😀"';
   expect(scan(complete).tokens.filter((t) => t.kind !== "comment")).toEqual(
     lex(complete).tokens,
   );
@@ -179,30 +178,30 @@ test("all prefixes and arbitrary UTF-16 input produce ordered spans and total ho
     assertTotal(text);
   }
   assertTotal("(".repeat(1000));
-  expect(describe("use escrow", 3)).toBeNull();
+  expect(describe("escrow hold", 6)).toBeNull();
 });
 
-test("custom library edits replace hover metadata and library failures stay total", () => {
-  let summary = "Old terms.";
-  const library = {
-    source: () =>
-      `header custom\ninstrument hold() { summary: "${summary}" fields {} }`,
-  };
-  const text = 'program p "P"\nuse custom\nx = custom.hold {}';
+test("custom toolchain edits replace hover metadata and header failures stay total", () => {
+  const std = new Map(defaultToolchain.std);
+  const custom = { ...defaultToolchain, std };
+  const hold = (summary: string) =>
+    `header custom\ninstrument hold() { summary: "${summary}" fields {} }`;
+  const text = 'program p "P"\nx = custom.hold {}';
   const offset = text.indexOf("hold");
-  expect(describe(text, offset, library)?.summary).toBe("Old terms.");
-  summary = "New terms.";
-  expect(describe(text, offset, library)?.summary).toBe("New terms.");
+  std.set("custom", hold("Old terms."));
+  expect(describe(text, offset, custom)?.summary).toBe("Old terms.");
+  std.set("custom", hold("New terms."));
+  expect(describe(text, offset, custom)?.summary).toBe("New terms.");
+  class Unavailable extends Map<string, string> {
+    override get(): never {
+      throw new Error("unavailable");
+    }
+  }
   expect(
-    describe(text, offset, {
-      source: () => {
-        throw new Error("unavailable");
-      },
-    }),
+    describe(text, offset, { ...defaultToolchain, std: new Unavailable() }),
   ).toBeNull();
-  expect(
-    describe(text, offset, { source: () => "header custom instrument" }),
-  ).toBeNull();
+  std.set("custom", "header custom instrument");
+  expect(describe(text, offset, custom)).toBeNull();
 });
 
 test("browser consumers can bundle the language entry without Node polyfills", async () => {

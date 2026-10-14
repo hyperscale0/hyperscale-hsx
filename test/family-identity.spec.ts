@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
+
+const sha256 = expect.stringMatching(/^[a-f0-9]{64}$/);
 
 const fixtureHeader = `header fixture
 instrument facility {
-  familyRevision: 1
   fields {}
   lifecycle { states: [active], initial: active }
   action create {}
@@ -18,7 +19,6 @@ instrument facility {
       action touch { from: active, to: active }
     }
     custom_tranche: {
-      familyRevision: 3
       fields {}
       lifecycle { states: [active], initial: active }
       action create {}
@@ -27,7 +27,6 @@ instrument facility {
 }
 
 instrument standalone {
-  familyRevision: 2
   fields {}
   lifecycle { states: [active], initial: active }
   action create {}
@@ -36,22 +35,11 @@ instrument standalone {
 `;
 
 function compileFixture(source: string) {
-  return compile(source, {
-    standardLibrary: {
-      source: (name) =>
-        name === "fixture"
-          ? fixtureHeader
-          : readFileSync(
-              new URL(`../std/${name}.hsx`, import.meta.url),
-              "utf8",
-            ),
-    },
-  });
+  return compile(source, testToolchain([fixtureHeader]));
 }
 
 test("Two attachments of same declaration emit distinct instrument IDs but identical family tuples", () => {
   const source = `program dual_attachments "Dual"
-use fixture
 party client: person
 object facility_pool "FacilityPool" {
   attach alpha = fixture.facility { expose create as create_alpha }
@@ -67,13 +55,9 @@ object facility_pool "FacilityPool" {
   expect(alpha!.family).toEqual({
     module: "fixture",
     exportPath: "facility",
-    revision: 1,
+    digest: sha256,
   });
-  expect(beta!.family).toEqual({
-    module: "fixture",
-    exportPath: "facility",
-    revision: 1,
-  });
+  expect(beta!.family).toEqual(alpha!.family);
 
   const alphaTranche = doc.instruments.find(
     (i) => i.id === "facility_pool_alpha_tranche",
@@ -84,13 +68,9 @@ object facility_pool "FacilityPool" {
   expect(alphaTranche!.family).toEqual({
     module: "fixture",
     exportPath: "facility.tranche",
-    revision: 1,
+    digest: sha256,
   });
-  expect(betaTranche!.family).toEqual({
-    module: "fixture",
-    exportPath: "facility.tranche",
-    revision: 1,
-  });
+  expect(betaTranche!.family).toEqual(alphaTranche!.family);
 
   const customTranche = doc.instruments.find(
     (i) => i.id === "facility_pool_alpha_custom_tranche",
@@ -98,13 +78,12 @@ object facility_pool "FacilityPool" {
   expect(customTranche!.family).toEqual({
     module: "fixture",
     exportPath: "facility.custom_tranche",
-    revision: 3,
+    digest: sha256,
   });
 });
 
 test("Authoring family resolves without concrete instrument ID in source", () => {
   const source = `program resolution "Resolution"
-use fixture
 party client: person
 object loan "Loan" {
   attach fac = fixture.facility { expose create as create_fac }
@@ -151,7 +130,7 @@ instrument tracker {
     targetFamily: {
       module: "fixture",
       exportPath: "facility.tranche",
-      revision: 1,
+      digest: sha256,
     },
   });
 
@@ -163,7 +142,7 @@ instrument tracker {
       family: {
         module: "fixture",
         exportPath: "facility.tranche",
-        revision: 1,
+        digest: sha256,
       },
     },
   });
@@ -171,7 +150,6 @@ instrument tracker {
 
 test("Compilation refuses when selection.family does not match resolved target", () => {
   const source = `program mismatch_selection "MismatchSelection"
-use fixture
 party client: person
 object loan "Loan" {
   attach standalone_inst = fixture.standalone { expose create as create_standalone }
@@ -212,7 +190,6 @@ instrument inspector {
 
 test("Compilation refuses when targetFamily does not match reference target", () => {
   const source = `program mismatch_target "MismatchTarget"
-use fixture
 party client: person
 object loan "Loan" {
   attach standalone_inst = fixture.standalone { expose create as create_standalone }
@@ -241,9 +218,6 @@ instrument validator {
 
 test("Standard financing family resolution works with standard library", () => {
   const source = `program std_financing "StdFinancing"
-use escrow
-use purchase
-use financing
 object contract "Contract" {
   fields { make: text }
   attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner, expose fund as sell }
@@ -274,14 +248,14 @@ instrument slice_picker {
   expect(planInst!.family).toEqual({
     module: "financing",
     exportPath: "installments",
-    revision: 1,
+    digest: sha256,
   });
 
   const sliceInst = doc.instruments.find((i) => i.id === "contract_plan_slice");
   expect(sliceInst!.family).toEqual({
     module: "financing",
     exportPath: "installments.slice",
-    revision: 1,
+    digest: sha256,
   });
 
   const picker = doc.instruments.find((i) => i.id === "slice_picker");
@@ -292,7 +266,7 @@ instrument slice_picker {
     targetFamily: {
       module: "financing",
       exportPath: "installments.slice",
-      revision: 1,
+      digest: sha256,
     },
   });
 });
@@ -300,7 +274,6 @@ instrument slice_picker {
 test("Attached child record with underscore in identifier resolves family from declaration map", () => {
   // Mutation: rebuild export path with replaceAll("_", ".") so custom_tranche resolves to custom.tranche.
   const source = `program child_record_underscore "ChildRecordUnderscore"
-use fixture
 party client: person
 object facility_pool "FacilityPool" {
   attach alpha = fixture.facility { expose create as create_alpha }
@@ -328,7 +301,7 @@ instrument custom_tracker {
     targetFamily: {
       module: "fixture",
       exportPath: "facility.custom_tranche",
-      revision: 3,
+      digest: sha256,
     },
   });
 });
@@ -336,7 +309,6 @@ instrument custom_tracker {
 test("Reference field blocks accept an explicit union target list", () => {
   // Mutation: call text() unconditionally on reference target block.
   const source = `program union_target_list "UnionTargetList"
-use fixture
 party client: person
 object facility_pool "FacilityPool" {
   attach alpha = fixture.facility { expose create as create_alpha }
@@ -365,7 +337,7 @@ instrument union_tracker {
     targetFamily: {
       module: "fixture",
       exportPath: "facility.tranche",
-      revision: 1,
+      digest: sha256,
     },
   });
 });

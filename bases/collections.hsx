@@ -1,7 +1,5 @@
 // Refer overdue instalments for collection and limit contact attempts.
 program collections_base "Follow up overdue payments"
-use collections
-use financing
 party collector: business
 
 object plan "Plan" {

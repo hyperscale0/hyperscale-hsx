@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
-import { document, standardLibrary } from "./fixtures/std-source.ts";
+import { document } from "./fixtures/std-source.ts";
 
 test("wallet balances remain recoverable after later credits", () => {
   const wallet = document(`program p "P"
-use wallet
 object account "Account" {
   attach balance = wallet.balance { holder: owner }
 }`).instruments[0]!;
@@ -16,8 +15,6 @@ object account "Account" {
 
 test("marketplace caps include sibling attachments on the same listing", () => {
   const source = `program market "Market"
-use marketplace
-use escrow
 object item "Item" {
   attach listing = marketplace.listing { seller: owner }
   attach sale = escrow.hold { payer: actor, payee: owner }
@@ -36,6 +33,11 @@ object item "Item" {
       expect(item.invariants).toContainEqual({
         kind: "aggregate",
         selection: {
+          family: {
+            module: "marketplace",
+            exportPath: name,
+            digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
           instrument: [`item_second_${name}`, `item_${name}`],
           reference: "listing",
           anchor: "self.listing",
@@ -68,9 +70,7 @@ test("seller fees plus tax fit within the base amount", () => {
     ["seller: 100%, tax: 0%", true],
     ["seller: 5%, tax: 15%", true],
   ] as const) {
-    const result = compile(escrow.replace("seller: 5%, tax: 15%", fee), {
-      standardLibrary,
-    });
+    const result = compile(escrow.replace("seller: 5%, tax: 15%", fee));
     if (valid) expect(result.diagnostics).toEqual([]);
     else
       expect(result.diagnostics).toContainEqual(

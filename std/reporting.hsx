@@ -17,7 +17,16 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
   fields {}
   lifecycle { states: [declared], initial: declared }
   action create {}
-  constraints { aging_first_days: less_than(aging_second_days), aging_second_days: less_than(aging_third_days) }
+  checks {
+    aging_first_days < aging_second_days {
+      message: "Attachment `{attachment}` sets `aging_first_days` at or above `aging_second_days`, so the aging buckets overlap."
+      fix: "Choose ascending bucket bounds, such as `aging_first_days: 30, aging_second_days: 60, aging_third_days: 90`."
+    }
+    aging_second_days < aging_third_days {
+      message: "Attachment `{attachment}` sets `aging_second_days` at or above `aging_third_days`, so the aging buckets overlap."
+      fix: "Choose ascending bucket bounds, such as `aging_first_days: 30, aging_second_days: 60, aging_third_days: 90`."
+    }
+  }
   reports: [
     {
       identity: { id: "portfolio_aging", version: 1, description: "Period-end outstanding principal by oldest unpaid installment. Remaining scheduled profit is distinct from accrued profit. Restructuring evidence is unavailable." },

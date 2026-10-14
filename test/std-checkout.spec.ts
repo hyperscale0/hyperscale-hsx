@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
-import {
-  financing,
-  instrument,
-  standardLibrary,
-} from "./fixtures/std-source.ts";
+import { financing, instrument } from "./fixtures/std-source.ts";
 
 // Mutation checkout-direct: remove the false requirement in the borrower branch.
 test("direct borrower funding cannot expose escrow checkout", () => {
@@ -12,9 +8,9 @@ test("direct borrower funding cannot expose escrow checkout", () => {
     "funds: checkout",
     "disburse_to: borrower, funds: checkout",
   );
-  expect(
-    compile(source, { standardLibrary }).diagnostics.map((d) => d.message),
-  ).toEqual(["action collect_down_payment is excluded by these bindings"]);
+  expect(compile(source).diagnostics.map((d) => d.message)).toEqual([
+    "action collect_down_payment is excluded by these bindings",
+  ]);
 });
 
 // Mutation pending-refund: remove the move from escrow.cancel.

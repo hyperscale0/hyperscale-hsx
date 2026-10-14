@@ -1,13 +1,7 @@
-import { readFileSync } from "node:fs";
 import { compile } from "../../src/compile.ts";
 
-export const standardLibrary = {
-  source: (name: string) =>
-    readFileSync(new URL(`../../std/${name}.hsx`, import.meta.url), "utf8"),
-};
-
 export function document(source: string) {
-  const result = compile(source, { standardLibrary });
+  const result = compile(source);
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
   return result.artifacts.document;
 }
@@ -19,9 +13,6 @@ export function instrument(source: string, id: string) {
 }
 
 export const financing = `program checkout "Checkout"
-use financing
-use escrow
-use purchase
 object purchase "Purchase" {
  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] },
   payer: actor, payee: owner

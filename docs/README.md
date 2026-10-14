@@ -15,7 +15,6 @@ The package supplies the `hsx` executable. Save this as `lesson.hsx`:
 
 ```hsx
 program tutoring "Tutoring studio"
-use money
 object lesson "Lesson" {
   fields { student: text }
   columns: [student]
@@ -65,7 +64,7 @@ the one-hire limit. The operator records pickup, return and damage.
 Open [rental-deposit.hsx](../examples/rental-deposit.hsx). It is a complete source
 file for a customer renting equipment from the program operator. Copy it to
 `rental.hsx` and run the same check, build and cost commands against that file.
-No header import is needed because it declares its own instrument.
+It names no header because it declares its own instrument.
 
 The terms are a 1,000 SAR deposit and one late charge of 50 SAR plus 15% VAT,
 which is 7.50 SAR. The record's `startsAt` and `dueAt` timestamps reach the
@@ -97,8 +96,8 @@ can belong to a different customer without a fixed business binding. A
 parameterized program instrument exists only through its attachments. A `fee` on
 a move of an action input, such as `moves input.amount from holder to self.held
 fee { seller: 1% }`, is calculated when that action runs. Reusable custom headers
-require a host-supplied `StandardLibrary`; `use` cannot load a local file through
-this CLI.
+require a host-supplied `Toolchain`; a qualified name cannot load a local file
+through this CLI.
 
 Inspect `objects` in the compiled UDL for the attachment and public names, then
 its instrument for fields, transitions, actors, requirements and ordered moves.
@@ -181,7 +180,10 @@ rejected as tunable types. A default selector such as `payer: party = party(pers
 is different: its type is plain `party`, and the call chooses a default binding.
 Use explicit `payer: owner` or `payer: actor` bindings when the participant comes
 from the object or session.
-Imports are `use header`; there are no file imports, macros or executable strings.
+A qualified name such as `booking.reservation` loads its standard header the first time the
+compiler reaches it, so a program has no import lines. An unknown header fails with a
+suggestion from the published header names. There are no file imports, macros or executable
+strings.
 
 ## Values and money
 
@@ -196,8 +198,9 @@ the last instalment, as a standard amortization table does.
 Tax binds `programTax`. Fees go to `programOperator`. Fine, recovery and
 residual destinations are party tunables.
 
-Attached actions are private unless the attachment exposes them with
-`expose fund as sell`. Exposure grants no authority. Clock and parent actions
+Every action is private until an `expose` line names it: `expose fund as sell`
+inside an attachment, or `expose record.pay as pay_record` at program level for
+an attachment path or an authored `instrument`. Exposure grants no authority. Clock and parent actions
 remain executor-owned. Instruments have no standalone create route: an
 attachment exposes its create action by name (`expose create as finance`) or
 keeps it internal. Callers create objects and run their attached actions.
@@ -329,43 +332,81 @@ invoked after payment. Clock and parent actions have no public API name.
 
 `integer(1, 366)` declares an inclusive tunable bound, and `integer(1, 366)?`
 keeps the bound on a tunable the author may leave unset. The compiler-owned manifest
-publishes enum values, numeric minima and maxima, and cross-tunable constraints.
+publishes enum values, numeric minima and maxima, and each header check.
 Bounds use minor units for money, basis points for percentages and milliseconds
 for durations. Money spans 0 through 999999999999999999 minor units; percentages
 span 0 through 10000 basis points. Durations start at 1 millisecond. Integers
-default to 0 through 9007199254740991 unless their declaration narrows the range. For example, `constraints { contact_from: less_than(contact_until) }`
-requires a valid hours interval. `at_most` and `greater_than` are also supported.
+default to 0 through 9007199254740991 unless their declaration narrows the range.
 A refusal names the tunable. Empty `all(type)` selections lower to zero aggregates
 or no invocations, so a plan does not require a late-charge object.
 
-Headers can declare conditional bindings and parameter policy diagnostics:
+A header states the rules its tunables must pass in one `checks` block. Each rule
+carries its own message and fix:
 
 ```hsx
-dependencies {
-  funds {
-    selector: destination, is: held
-    message: "Attachment `{attachment}` needs a funds binding."
-    fix: "Bind funds to a hold attachment."
+checks {
+  late_from < early_until {
+    message: "Attachment `{attachment}` opens the late window before the early one closes."
+    fix: "Choose a `late_from` shorter than `early_until`."
   }
-}
-parameterDiagnostics {
-  amount {
-    accepts: "a fixed amount"
-    percentage: "a percentage-based charge"
+  first + second <= limit { message: "...", fix: "..." }
+  funds is set when destination is held { message: "...", fix: "..." }
+  fee is money {
+    message: "`{instrument}.fee` accepts a fixed amount. It cannot express a percentage-based charge."
     fix: "Author a rate calculation when the policy varies with a base amount."
   }
 }
 ```
 
-Each dependency names a declared tunable, an enum selector and one of its choices,
-or an optional selector and `set` or `unset`: `money.schedule` needs `count` when
-`every` is unset.
-The compiler checks selected dependencies before lowering and the manifest retains
-them. `{attachment}` in the message expands to the authored attachment name.
-Parameter diagnostics name a declared tunable and explain its accepted value,
-unsupported percentage semantics and repair. They do not change the tunable type.
+A comparison uses the operators of `requires` and may add tunables with `+`.
+`x is set` requires a binding, and `when s is c` scopes a rule to an enum choice,
+or to `set` or `unset` of an optional tunable: `money.schedule` needs `count` when
+`every` is unset. `x is <its type>` gives the words for the tunable's type rule,
+such as a percentage where the header takes an amount. An operand bound to
+`runtime` is checked when the agreement is created. The compiler runs every check
+and every type rule of an attachment and returns each failure, so one draft shows
+every broken rule at once. `{attachment}` expands to the authored attachment name
+and `{instrument}` to the header instrument. `ceilings` stays separate, since it
+supplies a value when the tunable is unset. The manifest lists each check as written.
+
+A tunable given twice with the same value merges; given twice with different
+values, the compiler names both sites and both values:
+`late_forfeit is set twice with different values: 50% at 7:5 and 40% at 9:5`.
+Every repeated declaration, `expose` or `rename` names both sites the same way.
+
 UDL refusals retain their UDL codes. A terminal-money refusal includes the owned
 account and the prover's action path in related diagnostic information.
+
+## Checks
+
+A `check` block states one story and where the money ends. Append it to
+`lesson.hsx`:
+
+```hsx
+check "A booked lesson pays the studio" {
+  customer sara "Sara Ali" funded 150 SAR
+  object lesson: lesson for sara { student: "Sara" }
+  sara lesson.book_lesson -> pending
+  sara lesson.pay_for_lesson -> paid balances { sara: 0 SAR, operator: 150 SAR }
+  sara lesson.pay_for_lesson -> status 409 "state_conflict"
+  expect balances { sara: 0 SAR, operator: 150 SAR }
+}
+```
+
+`customer` declares a funded or empty balance; `organization` makes it a
+business and `binds party` binds it to a declared party. `object` creates a
+record for an owner. Each action line names the caller, the exposed action and
+either the state it reaches or the refusal it expects. `-> status absent`
+expects the action to be missing. `clock <date>` moves time, optionally
+`until` a record reaches a state, and `close` closes a customer's account.
+`balances` after a step and `expect balances` at the end compare settled
+amounts; `held` compares money left in agreement accounts.
+
+The compiler checks every name against the program and emits the stories in
+`artifacts.checks`, outside the canonical document. Adding or editing a check
+leaves the UDL bytes and `documentDigest` unchanged. An executor that reads
+UDL alone ignores them; Hyperscale runs them before promotion and on every
+deploy.
 
 ## Instruction cost
 

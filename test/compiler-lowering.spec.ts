@@ -4,9 +4,10 @@ import { compile } from "../src/compile.ts";
 import { headerManifest } from "../src/headers.ts";
 import { runCli } from "../src/cli.ts";
 import {
-  objectProgrammeOptions,
+  objectProgrammeToolchain,
   carsSource,
 } from "./fixtures/object-programme.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 const header = `header custom
 instrument review {
@@ -14,14 +15,13 @@ instrument review {
  action create {}
  action check { from: open, to: open }
 }`;
-const options = { standardLibrary: { source: () => header } };
+const custom = testToolchain([header]);
 const attach = (body: string) => `program p "P"
-use custom
 object application "Application" { attach review = custom.review { ${body} } }`;
 
 // Mutation: append the instrument id to a generated action summary.
 test("generated action summaries use only the action title", () => {
-  const result = compile(attach(""), options);
+  const result = compile(attach(""), custom);
   expect(result.verdict).toBe("valid");
   const actions = result.artifacts!.document.instruments[0]!.actions;
   expect(actions.check?.summary).toBe("Check");
@@ -50,10 +50,8 @@ test("malformed action and lifecycle shapes return diagnostics before traversal"
   ]) {
     const changed = header.replace(before!, after!);
     const result = compile(
-      'program p "P"\nuse custom\nreview = custom.review {}',
-      {
-        standardLibrary: { source: () => changed },
-      },
+      'program p "P"\nreview = custom.review {}',
+      testToolchain([changed]),
     );
     expect(result.diagnostics).toHaveLength(1);
     expect(result.diagnostics[0]).toMatchObject({
@@ -71,9 +69,10 @@ test("a scalar lifecycle reports its source instead of throwing", () => {
     "lifecycle: true",
   );
   expect(
-    compile('program p "P"\nuse custom\nreview = custom.review {}', {
-      standardLibrary: { source: () => changed },
-    }).diagnostics,
+    compile(
+      'program p "P"\nreview = custom.review {}',
+      testToolchain([changed]),
+    ).diagnostics,
   ).toMatchObject([
     { code: "HSX1001", source: "custom", message: "expected a block" },
   ]);
@@ -83,10 +82,8 @@ test("a scalar lifecycle reports its source instead of throwing", () => {
 test("a misspelled source state is refused at the state name", () => {
   const changed = header.replace("from: open", "from: typo");
   const result = compile(
-    'program p "P"\nuse custom\nreview = custom.review {}',
-    {
-      standardLibrary: { source: () => changed },
-    },
+    'program p "P"\nreview = custom.review {}',
+    testToolchain([changed]),
   );
   expect(result.diagnostics.map((d) => [d.code, d.message])).toEqual([
     ["HSX1001", "`typo` is not a state of `review`."],
@@ -102,40 +99,45 @@ test("a misspelled source state is refused at the state name", () => {
 test("unreachable authored states are errors rather than discarded declarations", () => {
   const changed = header.replace("states: [open]", "states: [open, abandoned]");
   expect(
-    compile('program p "P"\nuse custom\nreview = custom.review {}', {
-      standardLibrary: { source: () => changed },
-    }).diagnostics.map((d) => [d.code, d.message]),
+    compile(
+      'program p "P"\nreview = custom.review {}',
+      testToolchain([changed]),
+    ).diagnostics.map((d) => [d.code, d.message]),
   ).toEqual([["UDL3001", "$.instruments[0]: unreachable state abandoned"]]);
 });
 
 // Mutation: silently discard unknown/repeated exposure entries or overwrite renames.
 test("attachment mappings refuse typos and repeated declarations at their source", () => {
   for (const [body, message] of [
-    ["expose absent", "unknown or repeated action absent"],
+    ["expose absent", "unknown action absent"],
     [
       "expose check as first expose check as second",
-      "unknown or repeated action check",
+      expect.stringMatching(/^check is exposed twice, at \d+:\d+ and \d+:\d+$/),
     ],
-    ["rename { value: first, value: second }", "duplicate rename value"],
+    [
+      "rename { value: first, value: second }",
+      expect.stringMatching(
+        /^rename value is given twice with different values: first at \d+:\d+ and second at \d+:\d+$/,
+      ),
+    ],
   ] as const) {
-    const result = compile(attach(body), options);
+    const result = compile(attach(body), custom);
     expect(result.diagnostics.map((d) => [d.code, d.message])).toEqual([
       ["HSX1001", message],
     ]);
   }
   expect(
-    compile(attach("expose check as inspect"), options).artifacts?.document
+    compile(attach("expose check as inspect"), custom).artifacts?.document
       .instruments[0]?.actions.check?.publicAction,
   ).toBe("inspect");
 });
 
 // Mutation: remove automatic-action rejection from attachment exposures.
 test("attachment exposure rejects a clock action as top-level exposure does", () => {
-  const result = compile(attach("expose check"), {
-    standardLibrary: {
-      source: () => header.replace("from: open", "actor: clock from: open"),
-    },
-  });
+  const result = compile(
+    attach("expose check"),
+    testToolchain([header.replace("from: open", "actor: clock from: open")]),
+  );
   expect(result.diagnostics.map((d) => d.message)).toEqual([
     "check runs on the clock or its parent, not a caller",
   ]);
@@ -147,9 +149,7 @@ test("an exposed action removed by fixed bindings is diagnosed", () => {
     "action check {",
     "action check { requires true == false",
   );
-  const result = compile(attach("expose check"), {
-    standardLibrary: { source: () => changed },
-  });
+  const result = compile(attach("expose check"), testToolchain([changed]));
   expect(result.diagnostics.map((d) => d.message)).toEqual([
     "action check is excluded by these bindings",
   ]);
@@ -161,9 +161,10 @@ test("inherited object properties cannot satisfy a party binding", () => {
     "instrument review {",
     "instrument review(payer: party) {",
   );
-  const result = compile(attach("payer: constructor"), {
-    standardLibrary: { source: () => changed },
-  });
+  const result = compile(
+    attach("payer: constructor"),
+    testToolchain([changed]),
+  );
   expect(result.diagnostics.map((d) => d.code)).toEqual([
     "subject_party_unbound",
   ]);
@@ -171,7 +172,7 @@ test("inherited object properties cannot satisfy a party binding", () => {
 
 // Mutation: use direct registry/operationMap lookup in subject declarations.
 test("subject adapters ignore inherited registry entries and inherited operations", () => {
-  const target = objectProgrammeOptions.adapterRegistry!.verification!;
+  const target = objectProgrammeToolchain.adapters.verification!;
   for (const registry of [
     Object.create({ verification: target }),
     {
@@ -185,8 +186,8 @@ test("subject adapters ignore inherited registry entries and inherited operation
     },
   ]) {
     const result = compile(carsSource, {
-      ...objectProgrammeOptions,
-      adapterRegistry: registry,
+      ...objectProgrammeToolchain,
+      adapters: registry,
     });
     expect(result.diagnostics).toEqual([]);
     expect(
@@ -202,9 +203,9 @@ test("header metadata and compilation agree on header identity", () => {
     header.replace("header custom", 'program custom "Custom"'),
     header.replace("header custom", "header other"),
   ])
-    expect(() => headerManifest({ source: () => source }, ["custom"])).toThrow(
-      "custom: expected header custom",
-    );
+    expect(() =>
+      headerManifest(new Map([["custom", source]]), ["custom"]),
+    ).toThrow("custom: expected header custom");
 });
 
 // Mutation: always print the program filename for an imported-source diagnostic.
@@ -214,7 +215,7 @@ test("CLI points header errors at the header rather than the supplied program", 
     out: () => {},
     err: (line) => errors.push(line),
     readFile: async () =>
-      'program p "P"\nuse financing\nobject item "Item" { attach plan = financing.installments { disburse_to: borrower, months: 3, pricing: flat_total, profit_rate: 2% } }',
+      'program p "P"\nobject item "Item" { attach plan = financing.installments { disburse_to: borrower, months: 3, pricing: flat_total, profit_rate: 2% } }',
     writeFile: async () => {},
   });
   expect(code).toBe(1);
@@ -238,9 +239,7 @@ test("subject requirements reach the start of a long finite invocation chain", (
     "action check { from: open, to: open }",
     actions,
   );
-  const result = compile(attach("expose step0"), {
-    standardLibrary: { source: () => source },
-  });
+  const result = compile(attach("expose step0"), testToolchain([source]));
   expect(result.diagnostics).toEqual([]);
   expect(
     result.artifacts?.document.instruments[0]?.actions.step0?.subject
@@ -248,17 +247,18 @@ test("subject requirements reach the start of a long finite invocation chain", (
   ).toEqual([{ field: { name: "note", type: "text" } }]);
 });
 
-// Mutation: replace the imported parser error with a generic error at the use line.
-test("malformed imports preserve the header error and point back to the import", () => {
-  const result = compile(attach(""), {
-    standardLibrary: { source: () => "header custom instrument review {" },
-  });
+// Mutation: replace the header's parser error with a generic error at the qualified name.
+test("a malformed header keeps its parser error and points back to the name that loaded it", () => {
+  const result = compile(
+    attach(""),
+    testToolchain(["header custom instrument review {"]),
+  );
   expect(result.diagnostics).toMatchObject([
     {
       code: "HSX1000",
       source: "custom",
       message: "unclosed block, expected }",
-      related: [{ source: "program", message: "Imported header custom" }],
+      related: [{ source: "program", message: "Header custom is named here" }],
     },
   ]);
 });
@@ -285,10 +285,8 @@ instrument consumer(target: ref<custom.producer.child>) {
   ];
   for (const rows of [declarations, [...declarations].reverse()]) {
     const result = compile(
-      `program p "P" use custom object item { ${rows.join("\n")} }`,
-      {
-        standardLibrary: { source: () => source },
-      },
+      `program p "P" object item { ${rows.join("\n")} }`,
+      testToolchain([source]),
     );
     expect(result.diagnostics).toEqual([]);
     expect(
@@ -308,16 +306,12 @@ instrument consumer(target: ref<custom.producer.child>) {
 
 // Mutation: cast a numeric family target to string before resolving its declaration.
 test("family selections reject non-name targets before family lookup", () => {
-  const source = header
-    .replace("instrument review {", "instrument review { familyRevision: 1")
-    .replace(
-      "action check {",
-      `action check {
+  const source = header.replace(
+    "action check {",
+    `action check {
       invoke: [{ selection: { family: custom.review, instrument: 1, states: [open], limit: 1 }, action: check, input: {} }]`,
-    );
-  const result = compile(attach("expose check"), {
-    standardLibrary: { source: () => source },
-  });
+  );
+  const result = compile(attach("expose check"), testToolchain([source]));
   expect(result.diagnostics.map((d) => [d.code, d.message])).toEqual([
     ["HSX1001", "instrument target needs a name"],
   ]);

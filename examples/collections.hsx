@@ -1,8 +1,6 @@
 // Portland cafe equipment finance lends 24,000 SAR over 12 months and refers debt seven days overdue.
 // Its agency earns 10% of each recovery from the lender, with at most four contacts per 30 days.
 program business_collections "Portland cafe equipment finance"
-use collections
-use financing
 party agency: business
 
 // Bind agency to the collector. The cafe owns the facility. Set price to

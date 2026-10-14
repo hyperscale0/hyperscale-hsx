@@ -7,7 +7,6 @@ const deposit = (
   refund: string,
   forfeit = "",
 ) => `program desk_and_key "Desk & Key"
-use money
 
 instrument key_deposit(member: party) {
   fields {
@@ -156,7 +155,6 @@ test("a child action exposed inside an attachment names the program-level form",
     inside: string,
     outside = "",
   ) => `program desk_and_key "Desk & Key"
-use money
 
 object desk "Desk" {
   fields { member: text }

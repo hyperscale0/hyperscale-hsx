@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  canonicalDigest,
+  documentDigest,
   resolveField,
   resolveSubjectRequirement,
   objectActionState,
@@ -14,14 +14,16 @@ import {
 } from "@hyperscale0/adl";
 import { subjectAdapter } from "../../adl/conformance/subject-adapter.ts";
 import { compile } from "../src/compile.ts";
+import { defaultToolchain } from "../src/toolchain.ts";
 import {
   carsSource,
-  objectProgrammeOptions,
+  objectProgrammeToolchain,
   subjectHeader,
 } from "./fixtures/object-programme.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
-function compiled(source = carsSource, options = objectProgrammeOptions) {
-  const result = compile(source, options);
+function compiled(source = carsSource, toolchain = objectProgrammeToolchain) {
+  const result = compile(source, toolchain);
   expect(result.diagnostics, "Car must compile before projection").toEqual([]);
   expect(result.artifacts).toBeDefined();
   return result.artifacts!.document;
@@ -29,12 +31,12 @@ function compiled(source = carsSource, options = objectProgrammeOptions) {
 
 const build = { productBuildId: "conformance-cars", digest: "" };
 
-test("one ADL declaration reaches optional creation and attached-action discovery", async () => {
+test("one ADL declaration reaches optional creation and attached-action discovery", () => {
   const document = compiled();
   const kind = document.objects[0]!;
   const discovery = projectObjectDiscovery(document, {
     ...build,
-    digest: await canonicalDigest(document),
+    digest: documentDigest(document),
   });
   expect(
     kind.fields.find((field) => field.name === "referenceCode"),
@@ -76,7 +78,7 @@ test("mutation conflicting authored type reports subject_field_conflict", () => 
     "referenceCode: integer, make: text",
   );
   expect(
-    compile(mutation, objectProgrammeOptions).diagnostics.map(
+    compile(mutation, objectProgrammeToolchain).diagnostics.map(
       (item) => item.code,
     ),
     "incompatible authored and adapter types must refuse",
@@ -88,7 +90,7 @@ test("mutation unknown rename source reports subject_field_unknown", () => {
     "expose check",
     "rename { absent: renamed } expose check",
   );
-  const diagnostics = compile(mutation, objectProgrammeOptions).diagnostics;
+  const diagnostics = compile(mutation, objectProgrammeToolchain).diagnostics;
   expect(
     diagnostics.map((item) => item.code),
     "rename must name a declared subject requirement",
@@ -126,10 +128,7 @@ test("mutation missing invocation metadata reports subject_requirement_missing",
 });
 
 test("mutation removed registry binding reports subject_adapter_unbound", () => {
-  const document = compiled(carsSource, {
-    ...objectProgrammeOptions,
-    adapterRegistry: {},
-  });
+  const document = compiled(carsSource, testToolchain([subjectHeader]));
   const action = projectObjectDiscovery(document, build).kinds[0]!.actions[0]!;
   expect(
     document.instruments[0]!.actions.check!.subject!.adapters[0]!.snapshot,
@@ -175,15 +174,12 @@ test("mandatory invocation inherits requirements and unavailable adapters", () =
   }
   action check {`,
   );
-  const options = {
-    ...objectProgrammeOptions,
-    standardLibrary: { source: () => header },
-  };
+  const bound = testToolchain([header], objectProgrammeToolchain.adapters);
   const source = carsSource.replace(
     "expose check as check",
     "expose run as run",
   );
-  const document = compiled(source, options);
+  const document = compiled(source, bound);
   expect(
     document.instruments[0]!.actions.run!.subject?.requirements.map(
       (requirement) => requirement.field.name,
@@ -194,17 +190,17 @@ test("mandatory invocation inherits requirements and unavailable adapters", () =
     "action run {",
     "action run { subject { referenceCode: integer }",
   );
-  const conflict = compile(source, {
-    ...options,
-    standardLibrary: { source: () => conflicting },
-  }).diagnostics[0]!;
+  const conflict = compile(
+    source,
+    testToolchain([conflicting], objectProgrammeToolchain.adapters),
+  ).diagnostics[0]!;
   expect(conflict.code).toBe("subject_field_conflict");
   expect(
     conflict.related?.map((origin) =>
       conflicting.slice(origin.span.start, origin.span.end),
     ),
   ).toEqual(["referenceCode: integer", "adapter: verification"]);
-  const unbound = compiled(source, { ...options, adapterRegistry: {} });
+  const unbound = compiled(source, testToolchain([header]));
   expect(
     projectObjectDiscovery(unbound, build).kinds[0]!.actions[0]!.availability,
     "mandatory invocation must inherit the child's unavailable adapter",
@@ -217,7 +213,6 @@ test("mandatory invocation inherits requirements and unavailable adapters", () =
 test("the design escrow attachment resolves subject.price through its rename", () => {
   const document = compiled(
     `program p "P"
-use escrow
 object car "Car" {
   attach sale = escrow.hold {
     payer: actor, payee: owner
@@ -225,7 +220,7 @@ object car "Car" {
     expose fund as sell
   }
 }`,
-    {},
+    defaultToolchain,
   );
   const sale = document.instruments.find((item) => item.id === "car_sale")!;
   expect(resolveSubjectRequirement(sale, "price")?.objectField).toBe(
@@ -256,7 +251,8 @@ instrument review() {
 }`;
 
 function creationProjection(source = creationSource) {
-  return projectObjectDiscovery(compiled(source, {}), build).kinds[0]!;
+  return projectObjectDiscovery(compiled(source, defaultToolchain), build)
+    .kinds[0]!;
 }
 
 test("complete creation overlap retains the action requirement on existing attachments", () => {
@@ -283,7 +279,7 @@ test("creation-only fields permit omission but validate supplied values after at
 });
 
 test("projection deduplicates repeated creation requirements", () => {
-  const document = compiled(creationSource, {});
+  const document = compiled(creationSource, defaultToolchain);
   const requirements =
     document.instruments[0]!.actions.create!.subject!.requirements;
   requirements.push(requirements[0]!);
@@ -306,7 +302,7 @@ test("only initial transitions inherit creation requirements and hidden inputs s
   expect(
     compile(
       creationSource.replace("from: pending, to: checked, ", ""),
-      {},
+      defaultToolchain,
     ).diagnostics.map((issue) => issue.message),
   ).toContain("action check needs from and to");
 });
@@ -327,13 +323,13 @@ test("attachment reference list renames refuse until their mapping can execute",
     "expose link",
     "rename { reviews: carReviews } expose link",
   );
-  expect(compile(renamed, {}).diagnostics.map((issue) => issue.code)).toContain(
+  expect(compile(renamed).diagnostics.map((issue) => issue.code)).toContain(
     "subject_field_unknown",
   );
 });
 
 test("optional attachment lists allow omission and validate supplied members", () => {
-  const document = compiled(listSource, {});
+  const document = compiled(listSource, defaultToolchain);
   // UDL supports optional lists; HSX call-type syntax does not yet express them.
   document.instruments[0]!.fields[0]!.optional = true;
   const action = projectObjectDiscovery(document, build).kinds[0]!.actions[0]!;

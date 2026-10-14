@@ -3,7 +3,6 @@ import { compile } from "../src/compile.ts";
 import { instrument } from "./fixtures/std-source.ts";
 
 const rental = `program camera_rentals "Camera rentals"
-use money
 object rental "Camera rental" {
   fields { camera: text, returnBy: date }
   attach late = money.late_fee {

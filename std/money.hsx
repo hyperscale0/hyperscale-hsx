@@ -122,9 +122,8 @@ instrument split(payer: party, amount: money = runtime, shares: split = { progra
 
 instrument schedule(payer: party, payee: party, amount: money = runtime, count: integer(1, 366)?, every: period?) {
   summary: "Pieces due on listed dates that sum to the total, or one amount each period from a start date until stopped, or for count periods."
-  dependencies {
-    count {
-      selector: every, is: unset
+  checks {
+    count is set when every is unset {
       message: "Attachment `{attachment}` charges on a list of dates, so it needs `count`, the number of dates."
       fix: "Add `count: 3` for three dated pieces, or add `every: 1 month` to charge each month until stopped or cancelled."
     }

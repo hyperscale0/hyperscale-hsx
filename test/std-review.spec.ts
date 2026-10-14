@@ -3,14 +3,10 @@ import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
 import { buildUdlCostManifest } from "../src/cost.ts";
 
-const standardLibrary = {
-  source: (name: string) =>
-    readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-};
 const sample = (name: string) =>
   readFileSync(new URL(`../examples/${name}.hsx`, import.meta.url), "utf8");
 function document(source: string) {
-  const result = compile(source, { standardLibrary });
+  const result = compile(source);
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
   return result.artifacts.document;
 }
@@ -61,7 +57,6 @@ test("opening another wallet does not reset an investor's round cap", () => {
 test("a pool cannot accept more paid contributions than failure can refund", () => {
   const pool = instrument(
     `program p "Pool"
-use money
 object campaign "Campaign" {
   attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
 }`,
@@ -70,6 +65,11 @@ object campaign "Campaign" {
   expect(pool.invariants).toContainEqual({
     kind: "aggregate",
     selection: {
+      family: {
+        module: "money",
+        exportPath: "pool.contribution",
+        digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
       instrument: "campaign_pool_contribution",
       reference: "pool",
       anchor: "self.pool",
@@ -94,6 +94,11 @@ test("a lending round takes no more commitments than one ledger request refunds 
   expect(commitment.invariants).toContainEqual({
     kind: "aggregate",
     selection: {
+      family: {
+        module: "lending",
+        exportPath: "commitment",
+        digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
       instrument: ["business_investment"],
       reference: "round",
       anchor: "self.round",

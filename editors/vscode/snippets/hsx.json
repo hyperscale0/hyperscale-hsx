@@ -3,7 +3,6 @@
     "prefix": "program",
     "body": [
       "program ${1:name} \"${2:Title}\"",
-      "use money",
       "object ${3:item} \"${4:Items}\" {",
       "  fields { note: text }",
       "  attach payment = money.transfer {",

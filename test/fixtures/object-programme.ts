@@ -1,8 +1,7 @@
 import { subjectAdapter } from "../../../adl/conformance/subject-adapter.ts";
-import type { CompileOptions } from "../../src/compile.ts";
+import { testToolchain } from "./toolchain.ts";
 
 export const carsSource = `program cars "Cars"
-use subject_fixture
 object car "Cars" {
   fields { make: text, model: text, year: integer }
   columns: [make, model, year]
@@ -24,11 +23,6 @@ instrument verification {
   }
 }`;
 
-export const objectProgrammeOptions: CompileOptions = {
-  standardLibrary: {
-    source: (name) => (name === "subject_fixture" ? subjectHeader : undefined),
-  },
-  adapterRegistry: {
-    verification: { adapter: subjectAdapter, operation: "subject.check" },
-  },
-};
+export const objectProgrammeToolchain = testToolchain([subjectHeader], {
+  verification: { adapter: subjectAdapter, operation: "subject.check" },
+});

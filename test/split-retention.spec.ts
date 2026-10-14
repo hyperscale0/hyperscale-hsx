@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { projectDocumentSemantics } from "@hyperscale0/udl";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 function split(shares: string, amount = "300 SAR") {
   return compile(`program commission "Commission"
-use money
 party partner: business
 party other: business
 object payment "Payment" {
@@ -64,7 +64,6 @@ test("a split retains its source allocation in calculated facts without a transf
 // Mutation: compare party names alone. The named-account control must still post.
 test("account aliases retain only the same book and key, while another account of the party posts", () => {
   const source = `program aliases "Aliases"
-use custom
 object payment "Payment" { attach settlement = custom.allocation {} }`;
   const header = (key: string) => `header custom
 instrument allocation {
@@ -77,9 +76,7 @@ instrument allocation {
     ["balance", 0],
     ["commission", 1],
   ] as const) {
-    const result = compile(source, {
-      standardLibrary: { source: () => header(key) },
-    });
+    const result = compile(source, testToolchain([header(key)]));
     expect(result.diagnostics).toEqual([]);
     expect(
       result.artifacts!.document.instruments[0]!.actions.pay!.moves,
@@ -131,7 +128,6 @@ test("the full split must total 100 percent and explicit self-transfers still re
     ]),
   );
   const result = compile(`program self_transfer "Self transfer"
-use money
 object payment "Payment" {
  attach payment = money.transfer { payer: programOperator, payee: programOperator, amount: 300 SAR }
 }`);

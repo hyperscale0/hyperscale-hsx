@@ -10,8 +10,6 @@ test("collections fees bind their capital source and classify both participants"
     ["provider", "operator", "earning"],
   ] as const) {
     const result = compile(`program recovery "Recovery"
-use financing
-use collections
 party provider: business
 party collector: business
 object purchase "Purchase" {

@@ -1,19 +1,16 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
 import { headerManifest } from "../src/headers.ts";
+import { defaultToolchain } from "../src/toolchain.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
-const standardLibrary = {
-  source: (name: string) =>
-    readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-};
 function refusal(
   source: string,
   message: string,
   fix: string,
-  library = standardLibrary,
+  toolchain = defaultToolchain,
 ) {
-  const result = compile(source, { standardLibrary: library });
+  const result = compile(source, toolchain);
   expect(result.verdict).toBe("invalid");
   const diagnostic = result.diagnostics.find(
     (item) => item.message === message,
@@ -22,10 +19,9 @@ function refusal(
   return { result, diagnostic: diagnostic! };
 }
 
-// Mutation: remove dependencies.funds from the header. The attachment refusal disappears.
-test("missing conditional funds is one attachment error before field lowering", () => {
+// Mutation: remove the funds check from the header. The attachment refusal disappears.
+test("missing conditional funds refuses at the attachment beside its other unbound tunables", () => {
   const draft = `program lending_shop "Shop"
-use financing
 object membership "Membership" {
   attach plan = financing.installments { months: 3, pricing: flat_total, profit_rate: 2%, borrower: actor }
 }`;
@@ -34,29 +30,28 @@ object membership "Membership" {
     "Attachment `plan` disburses into a hold, but `funds` is not bound.",
     "Bind `funds: checkout` to a funding composition. Choose `disburse_to: seller` to pay a seller on activation, or `disburse_to: borrower` only if the borrower should receive the money directly.",
   );
-  expect(result.diagnostics).toHaveLength(1);
+  // The plan also lacks limits and portfolio, and every failure reports.
+  expect(result.diagnostics).toHaveLength(3);
   expect(draft.slice(diagnostic.span.start, diagnostic.span.end)).toContain(
     "attach plan",
   );
   expect(diagnostic.related?.[0]?.source).toBe("financing");
-  const manifest = headerManifest(standardLibrary, ["financing"]).headers[0]!
-    .objects[0]!;
-  expect(manifest.dependencies[0]).toMatchObject({
-    binding: "funds",
-    when: "disburse_to",
-    is: "funds",
+  const manifest = headerManifest(defaultToolchain.std, ["financing"])
+    .headers[0]!.objects[0]!;
+  expect(manifest.checks[0]).toMatchObject({
+    rule: "funds is set",
+    when: { selector: "disburse_to", is: "funds" },
   });
   expect(
-    compile(draft.replace("months: 3", "disburse_to: borrower, months: 3"), {
-      standardLibrary,
-    }).diagnostics.some((item) => item.message === diagnostic.message),
+    compile(
+      draft.replace("months: 3", "disburse_to: borrower, months: 3"),
+    ).diagnostics.some((item) => item.message === diagnostic.message),
   ).toBe(false);
 });
 
-// Mutation: remove dependencies.seller from the header. A seller plan compiles with nobody to pay.
-test("a seller plan without a seller binding is one attachment error", () => {
+// Mutation: remove the seller check from the header. A seller plan compiles with nobody to pay.
+test("a seller plan without a seller binding refuses at the attachment", () => {
   const draft = `program pay_later "Pay later"
-use financing
 party merchant: business
 object order "Order" {
   attach plan = financing.installments { months: 4, pricing: flat_total, profit_rate: 0%, borrower: actor, disburse_to: seller }
@@ -66,16 +61,13 @@ object order "Order" {
     "Attachment `plan` pays a seller, but `seller` is not bound.",
     "Bind `seller: merchant` to the declared business that receives the principal.",
   );
-  expect(result.diagnostics).toHaveLength(1);
+  expect(result.diagnostics).toHaveLength(3);
   expect(
     compile(
       draft.replace(
         "disburse_to: seller",
         "disburse_to: seller, seller: merchant",
       ),
-      {
-        standardLibrary,
-      },
     ).diagnostics.some((item) => item.message === diagnostic.message),
   ).toBe(false);
 });
@@ -84,21 +76,20 @@ object order "Order" {
 // Every plan in a program with a seller business would then need a seller.
 test("a program party named seller leaves the optional plan seller unset", () => {
   const draft = `program pay_later "Pay later"
-use financing
 party seller: business
 object order "Order" {
   attach limits = financing.limits { borrower: actor, per_borrower: 60000 SAR }
   attach ceiling = financing.portfolio_limit { limit: 1500000 SAR }
   attach plan = financing.installments { months: 4, pricing: flat_total, profit_rate: 0%, borrower: actor, disburse_to: borrower, limits: limits, portfolio: ceiling }
 }`;
-  const result = compile(draft, { standardLibrary });
+  const result = compile(draft);
   expect(result.diagnostics).toEqual([]);
   const attachments = result.artifacts!.document.objects[0]!.attachments;
   expect(attachments.filter((item) => "seller" in item.parties)).toEqual([]);
   expect(
-    compile(draft.replace("disburse_to: borrower", "disburse_to: seller"), {
-      standardLibrary,
-    }).diagnostics.map((item) => item.message),
+    compile(
+      draft.replace("disburse_to: borrower", "disburse_to: seller"),
+    ).diagnostics.map((item) => item.message),
   ).toContain("Attachment `plan` pays a seller, but `seller` is not bound.");
 });
 
@@ -157,7 +148,6 @@ instrument purse {
 // Mutation: use the scalar type-error branch for names. The runtime rename advice fails.
 test("money field binding explains runtime promotion", () => {
   const draft = `program rentals "Rentals"
-use money
 object rental "Rental" {
  fields { depositAmount: money }
  attach deposit = money.hold { payer: actor, payee: owner, amount: depositAmount }
@@ -169,7 +159,6 @@ object rental "Rental" {
   );
   const repaired = compile(
     draft.replace("amount: depositAmount", "rename { amount: depositAmount }"),
-    { standardLibrary },
   );
   expect(repaired.diagnostics).toEqual([]);
   expect(
@@ -185,7 +174,6 @@ object rental "Rental" {
 test("percentage late charge cannot silently become a fixed cash charge", () => {
   refusal(
     `program charges "Charges"
-use financing
 object membership "Membership" {
  attach charge = financing.late_charge { on: [], borrower: actor, fine: 2% }
 }`,
@@ -197,7 +185,6 @@ object membership "Membership" {
 // Mutation: omit subject requirements from the unknown-parameter explanation.
 test("unknown amount points at the header's actual subject requirement", () => {
   const draft = `program deposits "Deposits"
-use escrow
 object rental "Rental" {
  fields { deposit: money }
  attach security = escrow.hold { payer: actor, payee: owner, amount: 100 SAR }
@@ -208,9 +195,8 @@ object rental "Rental" {
     "Remove `amount`. To use your object's money field, add `rename { price: deposit }`.",
   );
   expect(
-    compile(draft.replace("amount: 100 SAR", "rename { price: deposit }"), {
-      standardLibrary,
-    }).diagnostics,
+    compile(draft.replace("amount: 100 SAR", "rename { price: deposit }"))
+      .diagnostics,
   ).toEqual([]);
 });
 
@@ -218,7 +204,6 @@ object rental "Rental" {
 test("unbound customer names point at subject identity", () => {
   refusal(
     `program deposits "Deposits"
-use money
 object rental "Rental" {
  attach deposit = money.hold { payer: customer, payee: owner }
 }`,
@@ -231,7 +216,6 @@ object rental "Rental" {
 test("declared person refusal explains attachment identity and authority", () => {
   const { diagnostic } = refusal(
     `program deposits "Deposits"
-use money
 party customer: person
 object rental "Rental" {
  attach deposit = money.hold { payer: customer, payee: owner }
@@ -250,7 +234,6 @@ object rental "Rental" {
 // Mutation: restore singleton-ID wording or hide candidate names. The scope/candidate witness fails.
 test("implicit reference refusal names its parameter, scope and candidates", () => {
   const draft = `program memberships "Memberships"
-use financing
 object membership "Membership" {
  attach ceiling = financing.portfolio_limit { limit: 100000 SAR }
  attach plan = financing.installments {
@@ -279,14 +262,15 @@ object membership "Membership" {
 // The operator's settle_refund leaves return_verified whatever the policy says,
 // so this escrow drops it to strand the moved refund.
 test("refund refusal carries the funded path and owned account with its UDL code", () => {
-  const unsettled = {
-    source: (name: string) =>
-      standardLibrary
-        .source(name)
+  const unsettled = testToolchain([
+    [
+      "escrow",
+      defaultToolchain.std
+        .get("escrow")!
         .replace(/  action settle_return \{[\s\S]*?(?=  action refund \{)/, ""),
-  };
+    ],
+  ]);
   const draft = `program returns "Returns"
-use escrow
 object rental "Rental" {
  attach deposit = escrow.hold { payer: actor, payee: owner, dispute: { refund_after: delivered } }
 }`;
@@ -306,10 +290,10 @@ object rental "Rental" {
   expect(
     compile(
       draft.replace("refund_after: delivered", "refund_after: return_verified"),
-      { standardLibrary: unsettled },
+      unsettled,
     ).diagnostics,
   ).toEqual([]);
-  expect(compile(draft, { standardLibrary }).diagnostics).toEqual([]);
+  expect(compile(draft).diagnostics).toEqual([]);
 });
 
 // Mutation: restore field-removal advice or change the eight-column boundary.
@@ -333,11 +317,9 @@ object item "Item" {
 test("an unknown financing tunable names itself", () => {
   const result = compile(
     `program loans "Loans"
-use financing
 object loan "Loan" {
   attach plan = financing.installments { months: 12, profit: 18%, borrower: actor, disburse_to: borrower }
 }`,
-    { standardLibrary },
   );
   expect(result.diagnostics.map((item) => item.message)).toEqual([
     expect.stringMatching(

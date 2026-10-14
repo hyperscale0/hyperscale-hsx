@@ -1,6 +1,5 @@
 // Hold a buyer’s payment until delivery is accepted.
 program escrow_base "Hold payment until delivery"
-use escrow
 party seller: business
 
 object order "Order" {

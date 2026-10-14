@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 import { refusal, rental } from "./fixtures/name-diagnostics.ts";
 
 const parties = "programOperator, programTax, owner, actor, operator";
@@ -234,8 +235,8 @@ instrument review(payer: party) {
  action pay { from: open, to: paid, actor: { party: payer }, moves self.amont from payer to self.held }
 }`;
   const result = compile(
-    'program p "P"\nuse custom\nparty buyer: business\nreview = custom.review { payer: buyer }',
-    { standardLibrary: { source: () => header } },
+    'program p "P"\nparty buyer: business\nreview = custom.review { payer: buyer }',
+    testToolchain([header]),
   );
   expect(result.diagnostics).toHaveLength(1);
   const diagnostic = result.diagnostics[0]!;

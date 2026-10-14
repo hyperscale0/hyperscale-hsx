@@ -1,7 +1,6 @@
 // York pottery studio lets members prepay for visits at 172.50 SAR each.
 // A reserved visit can be charged, cancelled or released at expiry; unused credit can be withdrawn.
 program workshop_credits "York pottery studio"
-use wallet
 
 // Top-up fee: 0%. Loading and withdrawing credit have tax 0% here because
 // they do not sell a visit. Each visit is 150 SAR plus 15% VAT, invoiced by

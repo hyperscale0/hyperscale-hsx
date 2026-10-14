@@ -2,9 +2,10 @@ import { validateUdl } from "@hyperscale0/udl";
 import { genericAdapter } from "../../adl/src/boundary-fixture.ts";
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
+import { defaultToolchain } from "../src/toolchain.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 const transfer = `program shop "Shop"
-use money
 party buyer: person
 party seller: business
 sale = money.transfer { payer: buyer, payee: seller, amount: 750 SAR }
@@ -29,15 +30,13 @@ test("unknown tunables refuse at the founder's declaration", () => {
     result.diagnostics[0]?.message,
   ]).toEqual([
     undefined,
-    5,
+    4,
     'money.transfer has no tunable "ammount". Did you mean `amount`? Tunables: payer, payee, amount',
   ]);
 });
 
 test("exposure renames one action without granting authority", () => {
-  const result = compile(
-    transfer + "expose sale.pay as checkout\nhide sale.cancel\n",
-  );
+  const result = compile(transfer + "expose sale.pay as checkout\n");
   const actions = result.artifacts?.document.instruments[0]?.actions;
   expect([
     actions?.pay?.publicAction,
@@ -47,13 +46,12 @@ test("exposure renames one action without granting authority", () => {
 });
 
 const pool = `program pool_test "Pool"
-use money
 party payer: person
 party payee: business
 pool = money.pool { payer: payer, payee: payee, target: 1000 SAR, closes: 2026-12-31 }
 `;
 
-test("clock and parent actions carry no public name and cannot be exposed", () => {
+test("actions are hidden until exposed, and clock and parent actions cannot be", () => {
   const document = compile(pool).artifacts?.document;
   const actions = Object.fromEntries(
     document?.instruments.flatMap((instrument) =>
@@ -65,7 +63,7 @@ test("clock and parent actions carry no public name and cannot be exposed", () =
   );
   expect(actions["pool.fail"]).toBeNull();
   expect(actions["pool_contribution.refund"]).toBeNull();
-  expect(actions["pool.pay"]).toBe("payPool");
+  expect(actions["pool.pay"]).toBeNull();
   const exposed = compile(pool + "expose pool.fail as close\n");
   expect(exposed.verdict).toBe("invalid");
   expect(exposed.diagnostics[0]?.message).toContain("runs on the clock");
@@ -118,10 +116,8 @@ instrument invoice {
 });
 
 test("enum branches keep only the chosen ordered moves", () => {
-  const standardLibrary = {
-    source: (name: string) =>
-      name === "choice"
-        ? `header choice
+  const choices = testToolchain([
+    `header choice
 instrument transfer(direction: enum(forward, reverse) = forward) {
  fields { amount: money = 100 SAR }
  lifecycle { states: [paid], initial: paid }
@@ -129,22 +125,20 @@ instrument transfer(direction: enum(forward, reverse) = forward) {
   when direction is forward { moves self.amount from buyer to seller }
   when direction is reverse { moves self.amount from seller to buyer }
  }
-}`
-        : undefined,
-  };
+}`,
+  ]);
   const source = `program choices "Choices"
-use choice
 party buyer: person
 party seller: business
 sale = choice.transfer { direction: forward }`;
-  const forward = compile(source, { standardLibrary });
+  const forward = compile(source, choices);
   const reverse = compile(
     source.replace("direction: forward", "direction: reverse"),
-    { standardLibrary },
+    choices,
   );
   const invalid = compile(
     source.replace("direction: forward", "direction: sideways"),
-    { standardLibrary },
+    choices,
   );
   const from = (result: typeof forward) =>
     result.artifacts?.document.instruments[0]?.actions.create?.moves.map(
@@ -158,8 +152,8 @@ sale = choice.transfer { direction: forward }`;
 });
 
 test("field branches follow the bound object shape in either declaration order", () => {
-  const standardLibrary = {
-    source: () => `header shape
+  const shapes = testToolchain([
+    `header shape
 instrument linked {
  fields { relation: text }
  lifecycle { states: [ready], initial: ready }
@@ -177,7 +171,7 @@ instrument consumer(target: ref) {
   when target has relation { moves self.amount from buyer to seller }
  }
 }`,
-  };
+  ]);
   for (const kind of ["linked", "plain"])
     for (const reversed of [false, true]) {
       const declarations = [
@@ -186,8 +180,8 @@ instrument consumer(target: ref) {
       ];
       if (reversed) declarations.reverse();
       const result = compile(
-        `program shapes "Shapes"\nuse shape\nparty buyer: person\nparty seller: business\n${declarations.join("\n")}`,
-        { standardLibrary },
+        `program shapes "Shapes"\nparty buyer: person\nparty seller: business\n${declarations.join("\n")}`,
+        shapes,
       );
       if (!result.artifacts)
         throw new Error(JSON.stringify(result.diagnostics));
@@ -201,16 +195,13 @@ instrument consumer(target: ref) {
 test("payout authors a business amount and the compiler correlates settlement", () => {
   const result = compile(
     `program payout_test "Payout"
-use money
 party payer: person
 party payee: business
 payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
-    {
-      adapterRegistry: {
-        fixture: { adapter: genericAdapter, operation: "boundary.observe" },
-      },
-    },
+    testToolchain([], {
+      fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+    }),
   );
   expect(result.diagnostics).toEqual([]);
   const actions = result.artifacts!.document.instruments[0]!.actions;
@@ -260,13 +251,13 @@ test("instruction evidence requires a text identity path", () => {
 test("boundary dispatch refuses an unknown adapter binding", () => {
   const result = compile(
     `program payout_test "Payout"
-use money
 party payer: person
 party payee: business
 payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "missing" }
 `,
     {
-      adapterRegistry: Object.create({
+      ...defaultToolchain,
+      adapters: Object.create({
         missing: { adapter: genericAdapter, operation: "boundary.observe" },
       }),
     },
@@ -279,16 +270,13 @@ payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "mi
 test("direct UDL refuses a boundary without its retained adapter snapshot", () => {
   const result = compile(
     `program payout_test "Payout"
-use money
 party payer: person
 party payee: business
 payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
-    {
-      adapterRegistry: {
-        fixture: { adapter: genericAdapter, operation: "boundary.observe" },
-      },
-    },
+    testToolchain([], {
+      fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+    }),
   );
   const document = result.artifacts!.document;
   delete document.instruments[0]!.actions.instruct!.subject;
@@ -328,7 +316,6 @@ test("economics chooses a purpose from the resolved recipient", () => {
     ["provider", "pass_through", "programOperator"],
   ] as const) {
     const result = compile(`program costs "Costs"
-use financing
 party provider: business
 object purchase "Purchase" {
  fields { price: money }
@@ -357,7 +344,6 @@ object purchase "Purchase" {
 // Mutation: classify a hold released to an outside seller as a company payout.
 test("escrow passes the payer's cash through to an outside seller and earns only the fee", () => {
   const result = compile(`program market "Market"
-use escrow
 object sale "Sale" {
  fields { price: money }
  attach escrow = escrow.hold { payer: actor, payee: owner, fee: { seller: 10%, tax: 0% } }

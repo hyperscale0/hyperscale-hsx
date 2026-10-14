@@ -1,10 +1,6 @@
 // Denver delivery van finance funds a 69,000 SAR van with 10% down and 36 monthly instalments.
 // It records reminders, late charges, hardship extensions, early repayment and financed returns.
 program car_financing "Denver delivery van finance"
-use escrow
-use financing
-use purchase
-use collections
 party dealer: business
 
 // The dealer invoices 60,000 SAR plus 15% VAT. Set price to 69,000 SAR.

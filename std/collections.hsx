@@ -37,7 +37,12 @@ instrument case(on: ref<financing.installments>[], agency: party, capital: party
 }
 
 instrument contact(case: ref<collections.case>[], agency: party, max_contacts: integer = 10, window: duration = 30d, contact_from: integer(0, 23) = 8, contact_until: integer(1, 23) = 20, timezone: text = "Asia/Riyadh") {
-  constraints { contact_from: less_than(contact_until) }
+  checks {
+    contact_from < contact_until {
+      message: "Attachment `{attachment}` sets `contact_from` at or after `contact_until`, so the daily contact window is empty."
+      fix: "Choose a `contact_from` hour before `contact_until`, such as `contact_from: 8, contact_until: 20`."
+    }
+  }
   summary: "An agency contact admitted against the locked rolling count and local hours."
   fields { agency: account of agency, case: ref<case>, attemptedAt: date?, evidence: text, maximum: integer = max_contacts }
   lifecycle { states: [recorded], initial: recorded }
@@ -62,7 +67,12 @@ instrument contact(case: ref<collections.case>[], agency: party, max_contacts: i
 
 
 instrument reminder(on: ref<financing.installments>[], operator: party = programOperator, before_days: integer(0, 366) = 3, overdue_days: integer(1, 366) = 1, max_per_day: integer(1, 10) = 1, send_from: integer(0, 23) = 8, send_until: integer(1, 24) = 20, timezone: text = "Asia/Riyadh") {
-  constraints { send_from: less_than(send_until) }
+  checks {
+    send_from < send_until {
+      message: "Attachment `{attachment}` sets `send_from` at or after `send_until`, so the daily sending window is empty."
+      fix: "Choose a `send_from` hour before `send_until`, such as `send_from: 8, send_until: 20`."
+    }
+  }
   summary: "Send an email to the installment borrower's stored contact address."
   fields { slice: ref<on.slice> }
   lifecycle { states: [ready], initial: ready }

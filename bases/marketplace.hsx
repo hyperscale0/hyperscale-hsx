@@ -1,7 +1,5 @@
 // Turn a seller’s offer into an order with payment held until acceptance.
 program marketplace_base "Connect buyers and sellers"
-use marketplace
-use escrow
 party seller: business
 
 object order "Order" {

@@ -1,11 +1,8 @@
-import {
-  bindingDependencies,
-  parameterDiagnostics,
-} from "./binding-contract.ts";
 import { tunableBounds } from "./tunables.ts";
-import { parseHeader } from "./header-source.ts";
-import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
+import { instrumentChecks, parseHeader } from "./header-source.ts";
+import { defaultToolchain } from "./toolchain.ts";
 import type { BlockExpr, Expr } from "./ast.ts";
+import { scan } from "./lex.ts";
 
 export const HEADER_NAMES = [
   "money",
@@ -22,15 +19,34 @@ export const HEADER_NAMES = [
   "reporting",
 ] as const;
 
+/** The headers a program names through qualified names such as booking.reservation, in first-named order. */
+export function namedHeaders(
+  source: string,
+  std: ReadonlyMap<string, string> = defaultToolchain.std,
+): string[] {
+  const tokens = scan(source).tokens.filter((t) => t.kind !== "comment");
+  const named = new Set<string>();
+  tokens.forEach((token, i) => {
+    if (
+      token.kind === "name" &&
+      tokens[i + 1]?.text === "." &&
+      tokens[i - 1]?.text !== "." &&
+      std.has(token.text)
+    )
+      named.add(token.text);
+  });
+  return [...named];
+}
+
 /** The compiler frontend owns header metadata used by docs and catalogue consumers. */
 export function headerManifest(
-  library: StandardLibrary = bundledStandardLibrary,
+  std: ReadonlyMap<string, string> = defaultToolchain.std,
   names: readonly string[] = HEADER_NAMES,
 ) {
   return {
     version: 1,
     headers: names.map((name) => {
-      const source = library.source(name);
+      const source = std.get(name);
       if (!source) throw new Error(`Missing standard header ${name}`);
       const parsed = parseHeader(source, name);
       const spelling = (expression: Expr) =>
@@ -132,7 +148,6 @@ export function headerManifest(
                   ? summary.value
                   : decl.name.replaceAll("_", " "),
               authoringTemplate: {
-                requiredImport: `use ${name}`,
                 instancePlaceholder: "${instance}",
                 source:
                   "attach ${instance} = " +
@@ -148,29 +163,13 @@ export function headerManifest(
                 })),
               },
               tunables,
-              dependencies: bindingDependencies(decl).map(
-                ({ span: _span, ...dependency }) => dependency,
-              ),
-              parameterDiagnostics: parameterDiagnostics(decl),
-              constraints: (() => {
-                const block = decl.body.entries.find(
-                  (entry) => entry.key === "constraints",
-                )?.value;
-                return block?.kind === "block"
-                  ? block.entries.map((entry) => {
-                      if (
-                        entry.value.kind !== "call" ||
-                        entry.value.args.length !== 1
-                      )
-                        throw new Error("invalid tunable constraint");
-                      return {
-                        tunable: entry.key,
-                        relation: entry.value.name,
-                        other: spelling(entry.value.args[0]!),
-                      };
-                    })
-                  : [];
-              })(),
+              // Each rule as written, scoped by its when, with its own words.
+              checks: instrumentChecks(decl).map((check) => ({
+                rule: spelling(check.rule),
+                ...(check.when ? { when: check.when } : {}),
+                message: check.message,
+                fix: check.fix,
+              })),
               parties: tunables
                 .filter((t) => t.type === "party")
                 .map((t) => t.name),

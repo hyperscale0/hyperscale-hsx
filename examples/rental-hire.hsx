@@ -1,6 +1,5 @@
 // Equipment rental: refundable security and one hire, earned only after pickup.
 program equipment_hire "Equipment hire and security"
-use rental
 
 object rental "Rental deposit" {
   fields { item: text, renter: text, price: money }

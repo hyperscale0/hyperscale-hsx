@@ -6,7 +6,6 @@ const output = document.querySelector<HTMLElement>("#output")!;
 const tokens = document.querySelector<HTMLElement>("#tokens")!;
 const explanation = document.querySelector<HTMLElement>("#explanation")!;
 source.value = `program tips "Tips"
-use money
 object tip "Tips" {
   fields { message: text }
   attach payment = money.transfer {

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
+import { testToolchain } from "./fixtures/toolchain.ts";
 
 const declarations = `party agency: business
 party alternate: business
@@ -14,7 +15,6 @@ function binding(
   body = "",
 ) {
   const source = `program bindings "Bindings"
-use fixture
 ${parties}
 object car "Car" { attach sale = fixture.sale { ${supplied} expose run as run } }`;
   const header = `header fixture
@@ -24,17 +24,7 @@ instrument sale(${parameters}) {
  action create {}
  action run { from: open, to: closed ${body} }
 }`;
-  return compile(source, {
-    standardLibrary: {
-      source: (name) =>
-        name === "fixture"
-          ? header
-          : readFileSync(
-              new URL(`../std/${name}.hsx`, import.meta.url),
-              "utf8",
-            ),
-    },
-  });
+  return compile(source, testToolchain([header]));
 }
 function bindings(result: ReturnType<typeof compile>) {
   expect(result.diagnostics).toEqual([]);
@@ -173,8 +163,8 @@ instrument sale(payer: party = missing) {
  action create {}
 }`;
   const imported = compile(
-    'program p "P"\nuse fixture\nobject car "Car" { attach sale = fixture.sale {} }',
-    { standardLibrary: { source: () => header } },
+    'program p "P"\nobject car "Car" { attach sale = fixture.sale {} }',
+    testToolchain([header]),
   ).diagnostics[0]!;
   expect(imported.source).toBe("fixture");
   expect(header.slice(imported.span.start, imported.span.end)).toBe("missing");

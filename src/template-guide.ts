@@ -1,10 +1,10 @@
 import type { BlockExpr, Entry, Expr, InstrumentDecl } from "./ast.ts";
 import { catalogProgramSource } from "./catalog-program.ts";
-import { compile, type CompileOptions } from "./compile.ts";
+import { compile } from "./compile.ts";
 import { parseHeader } from "./header-source.ts";
 import { headerManifest, HEADER_NAMES } from "./headers.ts";
 import { parseProgram } from "./parse.ts";
-import { bundledStandardLibrary, type StandardLibrary } from "./std-library.ts";
+import { defaultToolchain, type Toolchain } from "./toolchain.ts";
 
 export interface TemplateIndexEntry {
   qualifiedName: string;
@@ -29,7 +29,6 @@ export interface TemplateGuide {
   qualifiedName: string;
   summary: string;
   signature: string;
-  use: string;
   states: string[];
   tunables: Array<{
     name: string;
@@ -62,9 +61,9 @@ const SUBJECT_NOTE =
 
 /** One line per template, small enough to read whole. */
 export function templateIndex(
-  library: StandardLibrary = bundledStandardLibrary,
+  toolchain: Toolchain = defaultToolchain,
 ): TemplateIndexEntry[] {
-  return headerManifest(library).headers.flatMap((header) =>
+  return headerManifest(toolchain.std).headers.flatMap((header) =>
     header.objects.map((object) => ({
       qualifiedName: object.qualifiedName,
       summary: object.summary,
@@ -80,17 +79,16 @@ export function templateIndex(
  */
 export function templateGuide(
   qualifiedName: string,
-  options: GuideOptions = {},
+  toolchain: Toolchain = defaultToolchain,
 ): TemplateGuide | undefined {
-  const library = options.library ?? bundledStandardLibrary;
   const [header, name, extra] = qualifiedName.split(".");
   if (!header || !name || extra !== undefined) return undefined;
   if (!(HEADER_NAMES as readonly string[]).includes(header)) return undefined;
-  const source = library.source(header);
+  const source = toolchain.std.get(header);
   if (!source) return undefined;
-  const manifest = headerManifest(library, [header]).headers[0]!.objects.find(
-    (object) => object.name === name,
-  );
+  const manifest = headerManifest(toolchain.std, [
+    header,
+  ]).headers[0]!.objects.find((object) => object.name === name);
   const decl = parseHeader(source, header).decls.find(
     (d): d is InstrumentDecl => d.kind === "instrument" && d.name === name,
   );
@@ -103,11 +101,11 @@ export function templateGuide(
   const actions = guideActions(decl.body, spell);
   // Compile once bare, then expose each root action a party or caller runs
   // that these bindings keep, and compile again to prove the example.
-  const example = exampleProgram(qualifiedName, library);
+  const example = exampleProgram(qualifiedName, toolchain);
   const bare = compiledAttachment(
     example.render([]),
     example.attachment,
-    options,
+    toolchain,
   );
   const exposes = actions
     .filter(
@@ -118,7 +116,7 @@ export function templateGuide(
     )
     .map((action) => `expose ${action.name}`);
   const program = example.render(exposes);
-  const compiled = compiledAttachment(program, example.attachment, options);
+  const compiled = compiledAttachment(program, example.attachment, toolchain);
   const create = compiled.actions.create;
   const economics = compiled.warnings.flatMap((warning) =>
     warning.code === "economic_purpose_missing" &&
@@ -130,7 +128,6 @@ export function templateGuide(
     qualifiedName,
     summary: manifest.summary,
     signature: manifest.signature,
-    use: `use ${header}`,
     states: manifest.states,
     tunables: manifest.tunables.map((tunable) => ({
       name: tunable.name,
@@ -482,12 +479,9 @@ interface Example {
 
 /**
  * The template's attach from the catalog program, with every attach it names
- * and the parties and headers those need.
+ * and the parties those need.
  */
-function exampleProgram(
-  qualifiedName: string,
-  library: StandardLibrary,
-): Example {
+function exampleProgram(qualifiedName: string, toolchain: Toolchain): Example {
   const program = parseProgram(catalogProgramSource).program;
   const object = program.decls.find((decl) => decl.kind === "object");
   if (object?.kind !== "object")
@@ -499,7 +493,6 @@ function exampleProgram(
           {
             entry,
             name: match[1]!,
-            header: match[2]!,
             template: `${match[2]}.${match[3]}`,
           },
         ]
@@ -518,7 +511,7 @@ function exampleProgram(
   // A parameter that defaults to object(header.template) binds the sibling
   // attach of that template, so the example carries that attach too.
   const templates = new Map(
-    headerManifest(library).headers.flatMap((header) =>
+    headerManifest(toolchain.std).headers.flatMap((header) =>
       header.objects.map((object) => [object.qualifiedName, object] as const),
     ),
   );
@@ -552,7 +545,6 @@ function exampleProgram(
     render: (exposes) =>
       [
         `program example "${qualifiedName} example"`,
-        ...new Set(included.map((attach) => `use ${attach.header}`)),
         ...program.decls.flatMap((decl) =>
           decl.kind === "party" && used.has(decl.name) ? [text(decl.span)] : [],
         ),
@@ -597,22 +589,13 @@ function wrapAttach(line: string): string {
   ].join("\n");
 }
 
-type GuideOptions = Pick<CompileOptions, "adapterRegistry"> & {
-  library?: StandardLibrary;
-};
-
 /** The example's compiled root instrument, or the compiler's refusal. */
 function compiledAttachment(
   source: string,
   attachment: string,
-  options: GuideOptions,
+  toolchain: Toolchain,
 ) {
-  const result = compile(source, {
-    ...(options.library ? { standardLibrary: options.library } : {}),
-    ...(options.adapterRegistry
-      ? { adapterRegistry: options.adapterRegistry }
-      : {}),
-  });
+  const result = compile(source, toolchain);
   const document = result.artifacts?.document;
   if (!document)
     throw new Error(

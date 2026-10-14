@@ -3,11 +3,7 @@ import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
 import { runCli } from "../src/cli.ts";
 
-const standardLibrary = {
-  source: (name: string) =>
-    readFileSync(new URL(`../std/${name}.hsx`, import.meta.url), "utf8"),
-};
-const build = (source: string) => compile(source, { standardLibrary });
+const build = (source: string) => compile(source);
 const errors = (source: string) =>
   build(source).diagnostics.map((item) => `${item.code} ${item.message}`);
 
@@ -15,9 +11,6 @@ const errors = (source: string) =>
 // selects the other object's plan and fails UDL2002.
 test("an unfinanced escrow beside a financed one only blocks on its explicit funding controller", () => {
   const result = build(`program shop "Shop"
-use escrow
-use purchase
-use financing
 object cash_sale "Cash sale" {
   fields { title: text, price: money }
   attach sale = escrow.hold { payer: owner, expose create as create_payment, expose refund as refund_buyer }
@@ -117,9 +110,6 @@ instrument guarantee() {
 // Mutation: restore the fixed `allowance` repair. The fix names an unrelated attachment.
 test("a missing sibling names the template, the object and where it does exist", () => {
   const [diagnostic] = build(`program coop "Coop"
-use lending
-use financing
-use wallet
 object member_loan "Member loan" {
   fields { purpose: text, price: money }
   attach allowance = financing.limits { borrower: owner, per_borrower: 30000 SAR }
@@ -173,7 +163,6 @@ test("the CLI prints one period between a message and its fix", async () => {
     out: (line) => lines.push(line),
     err: (line) => lines.push(line),
     readFile: async () => `program p "P"
-use financing
 object membership "Membership" {
   attach plan = financing.installments { months: 3, pricing: flat_total, profit_rate: 2%, borrower: actor, disburse_to: borrower }
 }`,
@@ -186,9 +175,6 @@ object membership "Membership" {
 // self.plan.borrower is unknown and the move loses its economics.
 test("economics may name a party reached through a sibling reference", () => {
   const result = build(`program shop "Shop"
-use escrow
-use purchase
-use financing
 instrument late_fee(on: ref<financing.installments>) {
   summary: "A late fee on one plan."
   fields { plan: ref<on>, lateFees: account(programOperator, cash, "late_fees"), fee: money = 60 SAR }

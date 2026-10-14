@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { templateGuide } from "../src/template-guide.ts";
-import { standardLibrary } from "./fixtures/std-source.ts";
 
 const program = (bindings: string, extra = "") => `program gym "Gym"
-use money
 object membership "Membership" {
  attach dues = money.schedule { ${bindings}
   expose create as start, expose activate as accept, expose stop as end }
@@ -12,7 +10,7 @@ ${extra}
 }`;
 
 const instruments = (bindings: string) => {
-  const result = compile(program(bindings), { standardLibrary });
+  const result = compile(program(bindings));
   if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
   const find = (id: string) =>
     result.artifacts!.document.instruments.find((item) => item.id === id)!;
@@ -92,7 +90,6 @@ test("without every the schedule keeps its dated form and needs a count", () => 
   expect(occurrence.fields.map((field) => field.name)).toContain("base");
   const result = compile(
     program("payer: owner, payee: operator, amount: 750 SAR"),
-    { standardLibrary },
   );
   expect(result.verdict).toBe("invalid");
   expect(result.diagnostics[0]).toMatchObject({
@@ -149,7 +146,6 @@ test("every takes days, weeks, months and years, and refuses a clock time", () =
   }
   const result = compile(
     program("payer: owner, payee: operator, amount: 10 SAR, every: 5 minutes"),
-    { standardLibrary },
   );
   expect(result.verdict).toBe("invalid");
   expect(result.diagnostics[0]!.message).toBe("every needs a calendar period");
@@ -164,7 +160,6 @@ test("check refuses a schedule whose payer is the payee that runs create", () =>
   ]) {
     const result = compile(
       program(`${bindings}, amount: 750 SAR, every: 1 month`),
-      { standardLibrary },
     );
     expect(result.verdict).toBe("invalid");
     const [diagnostic] = result.diagnostics;
@@ -181,7 +176,6 @@ test("check warns when only the run decides whether the company pays itself", ()
       "payer: owner, payee: operator, amount: 750 SAR, every: 1 month",
       " attach fee = money.transfer { payer: actor, payee: operator, amount: 50 SAR\n  expose create as start_fee, expose pay as pay_fee }",
     ),
-    { standardLibrary },
   );
   expect(result.verdict).toBe("valid");
   const warnings = result.warnings.filter(

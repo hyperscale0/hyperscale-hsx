@@ -5,8 +5,6 @@ import { templateGuide } from "../src/template-guide.ts";
 
 const program = (attach: string) => `program everytest "Every test"
 currency SAR
-use money
-use booking
 object plan "Plan" {
   fields { bike: text }
   columns: [bike]
@@ -181,7 +179,6 @@ test.each([
   [
     "a field default",
     `program cars "Cars"
-use money
 object car "Car" {
   fields {
     seats: integer = 4

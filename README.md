@@ -70,7 +70,7 @@ const hover = describe(source, source.indexOf("program"));
 
 Both functions accept incomplete source and need no Node or editor framework.
 Spans use half-open UTF-16 offsets. Whitespace has no span; unknown hover targets
-return `null`. Pass a `StandardLibrary` as the last argument for custom headers.
+return `null`. Pass a `Toolchain` as the last argument for custom headers.
 Header signatures and bounds come from compiler metadata. Bounds use minor
 currency units, basis points and milliseconds.
 

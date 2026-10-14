@@ -63,7 +63,6 @@ test("only a financed hold has the plan-run unwind", () => {
   });
   const plain = instrument(
     `program shop "Shop"
-use escrow
 object order "Order" {
  attach sale = escrow.hold { payer: actor, payee: owner }
 }`,
@@ -108,6 +107,11 @@ test("membership payout counts received pots independently of paid contributions
     {
       kind: "aggregate",
       selection: {
+        family: {
+          module: "savings",
+          exportPath: "membership",
+          digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
         instrument: ["group_membership"],
         reference: "circle",
         anchor: "self.circle",
@@ -130,6 +134,11 @@ test("membership payout counts received pots independently of paid contributions
   expect(circle.actions.close!.requires).toContainEqual({
     kind: "aggregate",
     selection: {
+      family: {
+        module: "savings",
+        exportPath: "membership",
+        digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
       instrument: "group_membership",
       reference: "circle",
       anchor: "self.id",

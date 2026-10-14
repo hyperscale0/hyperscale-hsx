@@ -1,6 +1,5 @@
 // Let a customer add funds and reserve each spend before payment.
 program wallet_base "Offer prepaid credit"
-use wallet
 
 object balance "Balance" {
   attach balance = wallet.balance {

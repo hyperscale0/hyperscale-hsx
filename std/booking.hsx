@@ -23,7 +23,20 @@ header booking
 // composed counts.
 
 instrument reservation(customer: party = party(person), operator: party = programOperator, early_until: duration = 30d, late_from: duration = 15d, balance_due: duration = 15d, middle_forfeit: percent = 0%, late_forfeit: percent = 0%) {
-  constraints { late_from: less_than(early_until) }
+  checks {
+    late_from < early_until {
+      message: "Attachment `{attachment}` sets `late_from` at or above `early_until`, so the late cancellation window opens before the early one closes."
+      fix: "Choose a `late_from` shorter than `early_until`, such as `early_until: 30d, late_from: 15d`."
+    }
+    middle_forfeit is percent {
+      message: "`middle_forfeit` is the share of the held money a middle cancellation keeps, from 0% to 100%."
+      fix: "Write `middle_forfeit` as a percentage from 0% to 100%, such as `middle_forfeit: 25%`."
+    }
+    late_forfeit is percent {
+      message: "`late_forfeit` is the share of the held money a late cancellation keeps, from 0% to 100%."
+      fix: "Write `late_forfeit` as a percentage from 0% to 100%, such as `late_forfeit: 50%`."
+    }
+  }
   revisioned: true
   summary: "Take a deposit and a balance for a dated booking, with cancellation windows before departure."
   fields {

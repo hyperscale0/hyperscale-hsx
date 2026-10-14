@@ -1,4 +1,4 @@
-import type { Diagnostic, Span } from "./ast.ts";
+import { lineColAt, type Diagnostic, type Span } from "./ast.ts";
 
 export class CompileFailure extends Error {
   constructor(readonly diagnostic: Diagnostic) {
@@ -24,6 +24,54 @@ export function failWithCode(
     fix,
     span: expr.span,
     ...(expr.source ? { source: expr.source } : {}),
+  });
+}
+
+export interface Site {
+  span: Span;
+  source?: string;
+}
+/**
+ * One thing given twice. The message names both sites as line:column, and
+ * both values when they differ; the first site goes in `related`.
+ * `texts` holds each source by name, "program" for the program itself.
+ */
+export function conflict(
+  texts: ReadonlyMap<string, string>,
+  subject: string,
+  first: Site,
+  second: Site,
+  fix: string,
+  {
+    values,
+    code = "HSX1001",
+  }: { values?: readonly [Site, Site]; code?: string } = {},
+): never {
+  const text = (site: Site) => texts.get(site.source ?? "program") ?? "";
+  const at = (site: Site) => {
+    const { line, column } = lineColAt(text(site), site.span.start);
+    const source = site.source ?? "program";
+    return `${source === (second.source ?? "program") ? "" : `${source} `}${line}:${column}`;
+  };
+  const [before, after] = (values ?? []).map((site) =>
+    text(site).slice(site.span.start, site.span.end).trim(),
+  );
+  throw new CompileFailure({
+    code,
+    message:
+      before && after && before !== after
+        ? `${subject} with different values: ${before} at ${at(first)} and ${after} at ${at(second)}`
+        : `${subject}, at ${at(first)} and ${at(second)}`,
+    fix,
+    span: second.span,
+    ...(second.source ? { source: second.source } : {}),
+    related: [
+      {
+        source: first.source ?? "program",
+        span: first.span,
+        message: "First given here",
+      },
+    ],
   });
 }
 
