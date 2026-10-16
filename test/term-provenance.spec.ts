@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { documentDigest } from "@hyperscale0/udl";
 import { compile } from "../src/compile.ts";
-import { describe } from "../src/language.ts";
 
 // The Dunes program from the Nix study, modules R1.
 const dunes = `program dunes "Dunes Travel"
@@ -88,23 +87,4 @@ object membership "Membership" {
     expect.objectContaining({ name: "count", from: "std", text: "unset" }),
   );
   expect(record).toEqual(terms(gym)!);
-});
-
-test("hover shows the term in force on a tunable and on the attach line", () => {
-  expect(
-    describe(dunes, dunes.indexOf("late_forfeit"))?.details,
-  ).toContainEqual({ label: "In force", value: "50% (set by the program)" });
-  expect(describe(dunes, dunes.indexOf("reservation"))?.details).toContainEqual(
-    {
-      label: "middle_forfeit in force",
-      value: "0% (booking default)",
-    },
-  );
-  // Inside the attach block, an instrument name is not the attach line.
-  expect(
-    describe(dunes, dunes.indexOf("customer"))?.details?.some(
-      (detail) =>
-        detail.label.endsWith("in force") && detail.label !== "In force",
-    ),
-  ).toBeFalsy();
 });

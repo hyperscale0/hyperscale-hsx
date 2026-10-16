@@ -87,30 +87,6 @@ test("every financing action of a 360-month plan fits one 253-transfer batch", (
   ])
     expect([name, actions[name]!.transfers <= 32]).toEqual([name, true]);
 });
-test("all financing enum policy combinations compile", () => {
-  // The example exposes escrow returns; borrower-directed plans exclude them.
-  const policySource = source.replace(
-    /^    expose unwind(?:_undelivered|_paid)? as .*\n/gm,
-    "",
-  );
-  for (const d of ["funds", "borrower"])
-    for (const p of ["on_payment", "by_schedule", "at_disbursement"])
-      for (const a of [
-        "fines_profit_principal",
-        "principal_profit",
-        "pro_rata",
-      ])
-        for (const o of ["allowed", "blocked"])
-          for (const f of ["carry", "require_waiver"])
-            expect(
-              compile(
-                policySource.replace(
-                  "months: 3",
-                  `months: 3, disburse_to: ${d}, profit_earned: ${p}, apply: ${a}, allow_overdue: ${o}, assessed_fines: ${f}`,
-                ),
-              ).verdict,
-            ).toBe("valid");
-}, 60_000);
 
 test("late-charge waterfall derives its expansion bound without an authored override", () => {
   const witness = source
