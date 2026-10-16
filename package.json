@@ -1,6 +1,6 @@
 {
   "name": "@hyperscale0/hsx",
-  "version": "1.0.351",
+  "version": "1.0.352",
   "description": "The strictly typed HSX language: compile total financial programs into canonical UDL.",
   "keywords": [
     "hsx",
@@ -75,12 +75,12 @@
     "bases:bundle": "bun scripts/bundle-bases.ts"
   },
   "dependencies": {
-    "@hyperscale0/adl": "1.0.351",
-    "@hyperscale0/udl": "1.0.351",
+    "@hyperscale0/adl": "1.0.352",
+    "@hyperscale0/udl": "1.0.352",
     "fast-sha256": "1.3.0"
   },
   "devDependencies": {
-    "bun-types": "1.4.2",
+    "bun-types": "1.4.3",
     "tsc-rs": "0.7.0"
   },
   "contributors": [
