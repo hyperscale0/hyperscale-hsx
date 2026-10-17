@@ -9,7 +9,11 @@ import {
 import { buildUdlCostManifest, type UdlCostManifest } from "./cost.ts";
 import {
   canonicalJson,
+  adapterDeclaration,
   digest,
+  economicPurposes,
+  fixedIsoDurationMs,
+  MAX_FIXED_DURATION_MS,
   validateUdl,
   resolveField,
   sameAccount,
@@ -487,20 +491,10 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
       d: 86400000,
       w: 604800000,
     };
-    const iso =
-      /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?=\d)(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
-        expr.value,
-      );
     const n = short
       ? Number(short[1]) * units[short[2]!]!
-      : iso
-        ? Number(iso[1] ?? 0) * units.w! +
-          Number(iso[2] ?? 0) * units.d! +
-          Number(iso[3] ?? 0) * units.h! +
-          Number(iso[4] ?? 0) * units.m! +
-          Number(iso[5] ?? 0) * units.s!
-        : NaN;
-    if (!Number.isSafeInteger(n) || n <= 0)
+      : (fixedIsoDurationMs(expr.value) ?? NaN);
+    if (!Number.isSafeInteger(n) || n <= 0 || n > MAX_FIXED_DURATION_MS)
       fail(
         expr,
         expr.value.includes(" ")
@@ -913,14 +907,7 @@ function lowerEconomics(
   const purposeName = purpose ? String(data(purpose)) : undefined;
   if (
     purposeName &&
-    ![
-      "earning",
-      "principal",
-      "participant_payout",
-      "internal",
-      "prepaid_credit",
-      "pass_through",
-    ].includes(purposeName)
+    !(economicPurposes as readonly string[]).includes(purposeName)
   )
     fail(
       purpose!,
@@ -3861,15 +3848,13 @@ export function compile(
                       }
                       validatedRequirements.push(result.data);
                     }
-                    const declaration = {
-                      ...(adapter.onboarding
-                        ? { onboarding: [...adapter.onboarding] }
-                        : {}),
+                    const declaration = adapterDeclaration({
+                      onboarding: adapter.onboarding,
                       provider: adapter.provider,
                       capability: adapter.capability,
                       operation,
                       requirements: validatedRequirements,
-                    };
+                    });
                     const snapshot: UdlAdapterSubjectSnapshot = {
                       ...declaration,
                       declarationDigest: digest(declaration),

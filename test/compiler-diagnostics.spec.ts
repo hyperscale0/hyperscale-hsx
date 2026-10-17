@@ -138,6 +138,18 @@ test("an incomplete ISO time component is an invalid duration", () => {
   ).toEqual(["delay: invalid duration"]);
 });
 
+test.each(["P10000000D", "92592593d"])(
+  "a duration past the UDL cap, %s, is an invalid duration",
+  (delay) => {
+    const fixture = headerProgram("delay: duration", `delay: ${delay}`);
+    expect(
+      compile(fixture.source, fixture.toolchain).diagnostics.map(
+        (d) => d.message,
+      ),
+    ).toEqual(["delay: invalid duration"]);
+  },
+);
+
 // Mutation: throw a plain Error in tunableBounds or re-anchor it at the supplied value.
 test("malformed integer bounds name the header declaration", () => {
   const fixture = headerProgram("count: integer(9, 1)", "count: 2");
