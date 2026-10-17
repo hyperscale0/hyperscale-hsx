@@ -53,7 +53,7 @@ Required amounts come from action inputs or the object's price. Optional setting
 use std defaults. Financing starts with two instalments and a required zero profit
 rate. Savings starts with two members and collects its start date and contribution
 at creation. Architect sets these terms during tailoring. Insurance binds the
-sandbox `conformance_boundary` adapter; replace it with the insurer's registered
+sandbox `fixture_bank` adapter; replace it with the insurer's registered
 adapter for that provider. Parties, accounts, funding, inputs and lifecycle
 prerequisites still govern execution.
 

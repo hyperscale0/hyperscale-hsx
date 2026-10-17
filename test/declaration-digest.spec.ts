@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { catalogProgramSource } from "../src/catalog-program.ts";
 import { compile } from "../src/compile.ts";
 import { defaultToolchain } from "../src/toolchain.ts";
@@ -43,19 +42,10 @@ test("a new field in a std declaration moves its family digest", () => {
 
 // Mutation: leave a std instrument without a family, or emit a format 1 revision.
 test("every instrument of every bundled std header names its family by digest", () => {
-  // The catalogue program attaches every published template; rental is not
-  // published, so its example covers it.
-  const instruments = [
-    catalogProgramSource,
-    readFileSync(
-      new URL("../examples/rental-hire.hsx", import.meta.url),
-      "utf8",
-    ),
-  ].flatMap((program) => {
-    const result = compile(program);
-    expect(result.diagnostics).toEqual([]);
-    return result.artifacts!.document.instruments;
-  });
+  // The catalogue program attaches every published template.
+  const result = compile(catalogProgramSource);
+  expect(result.diagnostics).toEqual([]);
+  const instruments = result.artifacts!.document.instruments;
   for (const { id, family } of instruments) {
     expect(family, id).toEqual({
       module: expect.any(String),

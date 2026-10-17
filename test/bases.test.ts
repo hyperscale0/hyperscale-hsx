@@ -1,10 +1,9 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
-import { readBases } from "../scripts/bundle-bases.ts";
-import { readExamples } from "../scripts/bundle-examples.ts";
+import { readHsxDir } from "../scripts/bundle-programs.ts";
 
-const authored = readBases();
-const examples = readExamples();
+const authored = readHsxDir("bases");
+const examples = readHsxDir("examples");
 const cities = /\b(?:Boston|Portland|Seattle|York|Lyon|Bristol|Denver)\b/i;
 
 test.each(authored)("$id compiles without diagnostics", (base) => {

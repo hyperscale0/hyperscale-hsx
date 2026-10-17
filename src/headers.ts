@@ -4,21 +4,6 @@ import { defaultToolchain } from "./toolchain.ts";
 import type { BlockExpr, Expr } from "./ast.ts";
 import { scan } from "./lex.ts";
 
-export const HEADER_NAMES = [
-  "money",
-  "marketplace",
-  "escrow",
-  "booking",
-  "wallet",
-  "financing",
-  "lending",
-  "insurance",
-  "collections",
-  "cards",
-  "savings",
-  "reporting",
-] as const;
-
 /** The headers a program names through qualified names such as booking.reservation, in first-named order. */
 export function namedHeaders(
   source: string,
@@ -41,7 +26,7 @@ export function namedHeaders(
 /** The compiler frontend owns header metadata used by docs and catalogue consumers. */
 export function headerManifest(
   std: ReadonlyMap<string, string> = defaultToolchain.std,
-  names: readonly string[] = HEADER_NAMES,
+  names: readonly string[] = [...std.keys()],
 ) {
   return {
     version: 1,

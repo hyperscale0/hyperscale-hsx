@@ -30,7 +30,7 @@ export type {
   Diagnostic,
 } from "./ast.ts";
 
-export { headerManifest, HEADER_NAMES, namedHeaders } from "./headers.ts";
+export { headerManifest, namedHeaders } from "./headers.ts";
 export {
   templateGuide,
   templateIndex,

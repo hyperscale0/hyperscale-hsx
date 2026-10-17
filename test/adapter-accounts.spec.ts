@@ -46,7 +46,7 @@ test("insurance pays and refunds insurer and broker as separate funded portions"
   if (!cover || !slice || !claim)
     throw new Error("Missing insurance agreements");
   expect(cover.fields.find((field) => field.name === "insurer")).toMatchObject({
-    owner: { adapter: "conformance_boundary" },
+    owner: { adapter: "fixture_bank" },
     book: "cash",
     key: "premium",
   });

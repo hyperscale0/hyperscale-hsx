@@ -110,6 +110,36 @@ interface Term {
   span: Span;
   source: string;
 }
+/** The object an instrument attaches to, and what the attach line binds. */
+interface AttachmentInfo {
+  subjectKindId: string;
+  attachmentName: string;
+  renames: Map<string, string>;
+  exposed: Map<string, string>;
+  parties: Record<string, AttachmentPartyBinding>;
+  attachments: UdlObjectAttachment[];
+  economics: Entry[];
+  child?: boolean;
+  /** How an economics selector names this instrument: "" or "occurrence.". */
+  selectorPrefix?: string;
+  rootInstrument?: string;
+  /** The template as the founder wrote it, such as money.schedule. */
+  template?: string;
+}
+interface InstrumentOptions {
+  /** A child record's bindings, enums and terms are its parent's. */
+  inherited?: Map<string, Expr>;
+  inheritedEnums?: Map<string, string[]>;
+  inheritedTerms?: Map<string, Term>;
+  attachmentInfo?: AttachmentInfo | undefined;
+  familyDeclaration?: UdlFamily | undefined;
+  standardOrigin?:
+    | NonNullable<CompileOriginMapEntry["standardBlock"]>
+    | undefined;
+}
+/** Where a subject requirement was written, for a conflict between two. */
+type RequirementOrigin = { source: string; span: Span; message: string };
+type Located = { span: Span; source?: string };
 export interface CompileWarning extends Omit<CompileDiagnostic, "severity"> {
   severity: "warning";
 }
@@ -515,6 +545,1509 @@ function declarationDigest(decl: InstrumentDecl): string {
 }
 
 /**
+ * The scope one instrument lowers in: the compile's shared state and the
+ * closures addInstrument builds over the instrument's bindings.
+ */
+interface InstrumentScope {
+  id: string;
+  decl: InstrumentDecl;
+  document: UdlDocument;
+  objects: ReadonlyMap<string, ObjectDecl>;
+  environment: ReadonlyMap<string, Expr>;
+  attachmentInfo: AttachmentInfo | undefined;
+  /** The instrument's fields and calculations, which lowering appends to. */
+  fields: UdlField[];
+  calculations: UdlCalculation[];
+  /** Fields an action calculates. */
+  actionTargets: ReadonlySet<string>;
+  /** The receipt field of each reservation that names no capture, by action. */
+  boundaryReceipts: Map<string, string>;
+  authored: WeakMap<object, Expr>;
+  splitMoves: WeakSet<object>;
+  resolve: (expr: Expr) => Expr;
+  path: (expr: Expr) => string;
+  moneyPath: (expr: Expr) => string;
+  val: (expr: Expr) => UdlValue;
+  data: (expr: Expr) => unknown;
+  isParty: (name: string) => boolean;
+  reachedParty: (name: string) => AttachmentPartyBinding | undefined;
+  branchRows: (block: BlockExpr) => Entry[];
+  resolveFamily: (rawPath: string, expr: Located) => UdlFamily | undefined;
+  resolveFamilyInstruments: (
+    family: UdlFamily,
+    currentInstId: string,
+    expr: Located,
+  ) => string[];
+  checkTargetFamily: (
+    targetIds: unknown,
+    expectedFamily: UdlFamily,
+    expr: Located,
+  ) => void;
+}
+type CreateMove = Extract<
+  UdlAction["moves"][number],
+  { operation: "internal_transfer.create" }
+>;
+/** The action a move lowers into, and the calculations that run with it. */
+interface ActionLowering {
+  name: string;
+  action: UdlAction;
+  calculations: UdlCalculation[];
+}
+/** Field rows, `when` branches taken, as UDL fields; a computed default becomes a calculation. */
+function lowerFields(scope: InstrumentScope, block: BlockExpr): UdlField[] {
+  const { id, objects, calculations, authored, resolve, val } = scope;
+  const result: UdlField[] = [];
+  for (const row of scope.branchRows(block)) {
+    const { type: t } = fieldType(row);
+    const constant =
+      row.value.kind === "default" ? resolve(row.value.value) : undefined;
+    const f = lowerFieldShape(row, resolve);
+    const type = f.type;
+    if (type === "list" && t.kind === "call") {
+      const item = t.args[0]!;
+      if (item.kind === "type" && item.name === "ref" && item.target) {
+        f.target = text(
+          resolve({ kind: "name", value: item.target, span: item.span }),
+        ).replaceAll(".", "_");
+        f.targetKind = objects.has(String(f.target)) ? "object" : "instrument";
+      }
+    }
+    if (type === "ref") {
+      if (t.kind === "block") {
+        const b = entries(t);
+        const famNode = b.get("targetFamily") ?? b.get("family");
+        let targetFamTuple: UdlFamily | undefined;
+        if (famNode) {
+          const famStr =
+            famNode.kind === "name" ? famNode.value : text(famNode);
+          targetFamTuple = scope.resolveFamily(famStr, famNode);
+          f.targetFamily = targetFamTuple;
+        }
+        if (b.has("target") || b.has("instrument")) {
+          const tgtExpr = (b.get("target") ?? b.get("instrument"))!;
+          const resolvedTgt = resolve(tgtExpr);
+          let tgtVal: string | string[];
+          if (resolvedTgt.kind === "list") {
+            const items = resolvedTgt.items.map((it) =>
+              text(resolve(it)).replaceAll(".", "_"),
+            );
+            tgtVal = items.length === 1 ? items[0]! : items;
+          } else {
+            tgtVal = text(resolvedTgt).replaceAll(".", "_");
+          }
+          f.target = tgtVal;
+          if (targetFamTuple) {
+            scope.checkTargetFamily(tgtVal, targetFamTuple, tgtExpr);
+          }
+        } else if (targetFamTuple) {
+          const matched = scope.resolveFamilyInstruments(
+            targetFamTuple,
+            id,
+            famNode!,
+          );
+          f.target = matched.length === 1 ? matched[0] : matched;
+        }
+      } else {
+        const target = t.kind === "type" ? t.target : undefined;
+        if (!target) fail(row, "reference needs a target", "write ref<object>");
+        const [root, ...tail] = target.split(".");
+        const resolved = scope.environment.get(root!);
+        // An optional field pointing at an unsupplied optional tunable
+        // has nothing to point at, so the instrument drops it.
+        if (
+          !resolved &&
+          f.optional &&
+          scope.decl.parameters.some((parameter) => parameter.key === root)
+        )
+          continue;
+        const resolvedTargets =
+          resolved?.kind === "list"
+            ? resolved.items
+            : resolved
+              ? [resolved]
+              : [];
+        const targets = resolvedTargets.map((value) =>
+          [text(resolve(value)).replaceAll(".", "_"), ...tail].join("_"),
+        );
+        f.target =
+          target === "self"
+            ? id
+            : targets.length === 1
+              ? targets[0]
+              : targets.length
+                ? targets
+                : target;
+      }
+      f.targetKind =
+        typeof f.target === "string" && objects.has(f.target)
+          ? "object"
+          : "instrument";
+    } else if (type === "account") {
+      if (t.kind === "call") {
+        if (t.args.length < 1 || t.args.length > 4)
+          fail(
+            t,
+            "account needs an owner, optional book, mode and key",
+            "write account(buyer, claim, contra)",
+          );
+        const owner = t.args[0]!;
+        if (owner.kind === "call" && owner.name === "adapter") {
+          if (owner.args.length !== 1)
+            fail(
+              owner,
+              "adapter needs one binding",
+              'write account(adapter(binding), cash, "premium")',
+            );
+          f.owner = { adapter: text(resolve(owner.args[0]!)) };
+        } else f.owner = text(resolve(owner));
+        f.book = t.args[1] ? text(t.args[1]) : "cash";
+        if (t.args[2]) {
+          const mode = text(t.args[2]);
+          if (mode === "contra") f.contra = true;
+          else f.key = mode;
+        }
+        if (t.args[3]) f.key = text(t.args[3]);
+      } else if (t.kind === "type" && t.owner) {
+        f.owner =
+          t.owner === "self"
+            ? "self"
+            : text(resolve({ kind: "name", value: t.owner, span: row.span }));
+        f.book = "cash";
+      } else
+        fail(
+          row,
+          "account needs an owner",
+          "write account of buyer or account of self",
+        );
+    }
+    if (
+      constant &&
+      !(constant.kind === "name" && constant.value === "runtime")
+    ) {
+      if (constant.kind === "call") {
+        const args =
+          constant.name === "aggregate" ? [] : constant.args.map(val);
+        const target = row.key;
+        if (constant.name === "aggregate" && constant.args.length === 2)
+          calculations.push({
+            target,
+            op: "aggregate",
+            selection: scope.data(
+              constant.args[0]!,
+            ) as import("@hyperscale0/udl").UdlSelection,
+            measure:
+              text(constant.args[1]!) === "count"
+                ? "count"
+                : { sum: text(constant.args[1]!) },
+          });
+        else if (constant.name === "at" && args.length === 2)
+          calculations.push({
+            target,
+            op: "at",
+            list: scope.path(constant.args[0]!),
+            position: args[1]!,
+          });
+        else if (constant.name === "ratio" && args.length === 3)
+          calculations.push({
+            target,
+            op: "ratio",
+            amount: args[0]!,
+            numerator: args[1]!,
+            denominator: args[2]!,
+            rounding: "floor",
+          });
+        else if (constant.name === "rate" && args.length === 2)
+          calculations.push({
+            target,
+            op: "rate",
+            base: args[0]!,
+            bps: args[1]!,
+            rounding: "floor",
+          });
+        else if (constant.name === "sum" || constant.name === "minimum")
+          calculations.push({ target, op: constant.name, values: args });
+        else if (constant.name === "subtract" && args.length >= 2)
+          calculations.push({
+            target,
+            op: "subtract",
+            base: args[0]!,
+            subtract: args.slice(1),
+          });
+        else if (constant.name === "multiply" && args.length === 2)
+          calculations.push({
+            target,
+            op: "multiply",
+            amount: args[0]!,
+            units: args[1]!,
+          });
+        else if (constant.name === "divide" && args.length === 2)
+          calculations.push({
+            target,
+            op: "divide",
+            amount: args[0]!,
+            divisor: args[1]!,
+            rounding: "floor",
+          });
+        else if (
+          ["before", "after"].includes(constant.name) &&
+          args.length === 2
+        )
+          calculations.push({
+            target,
+            op: "shift",
+            date: args[0]!,
+            milliseconds: args[1]!,
+            direction: constant.name as "before" | "after",
+          });
+        // after(start, 1 month, 3) steps calendar periods from start.
+        else if (constant.name === "after" && args.length === 3)
+          calculations.push({
+            target,
+            op: "step",
+            date: args[0]!,
+            period: args[1]!,
+            times: args[2]!,
+          });
+        else
+          fail(
+            constant,
+            `unknown calculation ${constant.name}`,
+            "use rate, sum, minimum, subtract, multiply, divide, before or after",
+          );
+        authored.set(calculations.at(-1)!, constant);
+      } else if (type === "enum" && constant.kind === "name")
+        f.value = constant.value;
+      else if (type === "money" && constant.kind === "name")
+        calculations.push({
+          target: row.key,
+          op: "sum",
+          values: [val(constant)],
+        });
+      else f.value = literal(constant, String(type));
+    }
+    authored.set(f, row.value);
+    result.push(f as UdlField);
+  }
+  return result;
+}
+// Instrument calculations run before every action, create included, so
+// a fee or split calculates there only on an amount held from create.
+function heldFromCreate(
+  { fields, calculations, actionTargets }: InstrumentScope,
+  amount: UdlValue,
+): boolean {
+  if (!("field" in amount)) return true;
+  const [root, name, ...rest] = amount.field.split(".");
+  const field = fields.find((item) => item.name === name);
+  return (
+    root === "self" &&
+    !rest.length &&
+    !!field &&
+    !actionTargets.has(name!) &&
+    (!field.optional ||
+      "value" in field ||
+      calculations.some((node) => node.target === name))
+  );
+}
+/** A move's economics; a `recipient` choice picks the company or participant branch. */
+function lowerEconomics(
+  scope: InstrumentScope,
+  economicsExpr: Expr | undefined,
+): UdlAction["moves"][number]["economics"] {
+  const { resolve, data, isParty } = scope;
+  if (economicsExpr) {
+    const resolved = resolve(economicsExpr);
+    if (resolved.kind === "name" && resolved.value === "unclassified")
+      return undefined;
+    const choices = entries(asBlock(resolve(economicsExpr)));
+    if (choices.has("recipient")) {
+      for (const term of choices.keys())
+        if (!["recipient", "company", "participant"].includes(term))
+          fail(
+            economicsExpr,
+            `unknown economics choice ${term}`,
+            "use recipient, company and participant",
+          );
+      const recipient = String(data(choices.get("recipient")!));
+      if (
+        !isParty(recipient) ||
+        !choices.has("company") ||
+        !choices.has("participant")
+      )
+        fail(
+          economicsExpr,
+          "economics choice needs a bound recipient and both branches",
+          "declare recipient, company and participant",
+        );
+      const company =
+        recipient === "operator" ||
+        recipient === "programOperator" ||
+        scope.document.parties[recipient]?.role === "program_operator";
+      return lowerEconomics(
+        scope,
+        choices.get(company ? "company" : "participant"),
+      );
+    }
+  }
+  const economicsParts = economicsExpr
+    ? entries(asBlock(resolve(economicsExpr)))
+    : undefined;
+  if (economicsParts) {
+    for (const term of economicsParts.keys())
+      if (!["purpose", "sourceParty", "reversalOf"].includes(term))
+        fail(
+          economicsExpr!,
+          `unknown economics term ${term}`,
+          "use purpose, sourceParty or reversalOf",
+        );
+  }
+  const purpose = economicsParts?.get("purpose");
+  const sourceParty = economicsParts?.get("sourceParty");
+  if (economicsParts && (!purpose || !sourceParty))
+    fail(
+      economicsExpr!,
+      "economics needs purpose and sourceParty",
+      "declare both economics fields",
+    );
+  const purposeName = purpose ? String(data(purpose)) : undefined;
+  if (
+    purposeName &&
+    ![
+      "earning",
+      "principal",
+      "participant_payout",
+      "internal",
+      "prepaid_credit",
+      "pass_through",
+    ].includes(purposeName)
+  )
+    fail(
+      purpose!,
+      `unknown economic purpose ${purposeName}`,
+      "choose a declared economic purpose",
+    );
+  let sourcePartyName = sourceParty ? String(data(sourceParty)) : undefined;
+  const reached =
+    sourcePartyName && !isParty(sourcePartyName)
+      ? scope.reachedParty(sourcePartyName)
+      : undefined;
+  if (reached) {
+    scope.attachmentInfo!.parties[sourcePartyName!] = reached;
+    sourcePartyName = "role" in reached ? reached.role : reached.party;
+  }
+  if (sourcePartyName && !isParty(sourcePartyName))
+    fail(
+      sourceParty!,
+      `unknown source party ${sourcePartyName}`,
+      "bind an authored party",
+    );
+  return economicsParts
+    ? {
+        purpose: purposeName as NonNullable<
+          UdlAction["moves"][number]["economics"]
+        >["purpose"],
+        sourceParty: sourcePartyName!,
+        ...(economicsParts.has("reversalOf")
+          ? {
+              reversalOf: scope.path(economicsParts.get("reversalOf")!),
+            }
+          : {}),
+      }
+    : undefined;
+}
+/** One authored move as the action's moves: a split, a fee or a plain transfer. */
+function lowerMove(
+  scope: InstrumentScope,
+  step: ActionLowering,
+  move: Expr,
+  index: number,
+) {
+  const { name, action: a, calculations: moveCalculations } = step;
+  const {
+    attachmentInfo,
+    fields,
+    calculations,
+    authored,
+    resolve,
+    moneyPath,
+    val,
+    data,
+  } = scope;
+  const lowered = a.moves.length;
+  const parts = entries(asBlock(move));
+  const op = parts.has("operation")
+    ? String(data(parts.get("operation")!))
+    : "internal_transfer.create";
+  if (op === "internal_transfer.reserve" && !parts.has("capture")) {
+    if (!parts.has("boundary"))
+      fail(move, "reserve needs a receipt field", "add capture: receipt_name");
+    const capture = `${name}Receipt`;
+    if (fields.some((field) => field.name === capture))
+      fail(
+        move,
+        "boundary receipt name is already used",
+        "name each reservation with an explicit capture",
+      );
+    fields.push({ name: capture, type: "text", optional: true });
+    scope.boundaryReceipts.set(name, capture);
+    parts.set("capture", {
+      kind: "text",
+      value: capture,
+      span: move.span,
+    });
+  }
+  if (
+    (op === "internal_transfer.post" || op === "internal_transfer.void") &&
+    !parts.has("transfer")
+  )
+    fail(move, "post and void need a receipt", "add transfer: receipt_name");
+  const key = parts.has("key")
+    ? String(data(parts.get("key")!))
+    : `move${index + 1}`;
+  const economicsExpr = parts.get("economics");
+  const feeEconomics =
+    parts.has("fee") && economicsExpr
+      ? entries(asBlock(resolve(economicsExpr)))
+      : undefined;
+  if (feeEconomics)
+    for (const term of feeEconomics.keys())
+      if (!["payee", "fee", "tax"].includes(term))
+        fail(
+          economicsExpr!,
+          `unknown fee economics leg ${term}`,
+          "declare payee, fee or tax economics separately",
+        );
+  const economics = lowerEconomics(
+    scope,
+    feeEconomics ? feeEconomics.get("payee") : economicsExpr,
+  );
+  if (op === "internal_transfer.create" || op === "internal_transfer.reserve") {
+    const amount = parts.get("amount"),
+      from = parts.get("from"),
+      to = parts.get("to");
+    if (amount) {
+      const resolvedAmount = resolve(amount);
+      if (
+        resolvedAmount.kind === "name" &&
+        resolvedAmount.value.startsWith("subject.")
+      ) {
+        const subField = resolvedAmount.value.split(".")[1]!;
+        const req = a.subject?.requirements.find(
+          (r) => r.field.name === subField,
+        );
+        if (req && req.field.type !== "money") {
+          fail(
+            amount,
+            `move amount subject.${subField} must have type money`,
+            "use a money field",
+          );
+        }
+      }
+    }
+    if (parts.has("shares")) {
+      if (
+        !amount ||
+        !from ||
+        op !== "internal_transfer.create" ||
+        parts.has("fee")
+      )
+        fail(
+          move,
+          "split needs a posted amount and source",
+          "declare amount, from and shares without a fee",
+        );
+      const shares = [...entries(asBlock(resolve(parts.get("shares")!)))];
+      if (!shares.length || shares.length > 64)
+        fail(
+          move,
+          "split needs 1 to 64 recipients",
+          "name the receiving parties and percentages",
+        );
+      let total = 0;
+      const pieces: UdlValue[] = [];
+      const perAction = !heldFromCreate(scope, val(amount));
+      for (const [index, [party, rate]] of shares.entries()) {
+        const recipient = resolve({
+          kind: "name",
+          value: party,
+          span: rate.span,
+        });
+        if (
+          recipient.kind !== "name" ||
+          !scope.isParty(recipient.value) ||
+          rate.kind !== "percent"
+        )
+          fail(rate, "split needs party percentages", "write party_name: 70%");
+        total += Number(literal(rate));
+        const recipientRole = subjectPartyRoles.includes(
+          recipient.value as SubjectPartyRole,
+        );
+        if (
+          attachmentInfo &&
+          (recipientRole ||
+            scope.document.parties[recipient.value]?.kind === "business") &&
+          !Object.values(attachmentInfo.parties).some(
+            (binding) =>
+              ("role" in binding && binding.role === recipient.value) ||
+              ("party" in binding && binding.party === recipient.value),
+          )
+        ) {
+          let binding = "splitRecipient";
+          for (
+            let index = 2;
+            Object.hasOwn(attachmentInfo.parties, binding);
+            index++
+          )
+            binding = `splitRecipient${index}`;
+          attachmentInfo.parties[binding] = recipientRole
+            ? { role: recipient.value as SubjectPartyRole }
+            : { party: recipient.value };
+        }
+        const target = `${name}_${key}_share${index + 1}`;
+        if (fields.some((f) => f.name === target))
+          fail(move, "split field name conflicts", "rename the move key");
+        fields.push({
+          name: target,
+          type: "money",
+          ...(perAction ? { optional: true } : {}),
+        });
+        (perAction ? moveCalculations : calculations).push(
+          index === shares.length - 1 && pieces.length
+            ? {
+                target,
+                op: "subtract",
+                base: val(amount),
+                subtract: [...pieces],
+              }
+            : {
+                target,
+                op: "rate",
+                base: val(amount),
+                bps: { literal: literal(rate) },
+                rounding: "floor",
+              },
+        );
+        const piece: UdlValue = { field: `self.${target}` };
+        pieces.push(piece);
+        a.moves.push({
+          key: `${key}_${index + 1}`,
+          operation: "internal_transfer.create",
+          ...(economics ? { economics } : {}),
+          amount: piece,
+          from: moneyPath(from),
+          to: `party.${recipient.value}`,
+        });
+        scope.splitMoves.add(a.moves.at(-1)!);
+      }
+      if (total !== 10000)
+        fail(
+          move,
+          "split percentages must sum to 100%",
+          "give the recipients exactly 100% together",
+        );
+      for (const item of a.moves.slice(lowered)) authored.set(item, move);
+      return;
+    }
+    if (!amount || !from || !to)
+      fail(
+        move,
+        "move needs amount, from and to",
+        "declare all three move operands",
+      );
+    const transfer = {
+      key,
+      operation: op,
+      ...(economics ? { economics } : {}),
+      ...(parts.has("capture")
+        ? { capture: String(data(parts.get("capture")!)) }
+        : {}),
+      amount: val(amount!),
+      from: moneyPath(from!),
+      to: moneyPath(to!),
+    };
+    const fee = parts.get("fee");
+    if (!fee)
+      a.moves.push(
+        op === "internal_transfer.reserve"
+          ? {
+              ...transfer,
+              operation: op,
+              capture: String(data(parts.get("capture")!)),
+              ...(parts.has("boundary")
+                ? {
+                    boundary: {
+                      adapter: text(
+                        resolve(
+                          entries(asBlock(parts.get("boundary"))).get(
+                            "adapter",
+                          )!,
+                        ),
+                      ),
+                    },
+                  }
+                : {}),
+            }
+          : { ...transfer, operation: op },
+      );
+    else {
+      if (op !== "internal_transfer.create")
+        fail(
+          move,
+          "fees settle with a posted transfer",
+          "declare a separate posted settlement after releasing the reservation",
+        );
+      lowerFee(scope, step, move, fee, transfer, feeEconomics);
+    }
+  } else if (op === "internal_transfer.post" || op === "internal_transfer.void")
+    a.moves.push({
+      key,
+      operation: op,
+      ...(economics ? { economics } : {}),
+      transfer: scope.path(parts.get("transfer")!),
+      ...(parts.has("capture")
+        ? { capture: String(data(parts.get("capture")!)) }
+        : {}),
+    });
+  else
+    fail(
+      move,
+      `unknown transfer instruction ${op}`,
+      "choose create, reserve, post, or void from internal_transfer",
+    );
+  for (const item of a.moves.slice(lowered)) authored.set(item, move);
+}
+/**
+ * A fee on a posted move: the net amount to the payee, the fee to the
+ * operator and its tax, each a field the instrument or the action calculates.
+ */
+function lowerFee(
+  scope: InstrumentScope,
+  { name, action: a, calculations: moveCalculations }: ActionLowering,
+  move: Expr,
+  fee: Expr,
+  transfer: Omit<CreateMove, "operation">,
+  feeEconomics: Map<string, Expr> | undefined,
+) {
+  const { document, fields, calculations, resolve } = scope;
+  const { key } = transfer;
+  const terms = entries(asBlock(resolve(fee)));
+  for (const term of terms.keys())
+    if (!["seller", "buyer", "tax"].includes(term))
+      fail(
+        fee,
+        `unknown fee term ${term}`,
+        "choose seller or buyer, and optional tax",
+      );
+  const paidBy = terms.has("seller") ? "seller" : "buyer";
+  if (terms.has("seller") === terms.has("buyer"))
+    fail(
+      fee,
+      "fee needs exactly one paying party",
+      "write seller: 1% or buyer: 1%",
+    );
+  const quoted = terms.get(paidBy)!;
+  // An account the agreement owns holds only what was moved
+  // into it, so a charge on top has nothing to come from.
+  if (
+    paidBy === "buyer" &&
+    fields.some(
+      (field) =>
+        `self.${field.name}` === transfer.from &&
+        field.type === "account" &&
+        field.owner === "self",
+    )
+  )
+    fail(
+      quoted,
+      `a buyer fee cannot come from \`${transfer.from.slice("self.".length)}\`, which holds only the moved amount`,
+      "use a seller fee, which comes out of the held amount",
+    );
+  const rate = quoted.kind === "capped" ? quoted.rate : quoted;
+  if (rate.kind !== "percent")
+    fail(rate, "fee rate needs a percentage", "write a percentage such as 1%");
+  const prefix = `${name}_${key}`;
+  const perAction = !heldFromCreate(scope, transfer.amount);
+  const derived = (
+    suffix: string,
+    label: string,
+    calculation: Omit<UdlCalculation, "target">,
+  ): UdlValue => {
+    const target = prefix + "_" + suffix;
+    if (fields.some((f) => f.name === target))
+      fail(
+        move,
+        `generated fee field ${target} conflicts with a field`,
+        "rename the authored field or move key",
+      );
+    fields.push({
+      name: target,
+      type: "money",
+      label,
+      ...(perAction ? { optional: true } : {}),
+    });
+    (perAction ? moveCalculations : calculations).push({
+      ...calculation,
+      target,
+    } as UdlCalculation);
+    return { field: `self.${target}` };
+  };
+  // Labels come from the source keys: seller or buyer, cap, tax.
+  const feeLabel = `${paidBy === "seller" ? "Seller" : "Buyer"} fee`;
+  const gross = derived(
+    "feeGross",
+    quoted.kind === "capped" ? `${feeLabel} before cap` : feeLabel,
+    {
+      op: "rate",
+      base: transfer.amount,
+      bps: { literal: literal(rate) },
+      rounding: "floor",
+    } as Omit<UdlCalculation, "target">,
+  );
+  let charge = gross;
+  if (quoted.kind === "capped") {
+    if (quoted.cap.kind !== "money")
+      fail(
+        quoted.cap,
+        "fee cap needs money",
+        "write an amount such as 750 SAR",
+      );
+    charge = derived("fee", feeLabel, {
+      op: "minimum",
+      values: [gross, { literal: literal(quoted.cap) }],
+    } as Omit<UdlCalculation, "target">);
+  }
+  const tax = terms.get("tax");
+  if (tax && tax.kind !== "percent")
+    fail(tax, "tax needs a percentage of the fee", "write tax: 15%");
+  if (
+    paidBy === "seller" &&
+    (!("literal" in transfer.amount) ||
+      udlFieldValueSchema({
+        name: "amount",
+        type: "money",
+      }).safeParse(transfer.amount.literal).success)
+  ) {
+    const bps = BigInt(Number(literal(rate)));
+    const taxBps = BigInt(tax ? Number(literal(tax)) : 0);
+    const cap =
+      quoted.kind === "capped"
+        ? BigInt(String(literal(quoted.cap)))
+        : undefined;
+    let exceeds = cap === undefined && bps * (10000n + taxBps) > 100000000n;
+    if ("literal" in transfer.amount) {
+      const amount = BigInt(String(transfer.amount.literal));
+      const grossFee = (amount * bps) / 10000n;
+      const fee = cap !== undefined && cap < grossFee ? cap : grossFee;
+      exceeds = fee + (fee * taxBps) / 10000n > amount;
+    }
+    if (exceeds)
+      failWithCode(
+        quoted,
+        "seller_fee_exceeds_amount",
+        "seller fee plus tax exceeds the base amount",
+        "lower the seller fee, cap or tax so the combined charge fits within the amount",
+      );
+  }
+  const vat = tax
+    ? derived("tax", "Fee tax", {
+        op: "rate",
+        base: charge,
+        bps: { literal: literal(tax) },
+        rounding: "floor",
+      } as Omit<UdlCalculation, "target">)
+    : undefined;
+  const charges = vat ? [charge, vat] : [charge];
+  // A payer's limit reads this: a buyer pays the charges on
+  // top, a seller pays them out of the amount.
+  derived("debit", "Payer debit", {
+    op: "sum",
+    values:
+      paidBy === "buyer" ? [transfer.amount, ...charges] : [transfer.amount],
+  } as Omit<UdlCalculation, "target">);
+  const net =
+    paidBy === "seller"
+      ? derived("net", "Amount after fee", {
+          op: "subtract",
+          base: transfer.amount,
+          subtract: charges,
+        } as Omit<UdlCalculation, "target">)
+      : transfer.amount;
+  for (const [party, role] of [
+    ["programOperator", "program_operator"],
+    ["programTax", "tax_payable"],
+  ] as const) {
+    if (document.parties[party] && document.parties[party]!.role !== role)
+      fail(move, `${party} is reserved for fees`, "rename this party");
+    document.parties[party] = { kind: "business", role };
+  }
+  a.moves.push({
+    ...transfer,
+    operation: "internal_transfer.create",
+    amount: net,
+  });
+  a.moves.push({
+    key: key + "Fee",
+    ...(feeEconomics?.has("fee")
+      ? { economics: lowerEconomics(scope, feeEconomics.get("fee")) }
+      : {}),
+    operation: "internal_transfer.create",
+    amount: charge,
+    from: transfer.from,
+    to: "party.programOperator",
+  });
+  if (vat)
+    a.moves.push({
+      key: key + "Tax",
+      ...(feeEconomics?.has("tax")
+        ? { economics: lowerEconomics(scope, feeEconomics.get("tax")) }
+        : {}),
+      operation: "internal_transfer.create",
+      amount: vat,
+      from: transfer.from,
+      to: "party.programTax",
+    });
+}
+/** Propagate invoked requirements with the conditions on each invocation path. */
+function propagateInvokedRequirements(
+  document: UdlDocument,
+  requirementOrigins: Map<UdlSubjectRequirement, RequirementOrigin>,
+) {
+  let changedInvocations = true;
+  let invocationIterations = 0;
+  const invocationDepth = document.instruments.reduce(
+    (total, inst) => total + inst.actionOrder.length,
+    0,
+  );
+  while (changedInvocations && invocationIterations < invocationDepth) {
+    changedInvocations = false;
+    invocationIterations++;
+    for (const inst of document.instruments) {
+      for (const [actionName, action] of Object.entries(inst.actions)) {
+        for (const call of action.invoke ?? []) {
+          let targetIds: string[] = [];
+          if ("instrument" in call) {
+            targetIds = [call.instrument];
+          } else if ("selection" in call) {
+            targetIds = Array.isArray(call.selection.instrument)
+              ? call.selection.instrument
+              : [call.selection.instrument];
+          } else if ("reference" in call) {
+            const refField = resolveField(
+              document,
+              inst,
+              call.reference,
+              action.input,
+              action,
+            );
+            if (
+              refField?.type === "ref" &&
+              refField.targetKind === "instrument"
+            ) {
+              targetIds = Array.isArray(refField.target)
+                ? refField.target
+                : [refField.target];
+            }
+          }
+          for (const targetId of targetIds) {
+            const targetInst = document.instruments.find(
+              (i) => i.id === targetId,
+            );
+            if (!targetInst) continue;
+            if (
+              inst.subject &&
+              targetInst.subject &&
+              inst.subject === targetInst.subject
+            ) {
+              const targetAction = targetInst.actions[call.action];
+              if (!targetAction?.subject) continue;
+              if (!action.subject) {
+                action.subject = { requirements: [], adapters: [] };
+              }
+              for (const adapter of call.guard
+                ? []
+                : targetAction.subject.adapters) {
+                if (
+                  !action.subject.adapters.some(
+                    (existing) => existing.binding === adapter.binding,
+                  )
+                ) {
+                  action.subject.adapters.push(adapter);
+                  changedInvocations = true;
+                }
+              }
+              for (const targetReq of targetAction.subject.requirements) {
+                const targetObjFieldName =
+                  targetReq.objectField ?? targetReq.field.name;
+                const existing = action.subject.requirements.find(
+                  (cr) =>
+                    (cr.objectField ?? cr.field.name) === targetObjFieldName,
+                );
+                const guardValue = (value: UdlValue): UdlValue => {
+                  if (
+                    !("field" in value) ||
+                    !value.field.startsWith("subject.")
+                  )
+                    return value;
+                  const requirement = action.subject?.requirements.find(
+                    (item) => item.field.name === value.field.slice(8),
+                  );
+                  return {
+                    field: `subject.${requirement?.objectField ?? requirement?.field.name ?? value.field.slice(8)}`,
+                  };
+                };
+                const guardType =
+                  call.guard &&
+                  [call.guard.left, call.guard.right]
+                    .flatMap((value) =>
+                      "field" in value
+                        ? [
+                            resolveField(
+                              document,
+                              inst,
+                              value.field,
+                              action.input,
+                              action,
+                            )?.type,
+                          ]
+                        : [],
+                    )
+                    .find((type) => type === "money" || type === "date");
+                const condition:
+                  | NonNullable<UdlSubjectRequirement["when"]>[number][number]
+                  | undefined = call.guard
+                  ? {
+                      instrument: inst.id,
+                      action: actionName,
+                      guard: {
+                        ...call.guard,
+                        left: guardValue(call.guard.left),
+                        right: guardValue(call.guard.right),
+                      },
+                      ...(guardType === "money" || guardType === "date"
+                        ? { valueType: guardType }
+                        : {}),
+                    }
+                  : undefined;
+                const when = condition
+                  ? (targetReq.when ?? [[]]).map((path) => [
+                      condition,
+                      ...path.filter(
+                        (item) =>
+                          canonicalJson(item) !== canonicalJson(condition),
+                      ),
+                    ])
+                  : targetReq.when;
+                if (!existing) {
+                  const inherited: UdlSubjectRequirement = {
+                    field: { ...targetReq.field, name: targetObjFieldName },
+                    ...(when ? { when: when.map((path) => [...path]) } : {}),
+                  };
+                  action.subject.requirements.push(inherited);
+                  requirementOrigins.set(
+                    inherited,
+                    requirementOrigins.get(targetReq)!,
+                  );
+                  changedInvocations = true;
+                } else if (!sameObjectField(existing.field, targetReq.field)) {
+                  const first = requirementOrigins.get(existing)!;
+                  const second = requirementOrigins.get(targetReq)!;
+                  throw new CompileFailure({
+                    code: "subject_field_conflict",
+                    message: `${first.message} conflicts with ${second.message}: incompatible requirement '${targetObjFieldName}'`,
+                    fix: "ensure compatible requirement definitions across invoked actions",
+                    span: first.span,
+                    source: first.source,
+                    related: [first, second],
+                  });
+                } else if (existing.when) {
+                  if (!when) {
+                    delete existing.when;
+                    changedInvocations = true;
+                  } else {
+                    for (const path of when) {
+                      if (
+                        !existing.when.some(
+                          (known) =>
+                            canonicalJson(known) === canonicalJson(path),
+                        )
+                      ) {
+                        existing.when.push(path);
+                        changedInvocations = true;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+/**
+ * Names resolve once tunables, attachments and derived fields are final, and
+ * each failure points at the expression that wrote the name.
+ */
+function checkNames(
+  document: UdlDocument,
+  authored: WeakMap<object, Expr>,
+  declarations: WeakMap<UdlInstrument, InstrumentDecl>,
+  templateAt: (path: string) => InstrumentDecl | undefined,
+) {
+  type Scope = { inst: UdlInstrument; label: string; action?: UdlAction };
+  const byId = new Map(document.instruments.map((inst) => [inst.id, inst]));
+  const site = (owner: object, key: string | number, fallback: Located) => {
+    const expr = authored.get(owner);
+    if (expr?.kind === "block")
+      return expr.entries.find((entry) => entry.key === key)?.value ?? expr;
+    if (expr?.kind === "list" && Array.isArray(owner))
+      return expr.items.length === owner.length
+        ? expr.items[Number(key)]!
+        : expr;
+    return expr ?? fallback;
+  };
+  const keySite = (owner: object, key: string, fallback: Located) => {
+    const expr = authored.get(owner);
+    const entry =
+      expr?.kind === "block"
+        ? expr.entries.find((item) => item.key === key)
+        : undefined;
+    if (!entry) return fallback;
+    return {
+      ...entry,
+      span: { start: entry.span.start, end: entry.span.start + key.length },
+    };
+  };
+  const builtins = (inst: UdlInstrument) => [
+    "id",
+    "now",
+    "createdAt",
+    "productRevision",
+    "status",
+    ...(inst.subject ? ["subject"] : []),
+  ];
+  const parties = (inst: UdlInstrument) => [
+    ...Object.keys(document.parties),
+    ...(inst.subject ? subjectPartyRoles : []),
+  ];
+  const members = (field: UdlField): string[] => {
+    if (field.type === "account") return ["balance", "reserved"];
+    if (field.type !== "ref") return [];
+    const [id] = [field.target].flat();
+    const target =
+      field.targetKind === "object"
+        ? document.objects.find((object) => object.id === id)
+        : byId.get(id!);
+    if (!target) return [];
+    return [
+      ...target.fields.map((item) => item.name),
+      ...("lifecycle" in target ? builtins(target) : []),
+    ];
+  };
+  const checkParty = (name: string, at: Located, inst: UdlInstrument) => {
+    const names = parties(inst);
+    if (!names.includes(name))
+      fail(
+        at,
+        `\`${name}\` is not a declared party.${didYouMean(name, names)}`,
+        subjectPartyRoles.includes(name as SubjectPartyRole)
+          ? `Declare a party parameter such as \`holder: party\` on the instrument, use it here, and bind \`holder: ${name}\` where you attach it.`
+          : `Declare it with \`party ${name}: business\`, or name a declared party (${names.join(", ")}).`,
+      );
+  };
+  const checkInput = (
+    name: string,
+    at: Located,
+    label: string,
+    input: readonly UdlField[],
+  ) => {
+    const names = input.map((field) => field.name);
+    if (!names.includes(name))
+      fail(
+        at,
+        `\`${name}\` is not an input of \`${label}\`.${didYouMean(name, names)}`,
+        `Declare \`${name}\` in the input of \`${label}\`${names.length ? `, or use one of ${names.join(", ")}` : ""}.`,
+      );
+  };
+  const checkTarget = (id: string, at: Located, objects = false) => {
+    const ids = [
+      ...byId.keys(),
+      ...(objects ? document.objects.map((object) => object.id) : []),
+    ];
+    const noun = objects ? "instrument or object" : "instrument";
+    if (!ids.includes(id))
+      fail(
+        at,
+        `\`${id}\` is not a declared ${noun}.${didYouMean(id, ids)}`,
+        `Name a declared ${noun}.`,
+      );
+  };
+  const checkPath = (path: string, at: Located, scope: Scope): void => {
+    const { inst, action } = scope;
+    const parts = path.split(".");
+    const found = (count: number) =>
+      resolveField(
+        document,
+        inst,
+        parts.slice(0, count).join("."),
+        action?.input,
+        action,
+      );
+    // Subject paths keep their own check against the action's requirements.
+    if (found(parts.length) || parts[0] === "subject") return;
+    if (parts[0] === "party" && parts[1]) {
+      checkParty(parts[1], at, inst);
+      if (!found(2)) return;
+    }
+    if (!["self", "input", "party"].includes(parts[0]!)) parts.unshift("self");
+    let count = 2;
+    while (count <= parts.length && found(count)) count++;
+    if (count > parts.length) return;
+    const name = parts[count - 1]!;
+    if (count > 2) {
+      const prefix = parts.slice(0, count - 1).join(".");
+      const names = members(found(count - 1)!);
+      fail(
+        at,
+        `\`${name}\` is not a field of \`${prefix}\`.${didYouMean(name, names)}`,
+        names.length
+          ? `Use one of ${names.join(", ")}.`
+          : `\`${prefix}\` has no fields.`,
+      );
+    }
+    if (parts[0] === "input")
+      return checkInput(name, at, scope.label, action?.input ?? []);
+    const declared = declarations.get(inst)!.name;
+    const fields = inst.fields.map((field) => field.name);
+    fail(
+      at,
+      `\`${name}\` is not a field or party of \`${declared}\`.${didYouMean(name, [...fields, ...builtins(inst), ...parties(inst)])}`,
+      `Use a field declared in \`${declared}\` (${fields.join(", ")}) or a declared party (${parties(inst).join(", ")}).`,
+    );
+  };
+  const scopeOf = (inst: UdlInstrument): Scope => ({
+    inst,
+    label: declarations.get(inst)!.name,
+  });
+  // A family member drops an optional reference field its binding left
+  // unset (a borrower-funded plan has no `funds`), so it cannot match and
+  // leaves the selection. The header must still declare the field.
+  const declaredMembers = (selection: UdlSelection) => {
+    const members = [selection.instrument].flat();
+    const header = selection.family
+      ? templateAt(`${selection.family.module}.${selection.family.exportPath}`)
+      : undefined;
+    if (
+      !header ||
+      !entries(asBlock(entries(header.body).get("fields"))).has(
+        selection.reference,
+      )
+    )
+      return members;
+    return members.filter((id) =>
+      resolveField(document, byId.get(id)!, `self.${selection.reference}`),
+    );
+  };
+  // A member whose reference points at another attachment of the anchor's
+  // own template (the plan funding another object's escrow) cannot match
+  // either, so each object only selects what can reference it.
+  const kin = (a: string, b: string) => {
+    const left = byId.get(a);
+    const right = byId.get(b);
+    return (
+      !!left && !!right && declarations.get(left) === declarations.get(right)
+    );
+  };
+  const matchable = (
+    selection: UdlSelection,
+    inst: UdlInstrument,
+    action?: UdlAction,
+  ) =>
+    declaredMembers(selection).filter((id) => {
+      const member = byId.get(id);
+      if (!member) return true;
+      const anchor = resolveField(
+        document,
+        inst,
+        selection.anchor,
+        action?.input,
+        action,
+      );
+      const reference = resolveField(
+        document,
+        member,
+        `self.${selection.reference}`,
+      );
+      if (anchor?.type !== "ref" || reference?.type !== "ref") return true;
+      const targets = [anchor.target].flat();
+      const candidates = [reference.target].flat();
+      return !candidates.every(
+        (candidate) =>
+          !targets.includes(candidate) &&
+          targets.some((target) => kin(target, candidate)),
+      );
+    });
+  // A count over no matchable member is zero, in a requirement or a calculation.
+  for (const inst of document.instruments)
+    for (const action of Object.values(inst.actions)) {
+      if (action.calculate)
+        action.calculate = action.calculate.map((calculation) =>
+          calculation.op === "aggregate" &&
+          calculation.measure === "count" &&
+          !matchable(calculation.selection, inst, action).length
+            ? {
+                target: calculation.target,
+                op: "sum",
+                values: [{ literal: 0 }],
+              }
+            : calculation,
+        );
+      action.requires = action.requires.map((requirement) =>
+        requirement.kind === "aggregate" &&
+        requirement.measure === "count" &&
+        !matchable(requirement.selection, inst, action).length
+          ? {
+              kind: "compare",
+              left: { literal: 0 },
+              operator: requirement.operator,
+              right: requirement.value,
+            }
+          : requirement,
+      );
+    }
+  const checkSelection = (
+    selection: UdlSelection,
+    at: Located,
+    scope: Scope,
+  ) => {
+    walk(
+      selection.overlaps,
+      "overlaps",
+      site(selection, "overlaps", at),
+      scope,
+    );
+    walk(selection.anchor, "anchor", site(selection, "anchor", at), scope);
+    walk(selection.where, "where", site(selection, "where", at), scope);
+    const members = matchable(selection, scope.inst, scope.action);
+    if (members.length && members.length < [selection.instrument].flat().length)
+      selection.instrument = members;
+    for (const id of [selection.instrument].flat()) {
+      checkTarget(id, site(selection, "instrument", at));
+      const target = scopeOf(byId.get(id)!);
+      const member = (key: string, where: Located) =>
+        checkPath(key.startsWith("self.") ? key : `self.${key}`, where, target);
+      for (const key of Object.keys(selection.where ?? {}))
+        member(key, keySite(selection.where!, key, at));
+      member(selection.reference, site(selection, "reference", at));
+      selection.order?.forEach((key, index) =>
+        member(key, site(selection.order!, index, at)),
+      );
+      if (selection.overlaps)
+        for (const key of ["start", "end"] as const)
+          member(selection.overlaps[key], site(selection.overlaps, key, at));
+      if (selection.window)
+        member(selection.window.field, site(selection.window, "field", at));
+    }
+  };
+  const checkCall = (
+    call: NonNullable<UdlAction["invoke"]>[number],
+    at: Located,
+    scope: Scope,
+  ) => {
+    const bind = "range" in call ? call.range?.bind : undefined;
+    for (const [key, value] of Object.entries(call))
+      if (key !== "input") walk(value, key, site(call, key, at), scope);
+    for (const [key, value] of Object.entries(call.input))
+      if (!("field" in value) || value.field !== bind)
+        walk(value, key, site(call.input, key, at), scope);
+    if ("instrument" in call)
+      checkTarget(call.instrument, site(call, "instrument", at));
+    const reference =
+      "reference" in call
+        ? resolveField(
+            document,
+            scope.inst,
+            call.reference,
+            scope.action?.input,
+            scope.action,
+          )
+        : undefined;
+    const ids =
+      "instrument" in call
+        ? [call.instrument]
+        : "selection" in call
+          ? [call.selection.instrument].flat()
+          : reference?.type === "ref" && reference.targetKind === "instrument"
+            ? [reference.target].flat()
+            : [];
+    for (const id of ids) {
+      const target = byId.get(id);
+      if (!target) continue;
+      const action = target.actions[call.action];
+      if (!action)
+        fail(
+          site(call, "action", at),
+          `\`${call.action}\` is not an action of \`${id}\`.${didYouMean(call.action, target.actionOrder)}`,
+          `Use one of ${target.actionOrder.join(", ")}.`,
+        );
+      for (const key of Object.keys(call.input))
+        checkInput(
+          key,
+          keySite(call.input, key, at),
+          `${id}.${call.action}`,
+          action.input,
+        );
+    }
+  };
+  const pathKeys = [
+    "field",
+    "reference",
+    "anchor",
+    "at",
+    "list",
+    "from",
+    "to",
+    "transfer",
+    "subject",
+    "instruction",
+    "installment",
+    "recipient",
+    "dueAt",
+    "fields",
+  ];
+  const walk = (
+    value: unknown,
+    key: string,
+    at: Located,
+    scope: Scope,
+  ): void => {
+    if (typeof value === "string") {
+      if (key === "party") checkParty(value, at, scope.inst);
+      if (key === "target") checkPath(`self.${value}`, at, scope);
+      if (pathKeys.includes(key)) checkPath(value, at, scope);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value))
+      return value.forEach((item, index) =>
+        walk(item, key, site(value, index, at), scope),
+      );
+    if (key === "selection")
+      return checkSelection(value as UdlSelection, at, scope);
+    if (key === "invoke")
+      return checkCall(
+        value as NonNullable<UdlAction["invoke"]>[number],
+        at,
+        scope,
+      );
+    if (key === "set")
+      for (const name of Object.keys(value))
+        checkPath(`self.${name}`, keySite(value, name, at), scope);
+    for (const [child, item] of Object.entries(value))
+      walk(item, child, site(value, child, at), scope);
+  };
+  for (const inst of document.instruments) {
+    const decl = declarations.get(inst)!;
+    const scope = scopeOf(inst);
+    for (const field of [
+      ...inst.fields,
+      ...Object.values(inst.actions).flatMap((action) => action.input),
+    ])
+      if ("target" in field && field.target !== undefined)
+        for (const id of [field.target].flat())
+          checkTarget(id, site(field, "target", decl), true);
+    walk(inst.calculate, "calculate", decl, scope);
+    walk(inst.invariants, "invariants", decl, scope);
+    for (const [name, action] of Object.entries(inst.actions))
+      for (const [key, value] of Object.entries(action))
+        if (key !== "input" && key !== "subject")
+          walk(value, key, site(action, key, decl), {
+            inst,
+            label: `${decl.name}.${name}`,
+            action,
+          });
+  }
+}
+function specialize(document: UdlDocument, trimmed: ReadonlySet<string>) {
+  const eliminatedStates = new Map<string, Set<string>>();
+  // Remove branches excluded by immutable tunables before checking reference states.
+  for (const inst of document.instruments) {
+    if (
+      !inst.lifecycle.states.includes(inst.lifecycle.initial) ||
+      Object.values(inst.lifecycle.transitions).some(
+        (edge) =>
+          edge.from.some((state) => !inst.lifecycle.states.includes(state)) ||
+          (edge.to !== "preserve" && !inst.lifecycle.states.includes(edge.to)),
+      )
+    )
+      continue;
+    let specialized = trimmed.has(inst.id);
+    for (const [key, action] of Object.entries(inst.actions)) {
+      const constant = (value: UdlValue) => {
+        if ("literal" in value) return value.literal;
+        const f = inst.fields.find((f) => `self.${f.name}` === value.field);
+        return f && "value" in f ? f.value : undefined;
+      };
+      if (
+        action.requires.some((r) => {
+          if (r.kind !== "compare") return false;
+          const left = constant(r.left),
+            right = constant(r.right);
+          if (left === undefined || right === undefined) return false;
+          return r.operator === "=="
+            ? left !== right
+            : r.operator === "!="
+              ? left === right
+              : false;
+        })
+      ) {
+        delete inst.actions[key];
+        delete inst.lifecycle.transitions[key];
+        specialized = true;
+      }
+    }
+    if (!specialized) continue;
+    const reachable = new Set([inst.lifecycle.initial]);
+    for (let n = 0; n < inst.lifecycle.states.length; n++)
+      for (const edge of Object.values(inst.lifecycle.transitions))
+        if (edge.from.some((state) => reachable.has(state)))
+          if (edge.to !== "preserve") reachable.add(edge.to);
+    for (const [key, edge] of Object.entries(inst.lifecycle.transitions)) {
+      edge.from = edge.from.filter((state) => reachable.has(state));
+      if (!edge.from.length) {
+        delete inst.actions[key];
+        delete inst.lifecycle.transitions[key];
+      }
+    }
+    eliminatedStates.set(
+      inst.id,
+      new Set(inst.lifecycle.states.filter((state) => !reachable.has(state))),
+    );
+    inst.lifecycle.states = inst.lifecycle.states.filter((state) =>
+      reachable.has(state),
+    );
+    inst.actionOrder = inst.actionOrder.filter((key) => inst.actions[key]);
+  }
+  for (const inst of document.instruments)
+    for (const action of Object.values(inst.actions)) {
+      for (const requirement of action.requires) {
+        if (requirement.kind !== "state") continue;
+        const field = inst.fields.find(
+          (f) => `self.${f.name}` === requirement.reference,
+        );
+        if (field?.type === "ref")
+          requirement.states = requirement.states.filter(
+            (state) =>
+              !(
+                typeof field.target === "string" ? [field.target] : field.target
+              ).some((id) => eliminatedStates.get(id)?.has(state)),
+          );
+      }
+    }
+}
+/**
  * An override compiles the program as if one std term held other text, so a
  * plan can see what that term alone moves.
  */
@@ -605,7 +2138,7 @@ export function compile(
     >();
     const requirementOrigins = new Map<
       UdlSubjectRequirement,
-      { source: string; span: Span; message: string }
+      RequirementOrigin
     >();
     // Instruments that lost a std action to an empty all() parent. Their
     // lifecycles drop the states only that action reached.
@@ -838,27 +2371,14 @@ export function compile(
       id: string,
       arguments_: BlockExpr,
       origin: Span,
-      inherited = new Map<string, Expr>(),
-      inheritedEnums = new Map<string, string[]>(),
-      attachmentInfo?: {
-        subjectKindId: string;
-        attachmentName: string;
-        renames: Map<string, string>;
-        exposed: Map<string, string>;
-        parties: Record<string, AttachmentPartyBinding>;
-        attachments: UdlObjectAttachment[];
-        economics: Entry[];
-        child?: boolean;
-        /** How an economics selector names this instrument: "" or "occurrence.". */
-        selectorPrefix?: string;
-        rootInstrument?: string;
-        /** The template as the founder wrote it, such as money.schedule. */
-        template?: string;
-      },
-      familyDeclaration?: UdlFamily,
-      standardOrigin?: NonNullable<CompileOriginMapEntry["standardBlock"]>,
-      /** A child record's terms are its parent's. */
-      inheritedTerms = new Map<string, Term>(),
+      {
+        inherited = new Map(),
+        inheritedEnums = new Map(),
+        inheritedTerms = new Map(),
+        attachmentInfo,
+        familyDeclaration,
+        standardOrigin,
+      }: InstrumentOptions = {},
     ) => {
       const resolveFamilyInstruments = (
         family: UdlFamily,
@@ -2134,251 +3654,33 @@ export function compile(
               : []
             : [row],
         );
-      const lowerFields = (block: BlockExpr): UdlField[] => {
-        const result: UdlField[] = [];
-        for (const row of branchRows(block)) {
-          const { type: t } = fieldType(row);
-          const constant =
-            row.value.kind === "default" ? resolve(row.value.value) : undefined;
-          const f = lowerFieldShape(row, resolve);
-          const type = f.type;
-          if (type === "list" && t.kind === "call") {
-            const item = t.args[0]!;
-            if (item.kind === "type" && item.name === "ref" && item.target) {
-              f.target = text(
-                resolve({ kind: "name", value: item.target, span: item.span }),
-              ).replaceAll(".", "_");
-              f.targetKind = objects.has(String(f.target))
-                ? "object"
-                : "instrument";
-            }
-          }
-          if (type === "ref") {
-            if (t.kind === "block") {
-              const b = entries(t);
-              const famNode = b.get("targetFamily") ?? b.get("family");
-              let targetFamTuple: UdlFamily | undefined;
-              if (famNode) {
-                const famStr =
-                  famNode.kind === "name" ? famNode.value : text(famNode);
-                targetFamTuple = resolveFamily(famStr, famNode);
-                f.targetFamily = targetFamTuple;
-              }
-              if (b.has("target") || b.has("instrument")) {
-                const tgtExpr = (b.get("target") ?? b.get("instrument"))!;
-                const resolvedTgt = resolve(tgtExpr);
-                let tgtVal: string | string[];
-                if (resolvedTgt.kind === "list") {
-                  const items = resolvedTgt.items.map((it) =>
-                    text(resolve(it)).replaceAll(".", "_"),
-                  );
-                  tgtVal = items.length === 1 ? items[0]! : items;
-                } else {
-                  tgtVal = text(resolvedTgt).replaceAll(".", "_");
-                }
-                f.target = tgtVal;
-                if (targetFamTuple) {
-                  checkTargetFamily(tgtVal, targetFamTuple, tgtExpr);
-                }
-              } else if (targetFamTuple) {
-                const matched = resolveFamilyInstruments(
-                  targetFamTuple,
-                  id,
-                  famNode!,
-                );
-                f.target = matched.length === 1 ? matched[0] : matched;
-              }
-              f.targetKind =
-                typeof f.target === "string" && objects.has(f.target)
-                  ? "object"
-                  : "instrument";
-            } else {
-              const target = t.kind === "type" ? t.target : undefined;
-              if (!target)
-                fail(row, "reference needs a target", "write ref<object>");
-              const [root, ...tail] = target.split(".");
-              const resolved = environment.get(root!);
-              // An optional field pointing at an unsupplied optional tunable
-              // has nothing to point at, so the instrument drops it.
-              if (
-                !resolved &&
-                f.optional &&
-                decl.parameters.some((parameter) => parameter.key === root)
-              )
-                continue;
-              const resolvedTargets =
-                resolved?.kind === "list"
-                  ? resolved.items
-                  : resolved
-                    ? [resolved]
-                    : [];
-              const targets = resolvedTargets.map((value) =>
-                [text(resolve(value)).replaceAll(".", "_"), ...tail].join("_"),
-              );
-              f.target =
-                target === "self"
-                  ? id
-                  : targets.length === 1
-                    ? targets[0]
-                    : targets.length
-                      ? targets
-                      : target;
-              f.targetKind =
-                typeof f.target === "string" && objects.has(f.target)
-                  ? "object"
-                  : "instrument";
-            }
-          } else if (type === "account") {
-            if (t.kind === "call") {
-              if (t.args.length < 1 || t.args.length > 4)
-                fail(
-                  t,
-                  "account needs an owner, optional book, mode and key",
-                  "write account(buyer, claim, contra)",
-                );
-              const owner = t.args[0]!;
-              if (owner.kind === "call" && owner.name === "adapter") {
-                if (owner.args.length !== 1)
-                  fail(
-                    owner,
-                    "adapter needs one binding",
-                    'write account(adapter(binding), cash, "premium")',
-                  );
-                f.owner = { adapter: text(resolve(owner.args[0]!)) };
-              } else f.owner = text(resolve(owner));
-              f.book = t.args[1] ? text(t.args[1]) : "cash";
-              if (t.args[2]) {
-                const mode = text(t.args[2]);
-                if (mode === "contra") f.contra = true;
-                else f.key = mode;
-              }
-              if (t.args[3]) f.key = text(t.args[3]);
-            } else if (t.kind === "type" && t.owner) {
-              f.owner =
-                t.owner === "self"
-                  ? "self"
-                  : text(
-                      resolve({ kind: "name", value: t.owner, span: row.span }),
-                    );
-              f.book = "cash";
-            } else
-              fail(
-                row,
-                "account needs an owner",
-                "write account of buyer or account of self",
-              );
-          }
-          if (
-            constant &&
-            !(constant.kind === "name" && constant.value === "runtime")
-          ) {
-            if (constant.kind === "call") {
-              const args =
-                constant.name === "aggregate" ? [] : constant.args.map(val);
-              const target = row.key;
-              if (constant.name === "aggregate" && constant.args.length === 2)
-                calculations.push({
-                  target,
-                  op: "aggregate",
-                  selection: data(
-                    constant.args[0]!,
-                  ) as import("@hyperscale0/udl").UdlSelection,
-                  measure:
-                    text(constant.args[1]!) === "count"
-                      ? "count"
-                      : { sum: text(constant.args[1]!) },
-                });
-              else if (constant.name === "at" && args.length === 2)
-                calculations.push({
-                  target,
-                  op: "at",
-                  list: path(constant.args[0]!),
-                  position: args[1]!,
-                });
-              else if (constant.name === "ratio" && args.length === 3)
-                calculations.push({
-                  target,
-                  op: "ratio",
-                  amount: args[0]!,
-                  numerator: args[1]!,
-                  denominator: args[2]!,
-                  rounding: "floor",
-                });
-              else if (constant.name === "rate" && args.length === 2)
-                calculations.push({
-                  target,
-                  op: "rate",
-                  base: args[0]!,
-                  bps: args[1]!,
-                  rounding: "floor",
-                });
-              else if (constant.name === "sum" || constant.name === "minimum")
-                calculations.push({ target, op: constant.name, values: args });
-              else if (constant.name === "subtract" && args.length >= 2)
-                calculations.push({
-                  target,
-                  op: "subtract",
-                  base: args[0]!,
-                  subtract: args.slice(1),
-                });
-              else if (constant.name === "multiply" && args.length === 2)
-                calculations.push({
-                  target,
-                  op: "multiply",
-                  amount: args[0]!,
-                  units: args[1]!,
-                });
-              else if (constant.name === "divide" && args.length === 2)
-                calculations.push({
-                  target,
-                  op: "divide",
-                  amount: args[0]!,
-                  divisor: args[1]!,
-                  rounding: "floor",
-                });
-              else if (
-                ["before", "after"].includes(constant.name) &&
-                args.length === 2
-              )
-                calculations.push({
-                  target,
-                  op: "shift",
-                  date: args[0]!,
-                  milliseconds: args[1]!,
-                  direction: constant.name as "before" | "after",
-                });
-              // after(start, 1 month, 3) steps calendar periods from start.
-              else if (constant.name === "after" && args.length === 3)
-                calculations.push({
-                  target,
-                  op: "step",
-                  date: args[0]!,
-                  period: args[1]!,
-                  times: args[2]!,
-                });
-              else
-                fail(
-                  constant,
-                  `unknown calculation ${constant.name}`,
-                  "use rate, sum, minimum, subtract, multiply, divide, before or after",
-                );
-              authored.set(calculations.at(-1)!, constant);
-            } else if (type === "enum" && constant.kind === "name")
-              f.value = constant.value;
-            else if (type === "money" && constant.kind === "name")
-              calculations.push({
-                target: row.key,
-                op: "sum",
-                values: [val(constant)],
-              });
-            else f.value = literal(constant, String(type));
-          }
-          authored.set(f, row.value);
-          result.push(f as UdlField);
-        }
-        return result;
+      const actionTargets = new Set<string>();
+      const scope: InstrumentScope = {
+        id,
+        decl,
+        document,
+        objects,
+        environment,
+        attachmentInfo,
+        fields,
+        calculations,
+        actionTargets,
+        boundaryReceipts,
+        authored,
+        splitMoves,
+        resolve,
+        path,
+        moneyPath,
+        val,
+        data,
+        isParty,
+        reachedParty,
+        branchRows,
+        resolveFamily,
+        resolveFamilyInstruments,
+        checkTargetFamily,
       };
-      fields.push(...lowerFields(asBlock(body.get("fields"))));
+      fields.push(...lowerFields(scope, asBlock(body.get("fields"))));
       const lifecycleBlock = asBlock(body.get("lifecycle"));
       const lifecycle = data(lifecycleBlock) as UdlInstrument["lifecycle"];
       const states = Array.isArray(lifecycle.states) ? lifecycle.states : [];
@@ -2409,7 +3711,6 @@ export function compile(
         actions: Object.create(null) as UdlInstrument["actions"],
         actionOrder: [],
       };
-      const actionTargets = new Set<string>();
       const collectTargets = (block: BlockExpr): void => {
         for (const entry of block.entries)
           if (entry.key.startsWith("when "))
@@ -2425,22 +3726,6 @@ export function compile(
       };
       for (const row of decl.body.entries)
         if (row.key.startsWith("action ")) collectTargets(asBlock(row.value));
-      // Instrument calculations run before every action, create included, so
-      // a fee or split calculates there only on an amount held from create.
-      const heldFromCreate = (amount: UdlValue): boolean => {
-        if (!("field" in amount)) return true;
-        const [root, name, ...rest] = amount.field.split(".");
-        const field = fields.find((item) => item.name === name);
-        return (
-          root === "self" &&
-          !rest.length &&
-          !!field &&
-          !actionTargets.has(name!) &&
-          (!field.optional ||
-            "value" in field ||
-            calculations.some((node) => node.target === name))
-        );
-      };
       for (const row of decl.body.entries.filter((e) =>
         e.key.startsWith("action "),
       )) {
@@ -2720,7 +4005,7 @@ export function compile(
             : title(name),
           event: `${id}.${name}`,
           actor: "caller",
-          input: lowerFields(asBlock(slots.get("input"))),
+          input: lowerFields(scope, asBlock(slots.get("input"))),
           requires: [],
           moves: [],
           ...(actionSubject ? { subject: actionSubject } : {}),
@@ -2760,587 +4045,13 @@ export function compile(
             continue;
           if (key === "moves") {
             const moves = expr.kind === "list" ? expr.items : [expr];
-            for (const [index, move] of moves.entries()) {
-              const lowered = a.moves.length;
-              const parts = entries(asBlock(move));
-              const op = parts.has("operation")
-                ? String(data(parts.get("operation")!))
-                : "internal_transfer.create";
-              if (op === "internal_transfer.reserve" && !parts.has("capture")) {
-                if (!parts.has("boundary"))
-                  fail(
-                    move,
-                    "reserve needs a receipt field",
-                    "add capture: receipt_name",
-                  );
-                const capture = `${name}Receipt`;
-                if (fields.some((field) => field.name === capture))
-                  fail(
-                    move,
-                    "boundary receipt name is already used",
-                    "name each reservation with an explicit capture",
-                  );
-                fields.push({ name: capture, type: "text", optional: true });
-                boundaryReceipts.set(name, capture);
-                parts.set("capture", {
-                  kind: "text",
-                  value: capture,
-                  span: move.span,
-                });
-              }
-              if (
-                (op === "internal_transfer.post" ||
-                  op === "internal_transfer.void") &&
-                !parts.has("transfer")
-              )
-                fail(
-                  move,
-                  "post and void need a receipt",
-                  "add transfer: receipt_name",
-                );
-              const key = parts.has("key")
-                ? String(data(parts.get("key")!))
-                : `move${index + 1}`;
-              const lowerEconomics = (
-                economicsExpr: Expr | undefined,
-              ): UdlAction["moves"][number]["economics"] => {
-                if (economicsExpr) {
-                  const resolved = resolve(economicsExpr);
-                  if (
-                    resolved.kind === "name" &&
-                    resolved.value === "unclassified"
-                  )
-                    return undefined;
-                  const choices = entries(asBlock(resolve(economicsExpr)));
-                  if (choices.has("recipient")) {
-                    for (const term of choices.keys())
-                      if (
-                        !["recipient", "company", "participant"].includes(term)
-                      )
-                        fail(
-                          economicsExpr,
-                          `unknown economics choice ${term}`,
-                          "use recipient, company and participant",
-                        );
-                    const recipient = String(data(choices.get("recipient")!));
-                    if (
-                      !isParty(recipient) ||
-                      !choices.has("company") ||
-                      !choices.has("participant")
-                    )
-                      fail(
-                        economicsExpr,
-                        "economics choice needs a bound recipient and both branches",
-                        "declare recipient, company and participant",
-                      );
-                    const company =
-                      recipient === "operator" ||
-                      recipient === "programOperator" ||
-                      document.parties[recipient]?.role === "program_operator";
-                    return lowerEconomics(
-                      choices.get(company ? "company" : "participant"),
-                    );
-                  }
-                }
-                const economicsParts = economicsExpr
-                  ? entries(asBlock(resolve(economicsExpr)))
-                  : undefined;
-                if (economicsParts) {
-                  for (const term of economicsParts.keys())
-                    if (
-                      !["purpose", "sourceParty", "reversalOf"].includes(term)
-                    )
-                      fail(
-                        economicsExpr!,
-                        `unknown economics term ${term}`,
-                        "use purpose, sourceParty or reversalOf",
-                      );
-                }
-                const purpose = economicsParts?.get("purpose");
-                const sourceParty = economicsParts?.get("sourceParty");
-                if (economicsParts && (!purpose || !sourceParty))
-                  fail(
-                    economicsExpr!,
-                    "economics needs purpose and sourceParty",
-                    "declare both economics fields",
-                  );
-                const purposeName = purpose ? String(data(purpose)) : undefined;
-                if (
-                  purposeName &&
-                  ![
-                    "earning",
-                    "principal",
-                    "participant_payout",
-                    "internal",
-                    "prepaid_credit",
-                    "pass_through",
-                  ].includes(purposeName)
-                )
-                  fail(
-                    purpose!,
-                    `unknown economic purpose ${purposeName}`,
-                    "choose a declared economic purpose",
-                  );
-                let sourcePartyName = sourceParty
-                  ? String(data(sourceParty))
-                  : undefined;
-                const reached =
-                  sourcePartyName && !isParty(sourcePartyName)
-                    ? reachedParty(sourcePartyName)
-                    : undefined;
-                if (reached) {
-                  attachmentInfo!.parties[sourcePartyName!] = reached;
-                  sourcePartyName =
-                    "role" in reached ? reached.role : reached.party;
-                }
-                if (sourcePartyName && !isParty(sourcePartyName))
-                  fail(
-                    sourceParty!,
-                    `unknown source party ${sourcePartyName}`,
-                    "bind an authored party",
-                  );
-                return economicsParts
-                  ? {
-                      purpose: purposeName as NonNullable<
-                        UdlAction["moves"][number]["economics"]
-                      >["purpose"],
-                      sourceParty: sourcePartyName!,
-                      ...(economicsParts.has("reversalOf")
-                        ? {
-                            reversalOf: path(economicsParts.get("reversalOf")!),
-                          }
-                        : {}),
-                    }
-                  : undefined;
-              };
-              const economicsExpr = parts.get("economics");
-              const feeEconomics =
-                parts.has("fee") && economicsExpr
-                  ? entries(asBlock(resolve(economicsExpr)))
-                  : undefined;
-              if (feeEconomics)
-                for (const term of feeEconomics.keys())
-                  if (!["payee", "fee", "tax"].includes(term))
-                    fail(
-                      economicsExpr!,
-                      `unknown fee economics leg ${term}`,
-                      "declare payee, fee or tax economics separately",
-                    );
-              const economics = lowerEconomics(
-                feeEconomics ? feeEconomics.get("payee") : economicsExpr,
+            for (const [index, move] of moves.entries())
+              lowerMove(
+                scope,
+                { name, action: a, calculations: moveCalculations },
+                move,
+                index,
               );
-              if (
-                op === "internal_transfer.create" ||
-                op === "internal_transfer.reserve"
-              ) {
-                const amount = parts.get("amount"),
-                  from = parts.get("from"),
-                  to = parts.get("to");
-                if (amount) {
-                  const resolvedAmount = resolve(amount);
-                  if (
-                    resolvedAmount.kind === "name" &&
-                    resolvedAmount.value.startsWith("subject.")
-                  ) {
-                    const subField = resolvedAmount.value.split(".")[1]!;
-                    const req = a.subject?.requirements.find(
-                      (r) => r.field.name === subField,
-                    );
-                    if (req && req.field.type !== "money") {
-                      fail(
-                        amount,
-                        `move amount subject.${subField} must have type money`,
-                        "use a money field",
-                      );
-                    }
-                  }
-                }
-                if (parts.has("shares")) {
-                  if (
-                    !amount ||
-                    !from ||
-                    op !== "internal_transfer.create" ||
-                    parts.has("fee")
-                  )
-                    fail(
-                      move,
-                      "split needs a posted amount and source",
-                      "declare amount, from and shares without a fee",
-                    );
-                  const shares = [
-                    ...entries(asBlock(resolve(parts.get("shares")!))),
-                  ];
-                  if (!shares.length || shares.length > 64)
-                    fail(
-                      move,
-                      "split needs 1 to 64 recipients",
-                      "name the receiving parties and percentages",
-                    );
-                  let total = 0;
-                  const pieces: UdlValue[] = [];
-                  const perAction = !heldFromCreate(val(amount));
-                  for (const [index, [party, rate]] of shares.entries()) {
-                    const recipient = resolve({
-                      kind: "name",
-                      value: party,
-                      span: rate.span,
-                    });
-                    if (
-                      recipient.kind !== "name" ||
-                      !isParty(recipient.value) ||
-                      rate.kind !== "percent"
-                    )
-                      fail(
-                        rate,
-                        "split needs party percentages",
-                        "write party_name: 70%",
-                      );
-                    total += Number(literal(rate));
-                    const recipientRole = subjectPartyRoles.includes(
-                      recipient.value as SubjectPartyRole,
-                    );
-                    if (
-                      attachmentInfo &&
-                      (recipientRole ||
-                        document.parties[recipient.value]?.kind ===
-                          "business") &&
-                      !Object.values(attachmentInfo.parties).some(
-                        (binding) =>
-                          ("role" in binding &&
-                            binding.role === recipient.value) ||
-                          ("party" in binding &&
-                            binding.party === recipient.value),
-                      )
-                    ) {
-                      let binding = "splitRecipient";
-                      for (
-                        let index = 2;
-                        Object.hasOwn(attachmentInfo.parties, binding);
-                        index++
-                      )
-                        binding = `splitRecipient${index}`;
-                      attachmentInfo.parties[binding] = recipientRole
-                        ? { role: recipient.value as SubjectPartyRole }
-                        : { party: recipient.value };
-                    }
-                    const target = `${name}_${key}_share${index + 1}`;
-                    if (fields.some((f) => f.name === target))
-                      fail(
-                        move,
-                        "split field name conflicts",
-                        "rename the move key",
-                      );
-                    fields.push({
-                      name: target,
-                      type: "money",
-                      ...(perAction ? { optional: true } : {}),
-                    });
-                    (perAction ? moveCalculations : calculations).push(
-                      index === shares.length - 1 && pieces.length
-                        ? {
-                            target,
-                            op: "subtract",
-                            base: val(amount),
-                            subtract: [...pieces],
-                          }
-                        : {
-                            target,
-                            op: "rate",
-                            base: val(amount),
-                            bps: { literal: literal(rate) },
-                            rounding: "floor",
-                          },
-                    );
-                    const piece: UdlValue = { field: `self.${target}` };
-                    pieces.push(piece);
-                    a.moves.push({
-                      key: `${key}_${index + 1}`,
-                      operation: "internal_transfer.create",
-                      ...(economics ? { economics } : {}),
-                      amount: piece,
-                      from: moneyPath(from),
-                      to: `party.${recipient.value}`,
-                    });
-                    splitMoves.add(a.moves.at(-1)!);
-                  }
-                  if (total !== 10000)
-                    fail(
-                      move,
-                      "split percentages must sum to 100%",
-                      "give the recipients exactly 100% together",
-                    );
-                  for (const item of a.moves.slice(lowered))
-                    authored.set(item, move);
-                  continue;
-                }
-                if (!amount || !from || !to)
-                  fail(
-                    move,
-                    "move needs amount, from and to",
-                    "declare all three move operands",
-                  );
-                const transfer = {
-                  key,
-                  operation: op,
-                  ...(economics ? { economics } : {}),
-                  ...(parts.has("capture")
-                    ? { capture: String(data(parts.get("capture")!)) }
-                    : {}),
-                  amount: val(amount!),
-                  from: moneyPath(from!),
-                  to: moneyPath(to!),
-                };
-                const fee = parts.get("fee");
-                if (!fee)
-                  a.moves.push(
-                    op === "internal_transfer.reserve"
-                      ? {
-                          ...transfer,
-                          operation: op,
-                          capture: String(data(parts.get("capture")!)),
-                          ...(parts.has("boundary")
-                            ? {
-                                boundary: {
-                                  adapter: text(
-                                    resolve(
-                                      entries(
-                                        asBlock(parts.get("boundary")),
-                                      ).get("adapter")!,
-                                    ),
-                                  ),
-                                },
-                              }
-                            : {}),
-                        }
-                      : { ...transfer, operation: op },
-                  );
-                else {
-                  if (op !== "internal_transfer.create")
-                    fail(
-                      move,
-                      "fees settle with a posted transfer",
-                      "declare a separate posted settlement after releasing the reservation",
-                    );
-                  const terms = entries(asBlock(resolve(fee)));
-                  for (const term of terms.keys())
-                    if (!["seller", "buyer", "tax"].includes(term))
-                      fail(
-                        fee,
-                        `unknown fee term ${term}`,
-                        "choose seller or buyer, and optional tax",
-                      );
-                  const paidBy = terms.has("seller") ? "seller" : "buyer";
-                  if (terms.has("seller") === terms.has("buyer"))
-                    fail(
-                      fee,
-                      "fee needs exactly one paying party",
-                      "write seller: 1% or buyer: 1%",
-                    );
-                  const quoted = terms.get(paidBy)!;
-                  // An account the agreement owns holds only what was moved
-                  // into it, so a charge on top has nothing to come from.
-                  if (
-                    paidBy === "buyer" &&
-                    fields.some(
-                      (field) =>
-                        `self.${field.name}` === transfer.from &&
-                        field.type === "account" &&
-                        field.owner === "self",
-                    )
-                  )
-                    fail(
-                      quoted,
-                      `a buyer fee cannot come from \`${transfer.from.slice("self.".length)}\`, which holds only the moved amount`,
-                      "use a seller fee, which comes out of the held amount",
-                    );
-                  const rate = quoted.kind === "capped" ? quoted.rate : quoted;
-                  if (rate.kind !== "percent")
-                    fail(
-                      rate,
-                      "fee rate needs a percentage",
-                      "write a percentage such as 1%",
-                    );
-                  const prefix = `${name}_${key}`;
-                  const perAction = !heldFromCreate(transfer.amount);
-                  const derived = (
-                    suffix: string,
-                    label: string,
-                    calculation: Omit<UdlCalculation, "target">,
-                  ): UdlValue => {
-                    const target = prefix + "_" + suffix;
-                    if (fields.some((f) => f.name === target))
-                      fail(
-                        move,
-                        `generated fee field ${target} conflicts with a field`,
-                        "rename the authored field or move key",
-                      );
-                    fields.push({
-                      name: target,
-                      type: "money",
-                      label,
-                      ...(perAction ? { optional: true } : {}),
-                    });
-                    (perAction ? moveCalculations : calculations).push({
-                      ...calculation,
-                      target,
-                    } as UdlCalculation);
-                    return { field: `self.${target}` };
-                  };
-                  // Labels come from the source keys: seller or buyer, cap, tax.
-                  const feeLabel = `${paidBy === "seller" ? "Seller" : "Buyer"} fee`;
-                  const gross = derived(
-                    "feeGross",
-                    quoted.kind === "capped"
-                      ? `${feeLabel} before cap`
-                      : feeLabel,
-                    {
-                      op: "rate",
-                      base: transfer.amount,
-                      bps: { literal: literal(rate) },
-                      rounding: "floor",
-                    } as Omit<UdlCalculation, "target">,
-                  );
-                  let charge = gross;
-                  if (quoted.kind === "capped") {
-                    if (quoted.cap.kind !== "money")
-                      fail(
-                        quoted.cap,
-                        "fee cap needs money",
-                        "write an amount such as 750 SAR",
-                      );
-                    charge = derived("fee", feeLabel, {
-                      op: "minimum",
-                      values: [gross, { literal: literal(quoted.cap) }],
-                    } as Omit<UdlCalculation, "target">);
-                  }
-                  const tax = terms.get("tax");
-                  if (tax && tax.kind !== "percent")
-                    fail(
-                      tax,
-                      "tax needs a percentage of the fee",
-                      "write tax: 15%",
-                    );
-                  if (
-                    paidBy === "seller" &&
-                    (!("literal" in transfer.amount) ||
-                      udlFieldValueSchema({
-                        name: "amount",
-                        type: "money",
-                      }).safeParse(transfer.amount.literal).success)
-                  ) {
-                    const bps = BigInt(Number(literal(rate)));
-                    const taxBps = BigInt(tax ? Number(literal(tax)) : 0);
-                    const cap =
-                      quoted.kind === "capped"
-                        ? BigInt(String(literal(quoted.cap)))
-                        : undefined;
-                    let exceeds =
-                      cap === undefined && bps * (10000n + taxBps) > 100000000n;
-                    if ("literal" in transfer.amount) {
-                      const amount = BigInt(String(transfer.amount.literal));
-                      const grossFee = (amount * bps) / 10000n;
-                      const fee =
-                        cap !== undefined && cap < grossFee ? cap : grossFee;
-                      exceeds = fee + (fee * taxBps) / 10000n > amount;
-                    }
-                    if (exceeds)
-                      failWithCode(
-                        quoted,
-                        "seller_fee_exceeds_amount",
-                        "seller fee plus tax exceeds the base amount",
-                        "lower the seller fee, cap or tax so the combined charge fits within the amount",
-                      );
-                  }
-                  const vat = tax
-                    ? derived("tax", "Fee tax", {
-                        op: "rate",
-                        base: charge,
-                        bps: { literal: literal(tax) },
-                        rounding: "floor",
-                      } as Omit<UdlCalculation, "target">)
-                    : undefined;
-                  const charges = vat ? [charge, vat] : [charge];
-                  // A payer's limit reads this: a buyer pays the charges on
-                  // top, a seller pays them out of the amount.
-                  derived("debit", "Payer debit", {
-                    op: "sum",
-                    values:
-                      paidBy === "buyer"
-                        ? [transfer.amount, ...charges]
-                        : [transfer.amount],
-                  } as Omit<UdlCalculation, "target">);
-                  const net =
-                    paidBy === "seller"
-                      ? derived("net", "Amount after fee", {
-                          op: "subtract",
-                          base: transfer.amount,
-                          subtract: charges,
-                        } as Omit<UdlCalculation, "target">)
-                      : transfer.amount;
-                  for (const [party, role] of [
-                    ["programOperator", "program_operator"],
-                    ["programTax", "tax_payable"],
-                  ] as const) {
-                    if (
-                      document.parties[party] &&
-                      document.parties[party]!.role !== role
-                    )
-                      fail(
-                        move,
-                        `${party} is reserved for fees`,
-                        "rename this party",
-                      );
-                    document.parties[party] = { kind: "business", role };
-                  }
-                  a.moves.push({
-                    ...transfer,
-                    operation: "internal_transfer.create",
-                    amount: net,
-                  });
-                  a.moves.push({
-                    key: key + "Fee",
-                    ...(feeEconomics?.has("fee")
-                      ? { economics: lowerEconomics(feeEconomics.get("fee")) }
-                      : {}),
-                    operation: "internal_transfer.create",
-                    amount: charge,
-                    from: transfer.from,
-                    to: "party.programOperator",
-                  });
-                  if (vat)
-                    a.moves.push({
-                      key: key + "Tax",
-                      ...(feeEconomics?.has("tax")
-                        ? { economics: lowerEconomics(feeEconomics.get("tax")) }
-                        : {}),
-                      operation: "internal_transfer.create",
-                      amount: vat,
-                      from: transfer.from,
-                      to: "party.programTax",
-                    });
-                }
-              } else if (
-                op === "internal_transfer.post" ||
-                op === "internal_transfer.void"
-              )
-                a.moves.push({
-                  key,
-                  operation: op,
-                  ...(economics ? { economics } : {}),
-                  transfer: path(parts.get("transfer")!),
-                  ...(parts.has("capture")
-                    ? { capture: String(data(parts.get("capture")!)) }
-                    : {}),
-                });
-              else
-                fail(
-                  move,
-                  `unknown transfer instruction ${op}`,
-                  "choose create, reserve, post, or void from internal_transfer",
-                );
-              for (const item of a.moves.slice(lowered))
-                authored.set(item, move);
-            }
           } else (a as unknown as Record<string, unknown>)[key] = data(expr);
         }
         if (moveCalculations.length)
@@ -3607,28 +4318,22 @@ export function compile(
               false,
             )
           : undefined;
-        addInstrument(
-          child,
-          `${id}_${key}`,
-          emptyBlock,
-          origin,
-          new Map([
+        addInstrument(child, `${id}_${key}`, emptyBlock, origin, {
+          inherited: new Map([
             ...environment,
             ["parent", { kind: "name", value: id, span: origin } as Expr],
           ]),
-          enums,
-          childAttachment,
-          childFamily,
-          standardOrigin
-            ? {
-                ...standardOrigin,
-                recordPath: [standardOrigin.recordPath, key]
-                  .filter(Boolean)
-                  .join("."),
-              }
-            : undefined,
-          terms,
-        );
+          inheritedEnums: enums,
+          inheritedTerms: terms,
+          attachmentInfo: childAttachment,
+          familyDeclaration: childFamily,
+          standardOrigin: standardOrigin && {
+            ...standardOrigin,
+            recordPath: [standardOrigin.recordPath, key]
+              .filter(Boolean)
+              .join("."),
+          },
+        });
       }
     };
     const compileObject = (decl: ObjectDecl) => {
@@ -3757,14 +4462,8 @@ export function compile(
         const templateFamily = resolveFamily(targetTemplate, entry, false);
         const firstAttachedInstrument = document.instruments.length;
         try {
-          addInstrument(
-            template,
-            instId,
-            tunableBlock,
-            entry.span,
-            new Map(),
-            new Map(),
-            {
+          addInstrument(template, instId, tunableBlock, entry.span, {
+            attachmentInfo: {
               subjectKindId: decl.name,
               attachmentName,
               renames,
@@ -3774,9 +4473,9 @@ export function compile(
               economics,
               template: targetTemplate,
             },
-            templateFamily,
-            standardOrigins.get(template),
-          );
+            familyDeclaration: templateFamily,
+            standardOrigin: standardOrigins.get(template),
+          });
         } catch (error) {
           if (!(error instanceof CompileFailure)) throw error;
           bindingDiagnostics.push(error.diagnostic);
@@ -3961,18 +4660,10 @@ export function compile(
       }
       if (decl.kind === "assignment") {
         const template = requireTemplate(decl.target, decl);
-        const templateFamily = resolveFamily(decl.target, decl, false);
-        addInstrument(
-          template,
-          decl.name,
-          decl.body,
-          decl.span,
-          new Map(),
-          new Map(),
-          undefined,
-          templateFamily,
-          standardOrigins.get(template),
-        );
+        addInstrument(template, decl.name, decl.body, decl.span, {
+          familyDeclaration: resolveFamily(decl.target, decl, false),
+          standardOrigin: standardOrigins.get(template),
+        });
       }
       if (decl.kind === "object") {
         compileObject(decl);
@@ -4013,181 +4704,7 @@ export function compile(
       for (const child of Object.values(record)) retainSelectionFamilies(child);
     };
     retainSelectionFamilies(document);
-    // Propagate invoked requirements with the conditions on each invocation path.
-    let changedInvocations = true;
-    let invocationIterations = 0;
-    const invocationDepth = document.instruments.reduce(
-      (total, inst) => total + inst.actionOrder.length,
-      0,
-    );
-    while (changedInvocations && invocationIterations < invocationDepth) {
-      changedInvocations = false;
-      invocationIterations++;
-      for (const inst of document.instruments) {
-        for (const [actionName, action] of Object.entries(inst.actions)) {
-          for (const call of action.invoke ?? []) {
-            let targetIds: string[] = [];
-            if ("instrument" in call) {
-              targetIds = [call.instrument];
-            } else if ("selection" in call) {
-              targetIds = Array.isArray(call.selection.instrument)
-                ? call.selection.instrument
-                : [call.selection.instrument];
-            } else if ("reference" in call) {
-              const refField = resolveField(
-                document,
-                inst,
-                call.reference,
-                action.input,
-                action,
-              );
-              if (
-                refField?.type === "ref" &&
-                refField.targetKind === "instrument"
-              ) {
-                targetIds = Array.isArray(refField.target)
-                  ? refField.target
-                  : [refField.target];
-              }
-            }
-            for (const targetId of targetIds) {
-              const targetInst = document.instruments.find(
-                (i) => i.id === targetId,
-              );
-              if (!targetInst) continue;
-              if (
-                inst.subject &&
-                targetInst.subject &&
-                inst.subject === targetInst.subject
-              ) {
-                const targetAction = targetInst.actions[call.action];
-                if (!targetAction?.subject) continue;
-                if (!action.subject) {
-                  action.subject = { requirements: [], adapters: [] };
-                }
-                for (const adapter of call.guard
-                  ? []
-                  : targetAction.subject.adapters) {
-                  if (
-                    !action.subject.adapters.some(
-                      (existing) => existing.binding === adapter.binding,
-                    )
-                  ) {
-                    action.subject.adapters.push(adapter);
-                    changedInvocations = true;
-                  }
-                }
-                for (const targetReq of targetAction.subject.requirements) {
-                  const targetObjFieldName =
-                    targetReq.objectField ?? targetReq.field.name;
-                  const existing = action.subject.requirements.find(
-                    (cr) =>
-                      (cr.objectField ?? cr.field.name) === targetObjFieldName,
-                  );
-                  const guardValue = (value: UdlValue): UdlValue => {
-                    if (
-                      !("field" in value) ||
-                      !value.field.startsWith("subject.")
-                    )
-                      return value;
-                    const requirement = action.subject?.requirements.find(
-                      (item) => item.field.name === value.field.slice(8),
-                    );
-                    return {
-                      field: `subject.${requirement?.objectField ?? requirement?.field.name ?? value.field.slice(8)}`,
-                    };
-                  };
-                  const guardType =
-                    call.guard &&
-                    [call.guard.left, call.guard.right]
-                      .flatMap((value) =>
-                        "field" in value
-                          ? [
-                              resolveField(
-                                document,
-                                inst,
-                                value.field,
-                                action.input,
-                                action,
-                              )?.type,
-                            ]
-                          : [],
-                      )
-                      .find((type) => type === "money" || type === "date");
-                  const condition:
-                    | NonNullable<UdlSubjectRequirement["when"]>[number][number]
-                    | undefined = call.guard
-                    ? {
-                        instrument: inst.id,
-                        action: actionName,
-                        guard: {
-                          ...call.guard,
-                          left: guardValue(call.guard.left),
-                          right: guardValue(call.guard.right),
-                        },
-                        ...(guardType === "money" || guardType === "date"
-                          ? { valueType: guardType }
-                          : {}),
-                      }
-                    : undefined;
-                  const when = condition
-                    ? (targetReq.when ?? [[]]).map((path) => [
-                        condition,
-                        ...path.filter(
-                          (item) =>
-                            canonicalJson(item) !== canonicalJson(condition),
-                        ),
-                      ])
-                    : targetReq.when;
-                  if (!existing) {
-                    const inherited: UdlSubjectRequirement = {
-                      field: { ...targetReq.field, name: targetObjFieldName },
-                      ...(when ? { when: when.map((path) => [...path]) } : {}),
-                    };
-                    action.subject.requirements.push(inherited);
-                    requirementOrigins.set(
-                      inherited,
-                      requirementOrigins.get(targetReq)!,
-                    );
-                    changedInvocations = true;
-                  } else if (
-                    !sameObjectField(existing.field, targetReq.field)
-                  ) {
-                    const first = requirementOrigins.get(existing)!;
-                    const second = requirementOrigins.get(targetReq)!;
-                    throw new CompileFailure({
-                      code: "subject_field_conflict",
-                      message: `${first.message} conflicts with ${second.message}: incompatible requirement '${targetObjFieldName}'`,
-                      fix: "ensure compatible requirement definitions across invoked actions",
-                      span: first.span,
-                      source: first.source,
-                      related: [first, second],
-                    });
-                  } else if (existing.when) {
-                    if (!when) {
-                      delete existing.when;
-                      changedInvocations = true;
-                    } else {
-                      for (const path of when) {
-                        if (
-                          !existing.when.some(
-                            (known) =>
-                              canonicalJson(known) === canonicalJson(path),
-                          )
-                        ) {
-                          existing.when.push(path);
-                          changedInvocations = true;
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    propagateInvokedRequirements(document, requirementOrigins);
     for (const kind of document.objects) {
       const origins = new Map(
         kind.fields.map((field) => [
@@ -4234,470 +4751,8 @@ export function compile(
           );
       }
     }
-    // Names resolve here, once tunables, attachments and derived fields are
-    // final, and each failure points at the expression that wrote the name.
-    type Located = { span: Span; source?: string };
-    type Scope = { inst: UdlInstrument; label: string; action?: UdlAction };
-    const byId = new Map(document.instruments.map((inst) => [inst.id, inst]));
-    const site = (owner: object, key: string | number, fallback: Located) => {
-      const expr = authored.get(owner);
-      if (expr?.kind === "block")
-        return expr.entries.find((entry) => entry.key === key)?.value ?? expr;
-      if (expr?.kind === "list" && Array.isArray(owner))
-        return expr.items.length === owner.length
-          ? expr.items[Number(key)]!
-          : expr;
-      return expr ?? fallback;
-    };
-    const keySite = (owner: object, key: string, fallback: Located) => {
-      const expr = authored.get(owner);
-      const entry =
-        expr?.kind === "block"
-          ? expr.entries.find((item) => item.key === key)
-          : undefined;
-      if (!entry) return fallback;
-      return {
-        ...entry,
-        span: { start: entry.span.start, end: entry.span.start + key.length },
-      };
-    };
-    const builtins = (inst: UdlInstrument) => [
-      "id",
-      "now",
-      "createdAt",
-      "productRevision",
-      "status",
-      ...(inst.subject ? ["subject"] : []),
-    ];
-    const parties = (inst: UdlInstrument) => [
-      ...Object.keys(document.parties),
-      ...(inst.subject ? subjectPartyRoles : []),
-    ];
-    const members = (field: UdlField): string[] => {
-      if (field.type === "account") return ["balance", "reserved"];
-      if (field.type !== "ref") return [];
-      const [id] = [field.target].flat();
-      const target =
-        field.targetKind === "object"
-          ? document.objects.find((object) => object.id === id)
-          : byId.get(id!);
-      if (!target) return [];
-      return [
-        ...target.fields.map((item) => item.name),
-        ...("lifecycle" in target ? builtins(target) : []),
-      ];
-    };
-    const checkParty = (name: string, at: Located, inst: UdlInstrument) => {
-      const names = parties(inst);
-      if (!names.includes(name))
-        fail(
-          at,
-          `\`${name}\` is not a declared party.${didYouMean(name, names)}`,
-          subjectPartyRoles.includes(name as SubjectPartyRole)
-            ? `Declare a party parameter such as \`holder: party\` on the instrument, use it here, and bind \`holder: ${name}\` where you attach it.`
-            : `Declare it with \`party ${name}: business\`, or name a declared party (${names.join(", ")}).`,
-        );
-    };
-    const checkInput = (
-      name: string,
-      at: Located,
-      label: string,
-      input: readonly UdlField[],
-    ) => {
-      const names = input.map((field) => field.name);
-      if (!names.includes(name))
-        fail(
-          at,
-          `\`${name}\` is not an input of \`${label}\`.${didYouMean(name, names)}`,
-          `Declare \`${name}\` in the input of \`${label}\`${names.length ? `, or use one of ${names.join(", ")}` : ""}.`,
-        );
-    };
-    const checkTarget = (id: string, at: Located, objects = false) => {
-      const ids = [
-        ...byId.keys(),
-        ...(objects ? document.objects.map((object) => object.id) : []),
-      ];
-      const noun = objects ? "instrument or object" : "instrument";
-      if (!ids.includes(id))
-        fail(
-          at,
-          `\`${id}\` is not a declared ${noun}.${didYouMean(id, ids)}`,
-          `Name a declared ${noun}.`,
-        );
-    };
-    const checkPath = (path: string, at: Located, scope: Scope): void => {
-      const { inst, action } = scope;
-      const parts = path.split(".");
-      const found = (count: number) =>
-        resolveField(
-          document,
-          inst,
-          parts.slice(0, count).join("."),
-          action?.input,
-          action,
-        );
-      // Subject paths keep their own check against the action's requirements.
-      if (found(parts.length) || parts[0] === "subject") return;
-      if (parts[0] === "party" && parts[1]) {
-        checkParty(parts[1], at, inst);
-        if (!found(2)) return;
-      }
-      if (!["self", "input", "party"].includes(parts[0]!))
-        parts.unshift("self");
-      let count = 2;
-      while (count <= parts.length && found(count)) count++;
-      if (count > parts.length) return;
-      const name = parts[count - 1]!;
-      if (count > 2) {
-        const prefix = parts.slice(0, count - 1).join(".");
-        const names = members(found(count - 1)!);
-        fail(
-          at,
-          `\`${name}\` is not a field of \`${prefix}\`.${didYouMean(name, names)}`,
-          names.length
-            ? `Use one of ${names.join(", ")}.`
-            : `\`${prefix}\` has no fields.`,
-        );
-      }
-      if (parts[0] === "input")
-        return checkInput(name, at, scope.label, action?.input ?? []);
-      const declared = declarations.get(inst)!.name;
-      const fields = inst.fields.map((field) => field.name);
-      fail(
-        at,
-        `\`${name}\` is not a field or party of \`${declared}\`.${didYouMean(name, [...fields, ...builtins(inst), ...parties(inst)])}`,
-        `Use a field declared in \`${declared}\` (${fields.join(", ")}) or a declared party (${parties(inst).join(", ")}).`,
-      );
-    };
-    const scopeOf = (inst: UdlInstrument): Scope => ({
-      inst,
-      label: declarations.get(inst)!.name,
-    });
-    // A family member drops an optional reference field its binding left
-    // unset (a borrower-funded plan has no `funds`), so it cannot match and
-    // leaves the selection. The header must still declare the field.
-    const declaredMembers = (selection: UdlSelection) => {
-      const members = [selection.instrument].flat();
-      const header = selection.family
-        ? templateAt(
-            `${selection.family.module}.${selection.family.exportPath}`,
-          )
-        : undefined;
-      if (
-        !header ||
-        !entries(asBlock(entries(header.body).get("fields"))).has(
-          selection.reference,
-        )
-      )
-        return members;
-      return members.filter((id) =>
-        resolveField(document, byId.get(id)!, `self.${selection.reference}`),
-      );
-    };
-    // A member whose reference points at another attachment of the anchor's
-    // own template (the plan funding another object's escrow) cannot match
-    // either, so each object only selects what can reference it.
-    const kin = (a: string, b: string) => {
-      const left = byId.get(a);
-      const right = byId.get(b);
-      return (
-        !!left && !!right && declarations.get(left) === declarations.get(right)
-      );
-    };
-    const matchable = (
-      selection: UdlSelection,
-      inst: UdlInstrument,
-      action?: UdlAction,
-    ) =>
-      declaredMembers(selection).filter((id) => {
-        const member = byId.get(id);
-        if (!member) return true;
-        const anchor = resolveField(
-          document,
-          inst,
-          selection.anchor,
-          action?.input,
-          action,
-        );
-        const reference = resolveField(
-          document,
-          member,
-          `self.${selection.reference}`,
-        );
-        if (anchor?.type !== "ref" || reference?.type !== "ref") return true;
-        const targets = [anchor.target].flat();
-        const candidates = [reference.target].flat();
-        return !candidates.every(
-          (candidate) =>
-            !targets.includes(candidate) &&
-            targets.some((target) => kin(target, candidate)),
-        );
-      });
-    // A count over no matchable member is zero, in a requirement or a calculation.
-    for (const inst of document.instruments)
-      for (const action of Object.values(inst.actions)) {
-        if (action.calculate)
-          action.calculate = action.calculate.map((calculation) =>
-            calculation.op === "aggregate" &&
-            calculation.measure === "count" &&
-            !matchable(calculation.selection, inst, action).length
-              ? {
-                  target: calculation.target,
-                  op: "sum",
-                  values: [{ literal: 0 }],
-                }
-              : calculation,
-          );
-        action.requires = action.requires.map((requirement) =>
-          requirement.kind === "aggregate" &&
-          requirement.measure === "count" &&
-          !matchable(requirement.selection, inst, action).length
-            ? {
-                kind: "compare",
-                left: { literal: 0 },
-                operator: requirement.operator,
-                right: requirement.value,
-              }
-            : requirement,
-        );
-      }
-    const checkSelection = (
-      selection: UdlSelection,
-      at: Located,
-      scope: Scope,
-    ) => {
-      walk(
-        selection.overlaps,
-        "overlaps",
-        site(selection, "overlaps", at),
-        scope,
-      );
-      walk(selection.anchor, "anchor", site(selection, "anchor", at), scope);
-      walk(selection.where, "where", site(selection, "where", at), scope);
-      const members = matchable(selection, scope.inst, scope.action);
-      if (
-        members.length &&
-        members.length < [selection.instrument].flat().length
-      )
-        selection.instrument = members;
-      for (const id of [selection.instrument].flat()) {
-        checkTarget(id, site(selection, "instrument", at));
-        const target = scopeOf(byId.get(id)!);
-        const member = (key: string, where: Located) =>
-          checkPath(
-            key.startsWith("self.") ? key : `self.${key}`,
-            where,
-            target,
-          );
-        for (const key of Object.keys(selection.where ?? {}))
-          member(key, keySite(selection.where!, key, at));
-        member(selection.reference, site(selection, "reference", at));
-        selection.order?.forEach((key, index) =>
-          member(key, site(selection.order!, index, at)),
-        );
-        if (selection.overlaps)
-          for (const key of ["start", "end"] as const)
-            member(selection.overlaps[key], site(selection.overlaps, key, at));
-        if (selection.window)
-          member(selection.window.field, site(selection.window, "field", at));
-      }
-    };
-    const checkCall = (
-      call: NonNullable<UdlAction["invoke"]>[number],
-      at: Located,
-      scope: Scope,
-    ) => {
-      const bind = "range" in call ? call.range?.bind : undefined;
-      for (const [key, value] of Object.entries(call))
-        if (key !== "input") walk(value, key, site(call, key, at), scope);
-      for (const [key, value] of Object.entries(call.input))
-        if (!("field" in value) || value.field !== bind)
-          walk(value, key, site(call.input, key, at), scope);
-      if ("instrument" in call)
-        checkTarget(call.instrument, site(call, "instrument", at));
-      const reference =
-        "reference" in call
-          ? resolveField(
-              document,
-              scope.inst,
-              call.reference,
-              scope.action?.input,
-              scope.action,
-            )
-          : undefined;
-      const ids =
-        "instrument" in call
-          ? [call.instrument]
-          : "selection" in call
-            ? [call.selection.instrument].flat()
-            : reference?.type === "ref" && reference.targetKind === "instrument"
-              ? [reference.target].flat()
-              : [];
-      for (const id of ids) {
-        const target = byId.get(id);
-        if (!target) continue;
-        const action = target.actions[call.action];
-        if (!action)
-          fail(
-            site(call, "action", at),
-            `\`${call.action}\` is not an action of \`${id}\`.${didYouMean(call.action, target.actionOrder)}`,
-            `Use one of ${target.actionOrder.join(", ")}.`,
-          );
-        for (const key of Object.keys(call.input))
-          checkInput(
-            key,
-            keySite(call.input, key, at),
-            `${id}.${call.action}`,
-            action.input,
-          );
-      }
-    };
-    const pathKeys = [
-      "field",
-      "reference",
-      "anchor",
-      "at",
-      "list",
-      "from",
-      "to",
-      "transfer",
-      "subject",
-      "instruction",
-      "installment",
-      "recipient",
-      "dueAt",
-      "fields",
-    ];
-    const walk = (
-      value: unknown,
-      key: string,
-      at: Located,
-      scope: Scope,
-    ): void => {
-      if (typeof value === "string") {
-        if (key === "party") checkParty(value, at, scope.inst);
-        if (key === "target") checkPath(`self.${value}`, at, scope);
-        if (pathKeys.includes(key)) checkPath(value, at, scope);
-        return;
-      }
-      if (!value || typeof value !== "object") return;
-      if (Array.isArray(value))
-        return value.forEach((item, index) =>
-          walk(item, key, site(value, index, at), scope),
-        );
-      if (key === "selection")
-        return checkSelection(value as UdlSelection, at, scope);
-      if (key === "invoke")
-        return checkCall(
-          value as NonNullable<UdlAction["invoke"]>[number],
-          at,
-          scope,
-        );
-      if (key === "set")
-        for (const name of Object.keys(value))
-          checkPath(`self.${name}`, keySite(value, name, at), scope);
-      for (const [child, item] of Object.entries(value))
-        walk(item, child, site(value, child, at), scope);
-    };
-    for (const inst of document.instruments) {
-      const decl = declarations.get(inst)!;
-      const scope = scopeOf(inst);
-      for (const field of [
-        ...inst.fields,
-        ...Object.values(inst.actions).flatMap((action) => action.input),
-      ])
-        if ("target" in field && field.target !== undefined)
-          for (const id of [field.target].flat())
-            checkTarget(id, site(field, "target", decl), true);
-      walk(inst.calculate, "calculate", decl, scope);
-      walk(inst.invariants, "invariants", decl, scope);
-      for (const [name, action] of Object.entries(inst.actions))
-        for (const [key, value] of Object.entries(action))
-          if (key !== "input" && key !== "subject")
-            walk(value, key, site(action, key, decl), {
-              inst,
-              label: `${decl.name}.${name}`,
-              action,
-            });
-    }
-    const eliminatedStates = new Map<string, Set<string>>();
-    // Remove branches excluded by immutable tunables before checking reference states.
-    for (const inst of document.instruments) {
-      if (
-        !inst.lifecycle.states.includes(inst.lifecycle.initial) ||
-        Object.values(inst.lifecycle.transitions).some(
-          (edge) =>
-            edge.from.some((state) => !inst.lifecycle.states.includes(state)) ||
-            (edge.to !== "preserve" &&
-              !inst.lifecycle.states.includes(edge.to)),
-        )
-      )
-        continue;
-      let specialized = trimmed.has(inst.id);
-      for (const [key, action] of Object.entries(inst.actions)) {
-        const constant = (value: import("@hyperscale0/udl").UdlValue) => {
-          if ("literal" in value) return value.literal;
-          const f = inst.fields.find((f) => `self.${f.name}` === value.field);
-          return f && "value" in f ? f.value : undefined;
-        };
-        if (
-          action.requires.some((r) => {
-            if (r.kind !== "compare") return false;
-            const left = constant(r.left),
-              right = constant(r.right);
-            if (left === undefined || right === undefined) return false;
-            return r.operator === "=="
-              ? left !== right
-              : r.operator === "!="
-                ? left === right
-                : false;
-          })
-        ) {
-          delete inst.actions[key];
-          delete inst.lifecycle.transitions[key];
-          specialized = true;
-        }
-      }
-      if (!specialized) continue;
-      const reachable = new Set([inst.lifecycle.initial]);
-      for (let n = 0; n < inst.lifecycle.states.length; n++)
-        for (const edge of Object.values(inst.lifecycle.transitions))
-          if (edge.from.some((state) => reachable.has(state)))
-            if (edge.to !== "preserve") reachable.add(edge.to);
-      for (const [key, edge] of Object.entries(inst.lifecycle.transitions)) {
-        edge.from = edge.from.filter((state) => reachable.has(state));
-        if (!edge.from.length) {
-          delete inst.actions[key];
-          delete inst.lifecycle.transitions[key];
-        }
-      }
-      eliminatedStates.set(
-        inst.id,
-        new Set(inst.lifecycle.states.filter((state) => !reachable.has(state))),
-      );
-      inst.lifecycle.states = inst.lifecycle.states.filter((state) =>
-        reachable.has(state),
-      );
-      inst.actionOrder = inst.actionOrder.filter((key) => inst.actions[key]);
-    }
-    for (const inst of document.instruments)
-      for (const action of Object.values(inst.actions)) {
-        for (const requirement of action.requires) {
-          if (requirement.kind !== "state") continue;
-          const field = inst.fields.find(
-            (f) => `self.${f.name}` === requirement.reference,
-          );
-          if (field?.type === "ref")
-            requirement.states = requirement.states.filter(
-              (state) =>
-                !(
-                  typeof field.target === "string"
-                    ? [field.target]
-                    : field.target
-                ).some((id) => eliminatedStates.get(id)?.has(state)),
-            );
-        }
-      }
+    checkNames(document, authored, declarations, templateAt);
+    specialize(document, trimmed);
     for (const exposure of exposures)
       if (
         !document.instruments.find((inst) => inst.id === exposure.instrument)
@@ -4817,6 +4872,7 @@ export function compile(
       };
     // A public action on a fresh attachment creates it first with no input
     // (in the engine executor), so creation that needs input must be public.
+    const byId = new Map(document.instruments.map((inst) => [inst.id, inst]));
     for (const kind of document.objects)
       for (const attachment of kind.attachments) {
         if (attachment.parent) continue;

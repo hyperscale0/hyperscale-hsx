@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
-import { readExamples } from "../scripts/bundle-examples.ts";
+import { readHsxDir } from "../scripts/bundle-programs.ts";
 
 test("every authored example compiles without diagnostics", () => {
-  for (const example of readExamples()) {
+  for (const example of readHsxDir("examples")) {
     const result = compile(example.source);
     if (result.diagnostics.length)
       throw new Error(

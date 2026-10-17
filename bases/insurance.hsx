@@ -3,7 +3,7 @@ program insurance_base "Protect a purchase"
 
 object purchase "Purchase" {
   attach cover = insurance.cover {
-    holder: owner, adapter: "conformance_boundary"
+    holder: owner, adapter: "fixture_bank"
     expose create as create_cover
     expose activate as activate_cover
     expose cancel as cancel_cover

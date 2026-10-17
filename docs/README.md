@@ -138,7 +138,7 @@ declaration leaves a null snapshot in compiled output. Product creation and
 recomposition reject unresolved or changed declarations during Build admission.
 Execution checks the frozen declaration too; later adapter unavailability can
 block actions on an already saved Build. A boundary adapter, such
-as `conformance_boundary`, only binds its accounts and needs no evidence. Any
+as `fixture_bank`, only binds its accounts and needs no evidence. Any
 other adapter also needs a matching `requires evidence` rule on the action, or
 preview and execution refuse with `subject_adapter_unbound`.
 

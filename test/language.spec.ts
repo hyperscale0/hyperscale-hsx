@@ -1,5 +1,5 @@
 import { validateUdl } from "@hyperscale0/udl";
-import { genericAdapter } from "../../adl/src/boundary-fixture.ts";
+import { fixtureBank } from "../../adl/src/fixture-bank.ts";
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { defaultToolchain } from "../src/toolchain.ts";
@@ -200,7 +200,7 @@ party payee: business
 payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
     testToolchain([], {
-      fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+      fixture: { adapter: fixtureBank, operation: "boundary.observe" },
     }),
   );
   expect(result.diagnostics).toEqual([]);
@@ -258,7 +258,7 @@ payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "mi
     {
       ...defaultToolchain,
       adapters: Object.create({
-        missing: { adapter: genericAdapter, operation: "boundary.observe" },
+        missing: { adapter: fixtureBank, operation: "boundary.observe" },
       }),
     },
   );
@@ -275,7 +275,7 @@ party payee: business
 payment = money.payout { payer: payer, payee: payee, amount: 1 SAR, adapter: "fixture" }
 `,
     testToolchain([], {
-      fixture: { adapter: genericAdapter, operation: "boundary.observe" },
+      fixture: { adapter: fixtureBank, operation: "boundary.observe" },
     }),
   );
   const document = result.artifacts!.document;

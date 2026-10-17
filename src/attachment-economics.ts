@@ -104,46 +104,83 @@ export function applyAttachmentEconomics(
   }
 }
 
+type Selectors = ReadonlyMap<string, { prefix: string; root: string }>;
+type Attaches = ReadonlyMap<
+  string,
+  { entry: Entry; name: string; template: InstrumentDecl }
+>;
+
 /**
- * A money move an attachment leaves without a purpose books as neither
- * revenue nor a payout. The warning names the economics line to add; its
- * purpose follows the bound parties: earning into the operator, a payout out
- * of it, money passing through otherwise.
+ * Each instrument an attach made, with the parties bound on its attachment
+ * and the span of `attach <name>`, the line a declaration goes under.
  */
-export function purposeWarnings(
+function attached(
   document: UdlDocument,
-  selectors: ReadonlyMap<string, { prefix: string; root: string }>,
-  attaches: ReadonlyMap<
-    string,
-    { entry: Entry; name: string; template: InstrumentDecl }
-  >,
-): Diagnostic[] {
-  const warnings: Diagnostic[] = [];
+  selectors: Selectors,
+  attaches: Attaches,
+) {
   const bindings = new Map(
     document.objects.flatMap((object) =>
       object.attachments.map((item) => [item.instrument, item.parties]),
     ),
   );
-  const party = (path: string | undefined) =>
-    /^party\.(\w+)$/.exec(path ?? "")?.[1];
-  const operator = (name: string | undefined) =>
-    name === "operator" || name === "programOperator";
-  for (const instrument of document.instruments) {
+  return document.instruments.flatMap((instrument) => {
     const selector = selectors.get(instrument.id);
     const attach = selector && attaches.get(selector.root);
-    if (!selector || !attach) continue;
-    const parties = bindings.get(instrument.id) ?? {};
+    if (!selector || !attach) return [];
+    const start = attach.entry.span.start;
+    return [
+      {
+        instrument,
+        selector,
+        attach,
+        parties:
+          bindings.get(instrument.id) ?? bindings.get(selector.root) ?? {},
+        span: { start, end: start + `attach ${attach.name}`.length },
+      },
+    ];
+  });
+}
+
+const partyName = (path: string | undefined) =>
+  /^party\.(\w+)$/.exec(path ?? "")?.[1];
+
+const bound = (binding: AttachmentPartyBinding) =>
+  "role" in binding ? binding.role : binding.party;
+
+/** The company is operator, programOperator or a declared program_operator business. */
+function isCompany(document: UdlDocument, name: string | undefined) {
+  return (
+    name === "operator" ||
+    name === "programOperator" ||
+    (name !== undefined && document.parties[name]?.role === "program_operator")
+  );
+}
+
+/**
+ * A money move an attachment leaves without a purpose books as neither
+ * revenue nor a payout. The warning names the economics line to add; its
+ * purpose follows the bound parties: earning into the company, a payout out
+ * of it, money passing through otherwise.
+ */
+export function purposeWarnings(
+  document: UdlDocument,
+  selectors: Selectors,
+  attaches: Attaches,
+): Diagnostic[] {
+  const warnings: Diagnostic[] = [];
+  for (const { instrument, selector, attach, parties, span } of attached(
+    document,
+    selectors,
+    attaches,
+  )) {
     const parameters = attach.template.parameters
       .filter((row) => row.value.kind === "name" && row.value.value === "party")
       .map((row) => row.key);
     // The template's own parameter reads back in the founder's terms.
     const parameter = (name: string) =>
-      parameters.find((key) => {
-        const binding = parties[key];
-        return (
-          binding && ("role" in binding ? binding.role : binding.party) === name
-        );
-      }) ?? name;
+      parameters.find((key) => parties[key] && bound(parties[key]) === name) ??
+      name;
     for (const actionName of instrument.actionOrder) {
       const action = instrument.actions[actionName]!;
       for (const move of action.moves) {
@@ -159,16 +196,15 @@ export function purposeWarnings(
           ? resolveField(document, instrument, move.from, action.input, action)
           : undefined;
         const from =
-          party(move.from) ??
+          partyName(move.from) ??
           (account?.type === "account" &&
           typeof account.owner === "string" &&
           account.owner !== "self"
             ? account.owner
             : undefined);
-        const to = party(move.to);
-        const purpose = operator(to)
+        const purpose = isCompany(document, partyName(move.to))
           ? "earning"
-          : operator(from)
+          : isCompany(document, from)
             ? "participant_payout"
             : "pass_through";
         // Money leaving an account of self is the company's: only an earning
@@ -182,11 +218,7 @@ export function purposeWarnings(
           code: "economic_purpose_missing",
           message: `${attach.name}: ${path} moves money with no declared purpose, so the books will not count it as revenue or a payout`,
           fix: `add economics ${path} { purpose: ${purpose}, sourceParty: ${source} } inside attach ${attach.name}`,
-          // Underline `attach <name>`, the line the declaration goes under.
-          span: {
-            start: attach.entry.span.start,
-            end: attach.entry.span.start + `attach ${attach.name}`.length,
-          },
+          span,
         });
       }
     }
@@ -203,38 +235,23 @@ export function purposeWarnings(
  */
 export function samePartyMoves(
   document: UdlDocument,
-  selectors: ReadonlyMap<string, { prefix: string; root: string }>,
-  attaches: ReadonlyMap<
-    string,
-    { entry: Entry; name: string; template: InstrumentDecl }
-  >,
+  selectors: Selectors,
+  attaches: Attaches,
 ): { errors: Diagnostic[]; warnings: Diagnostic[] } {
   const errors: Diagnostic[] = [];
   const warnings: Diagnostic[] = [];
-  const bindings = new Map(
-    document.objects.flatMap((object) =>
-      object.attachments.map((item) => [item.instrument, item.parties]),
-    ),
-  );
-  const party = (path: string | undefined) =>
-    /^party\.(\w+)$/.exec(path ?? "")?.[1];
   const normal = (name: string) =>
-    name === "programOperator" ||
-    document.parties[name]?.role === "program_operator"
-      ? "operator"
-      : name;
+    isCompany(document, name) ? "operator" : name;
   const seen = new Set<string>();
-  for (const instrument of document.instruments) {
-    const selector = selectors.get(instrument.id);
-    const attach = selector && attaches.get(selector.root);
-    if (!selector || !attach) continue;
-    const parties = bindings.get(selector.root) ?? {};
+  for (const { instrument, selector, attach, parties, span } of attached(
+    document,
+    selectors,
+    attaches,
+  )) {
     // The template's own parameter, as the founder bound it.
     const parameter = (name: string) =>
       Object.entries(parties).find(([, binding]) =>
-        [name, normal(name)].includes(
-          normal("role" in binding ? binding.role : binding.party),
-        ),
+        [name, normal(name)].includes(normal(bound(binding))),
       )?.[0];
     const spell = (name: string) => {
       const key = parameter(name);
@@ -250,8 +267,8 @@ export function samePartyMoves(
     const runsCreate = pinned && pinned !== "actor" ? pinned : undefined;
     for (const actionName of instrument.actionOrder) {
       for (const move of instrument.actions[actionName]!.moves) {
-        const from = "from" in move ? party(move.from) : undefined;
-        const to = "to" in move ? party(move.to) : undefined;
+        const from = "from" in move ? partyName(move.from) : undefined;
+        const to = "to" in move ? partyName(move.to) : undefined;
         if (!from || !to) continue;
         const payer = normal(from);
         const payee = normal(to);
@@ -260,10 +277,6 @@ export function samePartyMoves(
         const key = `${attach.name}:${payer}:${payee}`;
         if (seen.has(key)) continue;
         const path = `${selector.prefix}${actionName}`;
-        const span = {
-          start: attach.entry.span.start,
-          end: attach.entry.span.start + `attach ${attach.name}`.length,
-        };
         if (resolve(payer) === resolve(payee)) {
           seen.add(key);
           const via =
@@ -310,36 +323,23 @@ export function samePartyMoves(
  */
 export function unboundEconomicSources(
   document: UdlDocument,
-  selectors: ReadonlyMap<string, { prefix: string; root: string }>,
-  attaches: ReadonlyMap<
-    string,
-    { entry: Entry; name: string; template: InstrumentDecl }
-  >,
+  selectors: Selectors,
+  attaches: Attaches,
 ): Diagnostic[] {
   const errors: Diagnostic[] = [];
-  const company = (name: string) =>
-    name === "operator" ||
-    name === "programOperator" ||
-    document.parties[name]?.role === "program_operator";
+  const company = (name: string) => isCompany(document, name);
   const identity = (name: string) => (company(name) ? "company" : name);
   const customer = (name: string) => name === "owner" || name === "actor";
-  const bindings = new Map(
-    document.objects.flatMap((object) =>
-      object.attachments.map((item) => [item.instrument, item.parties]),
-    ),
-  );
-  for (const instrument of document.instruments) {
-    const selector = selectors.get(instrument.id);
-    const attach = selector && attaches.get(selector.root);
-    if (!selector || !attach) continue;
-    const parties =
-      bindings.get(instrument.id) ?? bindings.get(selector.root) ?? {};
+  for (const { instrument, selector, attach, parties, span } of attached(
+    document,
+    selectors,
+    attaches,
+  )) {
     // The founder's own parameter name, such as member for owner.
     const spell = (name: string) =>
       (!company(name) &&
         Object.entries(parties).find(
-          ([, binding]) =>
-            ("role" in binding ? binding.role : binding.party) === name,
+          ([, binding]) => bound(binding) === name,
         )?.[0]) ||
       name;
     for (const actionName of instrument.actionOrder) {
@@ -394,10 +394,7 @@ export function unboundEconomicSources(
           code: "economic_source_unbound",
           message: `${attach.name}: ${path} moves money out of ${move.from.startsWith("party.") ? spell(move.from.slice(6)) : move.from}, which is ${owned} account, but names ${spell(move.economics.sourceParty)} as the source. Every run of this action would refuse with economic_source_unbound.`,
           fix: `Set sourceParty: ${fix === "programOperator" ? fix : spell(fix)} on economics ${path}, or move the money from an account ${spell(move.economics.sourceParty)} owns.`,
-          span: {
-            start: attach.entry.span.start,
-            end: attach.entry.span.start + `attach ${attach.name}`.length,
-          },
+          span,
         });
       }
     }

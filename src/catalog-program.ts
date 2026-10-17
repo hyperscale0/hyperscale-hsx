@@ -14,13 +14,13 @@ object item "Item" {
  attach schedule = money.schedule { payer: owner, payee: operator, amount: 250 SAR, every: 1 month }
  attach pool = money.pool { payer: actor, payee: owner, target: 1000 SAR, closes: 2027-01-01 }
  attach swap = money.swap { first: actor, second: owner, first_amount: 100 SAR, second_amount: 200 SAR, expires: 2027-01-01 }
- attach payout = money.payout { payer: actor, payee: owner, adapter: "conformance_boundary" }
+ attach payout = money.payout { payer: actor, payee: owner, adapter: "fixture_bank" }
  attach mandate = money.mandate { payer: actor, payee: owner }
  attach metered = money.metered { payer: actor, payee: owner, unit_price: 10 SAR }
  attach late_fee = money.late_fee { payer: actor, payee: owner, amount: 50 SAR, cap: 500 SAR }
- attach policy = insurance.cover { holder: actor, adapter: "conformance_boundary" }
+ attach policy = insurance.cover { holder: actor, adapter: "fixture_bank" }
  attach claim = insurance.claim { cover: policy, inspector: inspector }
- attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "conformance_boundary", covers: sale }
+ attach cov = insurance.cover { holder: actor, broker: supplier, adapter: "fixture_bank", covers: sale }
  attach deposit = escrow.hold { payer: actor, payee: owner }
  attach sale = escrow.hold { funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }, payer: actor, payee: owner }
  attach trip = booking.reservation { customer: actor, operator: owner }
@@ -29,7 +29,7 @@ object item "Item" {
  attach checkout = purchase.checkout { plans: plan, funds: sale, borrower: actor, capital: operator }
  attach plan = financing.installments { borrower: actor, capital: operator, months: 3, pricing: flat_total, profit_rate: 2.5%, down_payment: 20%, funds: checkout, limits: limits, portfolio: ceiling }
  attach late = financing.late_charge { on: plan, borrower: actor }
- attach line = financing.credit_line { borrower: operator, adapter: "conformance_boundary", limit: 100000 SAR, expires: 2027-01-01 }
+ attach line = financing.credit_line { borrower: operator, adapter: "fixture_bank", limit: 100000 SAR, expires: 2027-01-01 }
  attach advance = financing.advance { line: line }
  attach case = collections.case { on: plan, agency: supplier }
  attach contact = collections.contact { case: case, agency: supplier }
@@ -50,4 +50,6 @@ object item "Item" {
  attach circle = savings.circle { contribution: 300 SAR, members: 8, starts: 2027-01-01 }
  attach membership = savings.membership { circle: circle, member: actor }
  attach reports = reporting.portfolio { on: plan }
+ attach hire = rental.hire_charge { renter: actor, security: security }
+ attach security = rental.deposit { renter: actor, hire: hire }
 }`;

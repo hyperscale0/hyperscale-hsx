@@ -1,4 +1,4 @@
-/** Neutral programs generated from bases/*.hsx. */
+/** An authored program generated from bases/*.hsx or examples/*.hsx. */
 export interface HsxBase {
   id: string;
   title: string;

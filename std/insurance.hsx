@@ -5,7 +5,7 @@ header insurance
 // Claim moves remain unclassified until their money purpose is declared.
 
 // Expose cover.create, activate and cancel separately. The adapter names a
-// registered boundary adapter (conformance_boundary in sandbox). covers is an
+// registered boundary adapter (fixture_bank in sandbox). covers is an
 // optional link to a sibling attachment; the attached object is already the
 // insured thing. claim_limit is the sum insured: approved and paid claims on one
 // cover, across every claim attachment, never total more. Activation binds adapter;

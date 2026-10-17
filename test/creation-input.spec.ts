@@ -103,7 +103,7 @@ test("a rename of a record field names the record instead of promising a binding
   const [diagnostic] = compile(`program p "P"
 object trip "Trip" {
   attach cover = insurance.cover {
-    holder: owner, adapter: "conformance_boundary", claim_limit: 1000 SAR
+    holder: owner, adapter: "fixture_bank", claim_limit: 1000 SAR
     rename { premium: price }
     expose create as quote_cover
   }

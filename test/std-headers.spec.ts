@@ -2,6 +2,7 @@ import { catalogProgramSource } from "../src/catalog-program.ts";
 import { expect, test } from "bun:test";
 import { compile } from "../src/compile.ts";
 import { headerManifest } from "../src/headers.ts";
+import { defaultToolchain } from "../src/toolchain.ts";
 
 // Mutation unreachable-header-state: add an unentered state to any std lifecycle.
 // The manifest comparison also fails if a new export lacks a compilation witness.
@@ -25,6 +26,13 @@ test("every standard header export is instantiated under the strict compiler", (
       expect(name, item.qualifiedName).toBeDefined();
       expect(compiled.has(name!), item.qualifiedName).toBe(true);
     }
+});
+
+// Mutation: list the manifest's headers by hand and leave one std header out.
+test("the header manifest names every bundled std header", () => {
+  expect(headerManifest().headers.map((header) => header.name)).toEqual([
+    ...defaultToolchain.std.keys(),
+  ]);
 });
 
 // Mutation own-parameter-shadowing: resolve sibling attachments before own

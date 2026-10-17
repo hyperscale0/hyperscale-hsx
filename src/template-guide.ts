@@ -2,7 +2,7 @@ import type { BlockExpr, Entry, Expr, InstrumentDecl } from "./ast.ts";
 import { catalogProgramSource } from "./catalog-program.ts";
 import { compile } from "./compile.ts";
 import { parseHeader } from "./header-source.ts";
-import { headerManifest, HEADER_NAMES } from "./headers.ts";
+import { headerManifest } from "./headers.ts";
 import { parseProgram } from "./parse.ts";
 import { defaultToolchain, type Toolchain } from "./toolchain.ts";
 
@@ -83,7 +83,6 @@ export function templateGuide(
 ): TemplateGuide | undefined {
   const [header, name, extra] = qualifiedName.split(".");
   if (!header || !name || extra !== undefined) return undefined;
-  if (!(HEADER_NAMES as readonly string[]).includes(header)) return undefined;
   const source = toolchain.std.get(header);
   if (!source) return undefined;
   const manifest = headerManifest(toolchain.std, [

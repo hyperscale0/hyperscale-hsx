@@ -5,7 +5,7 @@
 //
 //   bun scripts/bundles.ts [--check]
 //
-// The examples and bases scripts import the compiler, which imports the std
+// The examples and bases bundles import the compiler, which imports the std
 // bundle, so each script loads only after the bundle before it is written.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -19,12 +19,17 @@ const bundles = [
     "src/examples-bundle.ts",
     "examples/*.hsx",
     async () =>
-      (await import("./bundle-examples.ts")).generateExamplesBundleCode(),
+      (await import("./bundle-programs.ts")).generateProgramsBundleCode(
+        "examples",
+      ),
   ],
   [
     "src/bases-bundle.ts",
     "bases/*.hsx",
-    async () => (await import("./bundle-bases.ts")).generateBasesBundleCode(),
+    async () =>
+      (await import("./bundle-programs.ts")).generateProgramsBundleCode(
+        "bases",
+      ),
   ],
 ] as const;
 

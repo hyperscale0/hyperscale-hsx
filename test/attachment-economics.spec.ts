@@ -150,3 +150,15 @@ object purchase "Purchase" {
     undefined,
   ]);
 });
+
+// Mutation: leave the program_operator role out of the purpose hint's company test.
+test("a declared program_operator party gets the company's purpose hint", () => {
+  const result = compile(`program service "Service"
+party house: business role program_operator
+object purchase "Purchase" {
+ attach payment = money.transfer { payer: actor, payee: house }
+}`);
+  expect(result.warnings.map((warning) => warning.fix)).toEqual([
+    "add economics pay { purpose: earning, sourceParty: payer } inside attach payment",
+  ]);
+});
