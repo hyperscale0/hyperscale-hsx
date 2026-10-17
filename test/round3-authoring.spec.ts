@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { compile } from "../src/compile.ts";
 import { runCli } from "../src/cli.ts";
 
