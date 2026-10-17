@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { parseProgram } from "../src/parse.ts";
 import { namedHeaders } from "../src/headers.ts";
 import { scan } from "../src/lex.ts";
@@ -49,10 +49,3 @@ export function generateBasesBundleCode(): string {
     "",
   ].join("\n");
 }
-
-if (import.meta.main)
-  writeFileSync(
-    new URL("../src/bases-bundle.ts", import.meta.url),
-    generateBasesBundleCode(),
-    "utf8",
-  );

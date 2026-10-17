@@ -1,9 +1,8 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const packageRoot = join(import.meta.dir, "..");
 const stdRoot = join(packageRoot, "std");
-const targetPath = join(packageRoot, "src", "std-bundle.ts");
 
 /** The std headers by name and the package version, for the default toolchain. */
 export function generateStdBundleCode(): string {
@@ -28,6 +27,3 @@ export function generateStdBundleCode(): string {
     "",
   ].join("\n");
 }
-
-if (import.meta.main)
-  writeFileSync(targetPath, generateStdBundleCode(), "utf8");
