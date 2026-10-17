@@ -90,9 +90,11 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
   }
   lifecycle { states: [pending, cash_ready, loss_ready, distributed], initial: pending }
   action create {
+    actor: caller
     requires self.round in [funded]; requires self.source in [recorded]; requires self.source.plan == self.round.plan
   }
   action prepare_cash {
+    actor: caller
     from: pending, to: cash_ready
     requires self.mode == "cash"; requires self.source.kind == "cash"; requires self.source in [recorded]
     calculate: [
@@ -105,6 +107,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
     ]
   }
   action prepare_loss {
+    actor: caller
     from: pending, to: loss_ready
     requires self.mode == "loss"; requires self.source.kind == "loss"; requires self.source in [recorded]
     calculate: [{ target: "net", op: "sum", values: [{ field: self.source.loss }] }]
@@ -139,7 +142,7 @@ instrument distribution(round: ref<lending.round>, receipt: ref, commitments: re
         gross: money = ratio(self.distribution.net, self.weight, self.distribution.round.price)
       }
       lifecycle { states: [pending, paid], initial: pending }
-      action create { requires self.distribution in [cash_ready, loss_ready]; requires self.commitment in [funded]; requires unique "distribution_weight" on [self.distribution, self.commitment]; requires self.commitment.round == self.distribution.round }
+      action create { actor: caller, requires self.distribution in [cash_ready, loss_ready]; requires self.commitment in [funded]; requires unique "distribution_weight" on [self.distribution, self.commitment]; requires self.commitment.round == self.distribution.round }
       action cash { allowZero: true,
         from: pending, to: paid, actor: { parent: parent }
         moves self.gross from self.distribution.held to self.commitment.wallet.held

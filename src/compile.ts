@@ -51,6 +51,7 @@ import {
   unboundEconomicSources,
 } from "./attachment-economics.ts";
 import { instrumentChecks, parseHeader } from "./header-source.ts";
+import { clockRuled, ruledActor } from "./actors.ts";
 import {
   lineColAt,
   type AssignmentDecl,
@@ -535,8 +536,29 @@ function literal(expr: Expr, expectedType?: string): string | number | boolean {
 
 /** A std declaration's identity: its AST with spans, sources and comments dropped. */
 function declarationDigest(decl: InstrumentDecl): string {
-  return digest(normal(decl));
+  return digest(normal(callerless(decl)));
 }
+/**
+ * `actor: caller` spells what an omitted actor meant before the actor rule,
+ * so writing it keeps a std family's digest. Every std action names its actor.
+ */
+const callerless = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value
+        .filter(
+          (item) =>
+            !(
+              item?.key === "actor" &&
+              item.value?.kind === "name" &&
+              item.value.value === "caller"
+            ),
+        )
+        .map(callerless)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, callerless(item)]),
+        )
+      : value;
 
 /**
  * The scope one instrument lowers in: the compile's shared state and the
@@ -2260,6 +2282,59 @@ export function compile(
           : [],
       ),
     );
+    // The actor rule runs while an instrument lowers, before program-level
+    // expose lines apply, so it reads them here by instrument id and action.
+    const exposedActions = new Set(
+      program.decls.flatMap((decl) => {
+        if (decl.kind !== "expose") return [];
+        const parts = decl.target.split(".");
+        const action = parts.pop();
+        return [`${parts.join("_")} ${action}`];
+      }),
+    );
+    // Every action name an invoke in the program names. Only an expose line or
+    // an invoke reaches an action, so an unexposed one named here runs inside
+    // the chain of whoever started it. An instrument lowers before the
+    // instruments that invoke it are lowered, so the rule reads names while
+    // lowering, and `nameRuled` keeps each action that a name alone made
+    // caller until every invoke's target instrument is resolved.
+    const invokedActions = new Set<string>();
+    const nameRuled: {
+      inst: UdlInstrument;
+      name: string;
+      row: Entry;
+      parties: Record<string, AttachmentPartyBinding> | undefined;
+    }[] = [];
+    const spendersFail = (
+      row: Entry,
+      name: string,
+      spenders: readonly string[],
+    ) =>
+      fail(
+        row,
+        `${name} spends money of ${spenders.join(" and ")}, so no one party can run it`,
+        "split it into one action per paying party",
+      );
+    const collectInvoked = (expr: Expr): void => {
+      if (expr.kind === "list") expr.items.forEach(collectInvoked);
+      if (expr.kind !== "block") return;
+      for (const entry of expr.entries) {
+        if (entry.key === "invoke")
+          for (const call of entry.value.kind === "list"
+            ? entry.value.items
+            : [entry.value]) {
+            const action =
+              call.kind === "block"
+                ? call.entries.find((slot) => slot.key === "action")?.value
+                : undefined;
+            if (action && "value" in action && typeof action.value === "string")
+              invokedActions.add(action.value);
+          }
+        collectInvoked(entry.value);
+      }
+    };
+    for (const decl of program.decls)
+      if ("body" in decl) collectInvoked(decl.body);
     for (const decl of program.decls) {
       if (decl.kind === "expose") continue;
       const first = names.get(decl.name);
@@ -3713,6 +3788,27 @@ export function compile(
       };
       for (const row of decl.body.entries)
         if (row.key.startsWith("action ")) collectTargets(asBlock(row.value));
+      // Actions that name no actor, which the actor rule fills once every move
+      // is lowered. The rule covers a program's own instruments that name who
+      // takes part. A header names every actor it means, and an instrument
+      // with no party parameter has no one to give a step to, so both keep
+      // caller.
+      const ruled = new Map<string, Entry>();
+      const reach = (name: string) => ({
+        exposed:
+          (attachmentInfo?.exposed.has(name) ?? false) ||
+          exposedActions.has(`${id} ${name}`),
+        invoked: invokedActions.has(name),
+      });
+      const ruleApplies =
+        !standardOrigin &&
+        decl.parameters.some((parameter) => {
+          const type =
+            parameter.value.kind === "default"
+              ? parameter.value.type
+              : parameter.value;
+          return type.kind === "name" && type.value === "party";
+        });
       for (const row of decl.body.entries.filter((e) =>
         e.key.startsWith("action "),
       )) {
@@ -4041,6 +4137,12 @@ export function compile(
         }
         if (moveCalculations.length)
           a.calculate = [...(a.calculate ?? []), ...moveCalculations];
+        if (ruleApplies && !slots.has("actor")) {
+          ruled.set(name, row);
+          // The clock fires a due action no one presses, before the expose
+          // check reads the actor.
+          if (clockRuled(a, reach(name))) a.actor = "clock";
+        }
         // An action is hidden until an expose line names it.
         if (attachmentInfo?.exposed.has(name)) {
           if (automatic(a.actor))
@@ -4212,6 +4314,27 @@ export function compile(
           book: "cash",
           key: "programTax",
         });
+      }
+      for (const [name, row] of ruled) {
+        const action = inst.actions[name];
+        if (!action) continue;
+        const rule = ruledActor(
+          inst,
+          name,
+          action,
+          attachmentInfo?.parties,
+          reach(name),
+        );
+        if ("spenders" in rule) spendersFail(row, name, rule.spenders);
+        else action.actor = rule.actor;
+        const reached = reach(name);
+        if (reached.invoked && !reached.exposed)
+          nameRuled.push({
+            inst,
+            name,
+            row,
+            parties: attachmentInfo?.parties,
+          });
       }
       const shape = udlInstrumentSchema.safeParse(inst);
       if (!shape.success) {
@@ -4652,6 +4775,67 @@ export function compile(
       }
       if (decl.kind === "object") {
         compileObject(decl);
+      }
+    }
+    // Every action an invoke reaches, keyed by the instrument it targets. A
+    // target the compile cannot resolve, such as a reference field with no
+    // instrument behind it, reaches every action of that name, as the name
+    // rule did.
+    const invokeTargets = new Set<string>();
+    const instrumentIds = new Set(document.instruments.map((inst) => inst.id));
+    for (const inst of document.instruments)
+      for (const action of Object.values(inst.actions))
+        for (const call of action.invoke ?? []) {
+          const reference =
+            "reference" in call
+              ? resolveField(
+                  document,
+                  inst,
+                  call.reference,
+                  action.input,
+                  action,
+                )
+              : undefined;
+          const ids =
+            "instrument" in call
+              ? [call.instrument]
+              : "selection" in call
+                ? [call.selection.instrument].flat()
+                : reference?.type === "ref" &&
+                    reference.targetKind === "instrument"
+                  ? [reference.target ?? []].flat()
+                  : [];
+          const resolved =
+            ids.length > 0 && ids.every((id) => instrumentIds.has(id));
+          for (const id of resolved ? ids : ["*"])
+            invokeTargets.add(`${id} ${call.action}`);
+        }
+    // An action that only shares its name with an invoke's action is not
+    // reached, so the rule decides it like any other unexposed action.
+    for (const { inst, name, row, parties } of nameRuled) {
+      const action = inst.actions[name];
+      if (
+        !action ||
+        !instrumentIds.has(inst.id) ||
+        invokeTargets.has(`${inst.id} ${name}`) ||
+        invokeTargets.has(`* ${name}`)
+      )
+        continue;
+      const rule = ruledActor(inst, name, action, parties, {
+        exposed: false,
+        invoked: false,
+      });
+      if (!("spenders" in rule)) {
+        action.actor = rule.actor;
+        continue;
+      }
+      // An attached instrument reports the failure with the other bindings,
+      // and an assigned one fails the compile, as each would while lowering.
+      try {
+        spendersFail(row, name, rule.spenders);
+      } catch (error) {
+        if (!parties || !(error instanceof CompileFailure)) throw error;
+        bindingDiagnostics.push(error.diagnostic);
       }
     }
     if (bindingDiagnostics.length)

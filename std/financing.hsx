@@ -183,6 +183,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
     invoke: [{ selection: { instrument: slice, reference: "plan", anchor: self.id, states: [draft], limit: max_term, order: [position] }, action: activate, input: {} }]
   }
   action complete {
+    actor: caller
     from: active, to: paid
     calculate: [{ target: refundWindow, op: shift, date: { field: self.now }, milliseconds: { literal: refund_within }, direction: after }]
     set: { refundUntil: { field: self.refundWindow } }
@@ -254,7 +255,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
     invoke: [{ instrument: settlement, action: create, input: { plan: { field: self.id }, identity: { field: input.identity }, principal: { field: input.principal }, profit: { field: input.profit }, loss: { literal: "0" }, kind: { literal: "cash" } } }]
     invoke: [{ selection: { instrument: current(), reference: "borrowerLimit", anchor: self.borrowerLimit, states: [active], limit: 1, where: { id: { field: self.id }, openSlices: { literal: 0 }, openCharges: { literal: "0" }, openCosts: { literal: "0" } } }, action: complete, input: {} }]
   }
-  action cancel { from: quoted, to: cancelled }
+  action cancel { actor: caller, from: quoted, to: cancelled }
   action void { from: signed, to: cancelled, actor: { party: borrower } }
   action unwind { allowZero: true,
     from: active, to: cancelled, actor: { party: capital }
@@ -371,12 +372,12 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
     write_off_request: {
       fields { plan: ref<parent>, overdueSlice: ref<slice> }
       lifecycle { states: [requested, applied, cancelled], initial: requested }
-      action create { requires self.overdueSlice.plan == self.plan; requires self.plan in [active] }
+      action create { actor: caller, requires self.overdueSlice.plan == self.plan; requires self.plan in [active] }
       action apply {
         from: requested, to: applied, actor: { party: capital }
         invoke: [{ reference: self.plan, action: write_off, input: { overdueSlice: { field: self.overdueSlice } } }]
       }
-      action cancel { from: requested, to: cancelled }
+      action cancel { actor: caller, from: requested, to: cancelled }
     }
     payoff_quote: {
       fields {
@@ -385,6 +386,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
       }
       lifecycle { states: [quoted], initial: quoted }
       action create {
+        actor: caller
         requires self.plan in [active]
         set: { revision: { field: self.productRevision }, effectiveAt: { field: self.now } }
         calculate: [
@@ -447,7 +449,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
       action withdraw { from: proposed, to: withdrawn, actor: { party: capital } }
       action decline { from: proposed, to: declined, actor: { party: borrower } }
       action expire { from: proposed, to: expired, actor: clock, due: { at: self.expiresAt } }
-      action supersede { from: proposed, to: superseded, requires self.revision != self.productRevision, set: { staleReason: { literal: "economic_revision_changed" } } }
+      action supersede { actor: caller, from: proposed, to: superseded, requires self.revision != self.productRevision, set: { staleReason: { literal: "economic_revision_changed" } } }
     }
     proposed_date: {
       fields { amendment: ref<amendment>, position: integer(1, max_term), date: date = at(self.amendment.dates, self.position), first: integer = divide(1, self.position), prior: integer = subtract(self.position, 1), previousPosition: integer = sum(self.prior, self.first), previous: date = at(self.amendment.dates, self.previousPosition) }
@@ -651,6 +653,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
         ]
       }
       action complete {
+        actor: caller
         from: [pending, due], to: paid
         requires self.openPrincipal == "0"; requires self.openProfit == "0"; requires self.earnedProfit == "0"
       }
@@ -693,7 +696,7 @@ instrument installments(loan_kind: enum(mortgage, auto, personal, short_term) = 
         outstandingPrincipal: money?, outstandingProfit: money?, outstandingFines: money?, outstandingCosts: money?, outstandingTotal: money?, unapplied: money?, principalReturned: money?, profitReturned: money?, settled: integer? }
 
       lifecycle { states: [pending, paid, refunded], initial: pending }
-      action create { input { plan: ref<parent>, amount: money, paymentIdentity: text } requires self.plan in [active]; requires unique "payment_identity" on [self.plan, self.paymentIdentity] }
+      action create { actor: caller, input { plan: ref<parent>, amount: money, paymentIdentity: text } requires self.plan in [active]; requires unique "payment_identity" on [self.plan, self.paymentIdentity] }
       action pay {
         from: pending, to: paid, actor: { party: borrower }
         calculate: [{ target: outstandingPrincipal, op: sum, values: [{ field: self.plan.principalReceivable.balance }] }]
@@ -816,7 +819,7 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     open: money?, take: money?
   }
   lifecycle { states: [proposed, assessed, collected, waived], initial: proposed }
-  action create { input { slice: ref<on.slice>? }, calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: payoffAmount, op: sum, values: [{ literal: "0" }] }, { target: open, op: sum, values: [{ literal: "0" }] }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan; requires count of { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [proposed, assessed, collected], limit: 366 } < self.plan.historyLimit }
+  action create { actor: caller, input { slice: ref<on.slice>? }, calculate: [{ target: overdueAt, op: shift, date: { field: self.slice.dueAt }, milliseconds: { literal: grace }, direction: after }, { target: payoffAmount, op: sum, values: [{ literal: "0" }] }, { target: open, op: sum, values: [{ literal: "0" }] }], requires unique "late_assessment" on [self.slice, self.overdueAt]; requires self.borrower == self.slice.plan.borrower; requires self.plan == self.slice.plan; requires count of { instrument: all(financing.late_charge), reference: "plan", anchor: self.plan, states: [proposed, assessed, collected], limit: 366 } < self.plan.historyLimit }
   action assess { allowZero: true,
     from: proposed, to: assessed, actor: clock, due: { at: self.overdueAt }
     requires self.slice.openPrincipal > "0"
@@ -877,12 +880,12 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
     waiver_request: {
       fields { assessment: ref<parent>, reason: text, evidence: text }
       lifecycle { states: [requested, applied, cancelled], initial: requested }
-      action create { requires self.assessment in [assessed, collected] }
+      action create { actor: caller, requires self.assessment in [assessed, collected] }
       action apply {
         from: requested, to: applied, actor: { party: fines_to }, input { reason: text, evidence: text }
         invoke: [{ reference: self.assessment, action: waive, input: { reason: { field: input.reason }, evidence: { field: input.evidence } } }]
       }
-      action cancel { from: requested, to: cancelled }
+      action cancel { actor: caller, from: requested, to: cancelled }
     }
     waiver: {
       fields { assessment: ref<parent>, amendment: ref<on.amendment>, amount: money }
@@ -973,12 +976,12 @@ instrument late_charge(on: ref<financing.installments>[], grace: duration = 3d, 
         waiver_request: {
           fields { assessment: ref<parent>, reason: text, evidence: text }
           lifecycle { states: [requested, applied, cancelled], initial: requested }
-          action create { requires self.assessment in [assessed, collected] }
+          action create { actor: caller, requires self.assessment in [assessed, collected] }
           action apply {
             from: requested, to: applied, actor: { party: costs_to }, input { reason: text, evidence: text }
             invoke: [{ reference: self.assessment, action: waive, input: { reason: { field: input.reason }, evidence: { field: input.evidence } } }]
           }
-          action cancel { from: requested, to: cancelled }
+          action cancel { actor: caller, from: requested, to: cancelled }
         }
         waiver: {
           fields { assessment: ref<parent>, amendment: ref<on.amendment>, amount: money }

@@ -16,7 +16,7 @@ instrument portfolio(on: ref<financing.installments>[], default_days: integer(1,
   summary: "Declared financing reports evaluated over frozen Product facts."
   fields {}
   lifecycle { states: [declared], initial: declared }
-  action create {}
+  action create { actor: caller }
   checks {
     aging_first_days < aging_second_days {
       message: "Attachment `{attachment}` sets `aging_first_days` at or above `aging_second_days`, so the aging buckets overlap."

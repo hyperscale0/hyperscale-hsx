@@ -67,6 +67,7 @@ instrument cover(holder: party, adapter: text, commission: percent = 0%, broker:
       }
       lifecycle { states: [pending, paid, active, expired, refunded], initial: pending }
       action create {
+        actor: caller
         requires self.startsAt < self.endsAt
         requires unique "premium_period" on [self.cover, self.startsAt, self.endsAt]
       }
@@ -96,7 +97,7 @@ instrument claim(cover: ref<insurance.cover>, inspector: party) {
   fields { cover: ref<cover>, amount: money, expiresAt: date, evidence: text, reservation: text? }
   lifecycle { states: [submitted, approved, paid, denied, expired], initial: submitted }
   invariants sum "amount" of { instrument: all(insurance.claim), reference: "cover", anchor: self.cover, states: [approved, paid], limit: 366 } <= self.cover.claimLimit
-  action create { requires self.cover in [active] }
+  action create { actor: caller, requires self.cover in [active] }
   action approve {
     from: submitted, to: approved
     actor: { party: inspector }

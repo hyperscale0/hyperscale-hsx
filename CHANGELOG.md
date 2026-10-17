@@ -26,6 +26,11 @@ Added:
 
 Changed:
 
+- A program instrument with party parameters that leaves `actor` out gets it
+  from the actor rule (`src/actors.ts`): follow actions stay `caller`, an
+  unexposed `due` action with no input runs on the clock, the party whose money
+  leaves pays, `create` goes to the `actor` or `owner` binding, and the company
+  runs the rest. Headers name every actor, so std UDL is unchanged.
 - All 15 examples are Saudi businesses with SAR prices, explicit fees and VAT
   treatment, named business counterparties, list columns, and payment, refund,
   dispute and overdue paths.

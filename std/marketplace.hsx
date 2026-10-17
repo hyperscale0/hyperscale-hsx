@@ -51,6 +51,7 @@ instrument order(listing: ref<marketplace.listing>, buyer: party, fulfiller: par
     requires self.price == self.listing.price
   }
   action commit {
+    actor: caller
     from: [quoted, placed], to: placed
     requires self.listing in [active]
     calculate: [

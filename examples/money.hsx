@@ -10,23 +10,22 @@ instrument lesson_booking(payment: ref<money.transfer>, student: party) {
   fields { payment: ref<payment>, startsAt: date }
   lifecycle { states: [booked, taught, refunded], initial: booked }
   action create {
-    actor: { party: student }
     requires self.payment in [paid]
     requires unique "paid_lesson" on [self.payment]
     requires self.startsAt > self.now
   }
   action teach {
-    from: booked, to: taught, actor: { party: programOperator }
+    from: booked, to: taught
     due: { at: self.startsAt }
     subject { lessonNotes: text }
   }
   action cancel {
-    from: booked, to: refunded, actor: { party: student }
+    from: booked, to: refunded
     deadline: { at: self.startsAt }
     moves self.payment.amount from programOperator to student
   }
   action tutor_unavailable {
-    from: booked, to: refunded, actor: { party: programOperator }
+    from: booked, to: refunded
     subject { cancellationReason: text }
     moves self.payment.amount from programOperator to student
   }

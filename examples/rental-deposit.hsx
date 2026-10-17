@@ -17,21 +17,20 @@ instrument deposit(renter: party) {
   }
   lifecycle { states: [pending, funded, returned], initial: pending }
   action create {
-    actor: { party: renter }
     requires self.dueAt > self.now
   }
   action fund {
-    from: pending, to: funded, actor: { party: renter }
+    from: pending, to: funded
     moves self.amount from self.renter to self.held
   }
   action return_on_time {
-    from: funded, to: returned, actor: { party: programOperator }
+    from: funded, to: returned
     deadline: { at: self.dueAt }
     subject { returnReference: text }
     moves self.held.balance from self.held to self.renter
   }
   action return_late {
-    from: funded, to: returned, actor: { party: programOperator }
+    from: funded, to: returned
     due: { at: self.dueAt }
     subject { returnReference: text }
     calculate: [{ target: refund, op: subtract, base: { field: self.held.balance }, subtract: [{ field: self.lateFee }, { field: self.lateTax }] }]

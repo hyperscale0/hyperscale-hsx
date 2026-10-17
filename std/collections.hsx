@@ -24,6 +24,7 @@ instrument case(on: ref<financing.installments>[], agency: party, capital: party
   fields { assignedAgency: account of agency, plan: ref<on>, slice: ref<on.slice>, payment: ref<on.payment>, eligibleAt: date = after(self.slice.dueAt, overdue), agencyFee: money = rate(self.payment.amount, fee) }
   lifecycle { states: [opened, assigned, recovered, recalled, returned_uncollected], initial: opened }
   action create {
+    actor: caller
     due: { at: self.eligibleAt }
     requires self.plan == self.slice.plan
     requires self.slice.openPrincipal > "0"
@@ -76,7 +77,7 @@ instrument reminder(on: ref<financing.installments>[], operator: party = program
   summary: "Send an email to the installment borrower's stored contact address."
   fields { slice: ref<on.slice> }
   lifecycle { states: [ready], initial: ready }
-  action create { requires unique "installment_reminder" on [self.slice] }
+  action create { actor: caller, requires unique "installment_reminder" on [self.slice] }
   action dispatch {
     from: ready, to: ready, actor: { party: operator }
     invoke: [{ reference: self.id, action: send, input: {} }]

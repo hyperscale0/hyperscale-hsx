@@ -25,7 +25,7 @@ instrument cardholder(holder: party) {
   summary: "An account holder whose card access can be activated, suspended or closed."
   fields { holder: account of holder }
   lifecycle { states: [pending, active, suspended, closed], initial: pending }
-  action create {}
+  action create { actor: caller }
   action activate { from: pending, to: active, actor: { party: programOperator } }
   action suspend { from: active, to: suspended, actor: { party: programOperator } }
   action resume { from: suspended, to: active, actor: { party: programOperator } }
@@ -37,8 +37,8 @@ instrument card(holder: ref<cards.cardholder>, spend_limit: money, issuer: party
   summary: "A card with a per-spend ceiling that can be activated, frozen or cancelled."
   fields { holder: ref<holder>, person: account of person, spendLimit: money = spend_limit }
   lifecycle { states: [issued, active, frozen, blocked, cancelled], initial: issued }
-  action create { requires self.holder in [active]; requires self.holder.holder == self.person }
-  action activate { from: issued, to: active, requires self.holder in [active] }
+  action create { actor: caller, requires self.holder in [active]; requires self.holder.holder == self.person }
+  action activate { actor: caller, from: issued, to: active, requires self.holder in [active] }
   action freeze { from: active, to: frozen, actor: { party: person } }
   action unfreeze { from: frozen, to: active, actor: { party: person }, requires self.holder in [active] }
   action issuer_freeze { from: [active, frozen], to: blocked, actor: { party: issuer } }
@@ -52,6 +52,7 @@ instrument authorization(card: ref<cards.card>, merchant: party, issuer: party =
   fields { card: ref<card>, merchant: account of merchant, amount: money, expiresAt: date, reservation: text? }
   lifecycle { states: [pending, approved, captured, declined, reversed, expired], initial: pending }
   action create {
+    actor: caller
     requires self.card in [active]
     requires self.card.holder in [active]
     requires self.amount <= self.card.spendLimit
@@ -73,7 +74,7 @@ instrument transaction(authorization: ref<cards.authorization>) {
   summary: "Record a captured card payment and return its amount when refunded."
   fields { authorization: ref<authorization>, amount: money = self.authorization.amount }
   lifecycle { states: [posted, refunded], initial: posted }
-  action create { requires self.authorization in [captured]; requires unique "captured_authorization" on [self.authorization] }
+  action create { actor: caller, requires self.authorization in [captured]; requires unique "captured_authorization" on [self.authorization] }
   action refund {
     from: posted, to: refunded, actor: { party: programOperator }, input { reason: text }
     moves self.amount from self.authorization.merchant to self.authorization.card.holder.holder
@@ -84,7 +85,7 @@ instrument dispute(transaction: ref<cards.transaction>, issuer: party = programO
   summary: "Review a disputed card payment before its deadline and refund it when the dispute is won."
   fields { transaction: ref<transaction>, evidence: text, expiresAt: date = after(self.createdAt, within) }
   lifecycle { states: [filed, reviewing, won, lost], initial: filed }
-  action create { requires self.transaction in [posted]; requires unique "disputed_transaction" on [self.transaction] }
+  action create { actor: caller, requires self.transaction in [posted]; requires unique "disputed_transaction" on [self.transaction] }
   action review { from: filed, to: reviewing, actor: { party: issuer } }
   action win {
     from: reviewing, to: won, actor: { party: issuer }, deadline: { at: self.expiresAt }

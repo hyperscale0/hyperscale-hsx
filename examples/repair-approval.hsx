@@ -17,51 +17,50 @@ instrument assessment(customer: party) {
   }
   lifecycle { states: [submitted, inspected, approved, ready_for_collection, disputed, completed, refunded, rejected, expired], initial: submitted }
   action create {
-    actor: { party: customer }
     requires self.quoteExpiresAt > self.now
     requires self.repairDueAt > self.quoteExpiresAt
   }
   action inspect {
-    from: submitted, to: inspected, actor: { party: programOperator }
+    from: submitted, to: inspected
     deadline: { at: self.quoteExpiresAt }
     subject { inspectionNotes: text }
     set: { inspectedAt: { field: self.now } }
   }
   action approve {
-    from: inspected, to: approved, actor: { party: customer }
+    from: inspected, to: approved
     deadline: { at: self.quoteExpiresAt }
     subject { approvalReference: text }
     set: { approvedAt: { field: self.now } }
     moves self.total from customer to self.held
   }
-  action reject { from: [submitted, inspected], to: rejected, actor: { party: customer } }
-  action expire { from: [submitted, inspected], to: expired, actor: clock, due: { at: self.quoteExpiresAt } }
+  action reject { from: [submitted, inspected], to: rejected }
+  action expire { from: [submitted, inspected], to: expired, due: { at: self.quoteExpiresAt } }
   action complete {
-    from: approved, to: ready_for_collection, actor: { party: programOperator }
+    from: approved, to: ready_for_collection
     deadline: { at: self.repairDueAt }
     subject { completionNotes: text }
   }
   action accept {
-    from: ready_for_collection, to: completed, actor: { party: customer }
+    from: ready_for_collection, to: completed
     moves self.price from self.held to programOperator
     moves self.vat from self.held to programTax
   }
   action dispute {
-    from: ready_for_collection, to: disputed, actor: { party: customer }
+    from: ready_for_collection, to: disputed
     subject { faultDescription: text }
   }
   action refund {
-    from: [approved, ready_for_collection, disputed], to: refunded, actor: { party: programOperator }
+    from: [approved, ready_for_collection, disputed], to: refunded
     subject { refundReason: text }
     moves self.held.balance from self.held to customer
   }
   action refund_overdue {
-    from: approved, to: refunded, actor: { party: customer }
+    from: approved, to: refunded
     due: { at: self.repairDueAt }
     moves self.held.balance from self.held to customer
   }
   action accept_resolution {
-    from: disputed, to: completed, actor: { party: customer }
+    from: disputed, to: completed
     subject { resolutionReference: text }
     moves self.price from self.held to programOperator
     moves self.vat from self.held to programTax
@@ -82,7 +81,6 @@ object repair "Screen repair" {
     expose accept as accept_repair
     expose dispute as report_failed_repair
     expose refund as refund_repair
-    expose refund_overdue as refund_missed_deadline
     expose accept_resolution as accept_repair_resolution
   }
 }

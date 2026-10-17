@@ -48,7 +48,7 @@ test("a misspelled field names itself and suggests the declared field", () => {
 test("a misspelled actor party names itself and suggests the declared party", () => {
   expect(
     refusal(
-      "from: pending, to: funded, actor: { party: renter }",
+      "from: pending, to: funded",
       "from: pending, to: funded, actor: { party: owne }",
     ),
   ).toMatchObject({
