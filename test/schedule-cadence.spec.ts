@@ -152,22 +152,37 @@ test("every takes days, weeks, months and years, and refuses a clock time", () =
 });
 
 // Round 8 F2: run B bound payer: actor while the payee runs create, so the
-// company paid itself every month.
+// company paid itself every month. The binding rule now refuses the two-customer
+// wiring first; the company binding still reaches same_party_move.
 test("check refuses a schedule whose payer is the payee that runs create", () => {
-  for (const [bindings, both] of [
-    ["payer: actor, payee: owner", "owner"],
-    ["payer: actor, payee: operator", "operator"],
-  ]) {
-    const result = compile(
-      program(`${bindings}, amount: 750 SAR, every: 1 month`),
-    );
-    expect(result.verdict).toBe("invalid");
-    const [diagnostic] = result.diagnostics;
-    expect(diagnostic!.code).toBe("same_party_move");
-    expect(diagnostic!.message).toBe(
-      `dues: occurrence.pay moves money from payer: actor to payee: ${both}, and both are ${both}. payee runs create, so actor is ${both}. A party cannot pay itself.`,
-    );
-  }
+  const wired = compile(
+    program("payer: actor, payee: owner, amount: 750 SAR, every: 1 month"),
+  );
+  expect(wired.verdict).toBe("invalid");
+  expect(
+    wired.diagnostics.map((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+    ]),
+  ).toEqual([
+    [
+      "customer_binding_rule",
+      "dues: `payer: actor` breaks the binding rule. In dues, create runs for payee, so payer owns the record and binds owner.",
+    ],
+    [
+      "customer_binding_rule",
+      "dues: `payee: owner` breaks the binding rule. In dues, create runs for payee, so payee starts it and binds actor.",
+    ],
+  ]);
+  const result = compile(
+    program("payer: actor, payee: operator, amount: 750 SAR, every: 1 month"),
+  );
+  expect(result.verdict).toBe("invalid");
+  const [diagnostic] = result.diagnostics;
+  expect(diagnostic!.code).toBe("same_party_move");
+  expect(diagnostic!.message).toBe(
+    "dues: occurrence.pay moves money from payer: actor to payee: operator, and both are operator. payee runs create, so actor is operator. A party cannot pay itself.",
+  );
 });
 
 test("check warns when only the run decides whether the company pays itself", () => {

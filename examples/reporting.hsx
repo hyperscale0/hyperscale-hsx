@@ -10,7 +10,7 @@ object purchase "Workshop equipment loan" {
   fields { businessName: text, equipment: text, invoiceReference: text, price: money }
   columns: [businessName, equipment, invoiceReference, price]
   attach allowance = financing.limits {
-    borrower: owner, per_borrower: 200000 SAR
+    borrower: customer, per_borrower: 200000 SAR
     expose create as request_workshop_limit
     expose approve as approve_business
   }
@@ -21,7 +21,7 @@ object purchase "Workshop equipment loan" {
   }
   // Create twelve future monthly dates and approve both limits before funding.
   attach loan = financing.installments {
-    borrower: owner, capital: operator, share: 0%
+    borrower: customer, capital: operator, share: 0%
     months: 12, pricing: amortizing, profit_rate: 6%, disburse_to: borrower
     payoff_rebate: 100%, refund_within: 30d, write_off_after: 90d
     limits: allowance, portfolio: budget

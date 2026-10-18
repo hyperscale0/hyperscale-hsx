@@ -35,14 +35,14 @@ object lesson "Arabic lesson" {
   fields { student: text, tutor: text, startsAt: date }
   columns: [student, tutor, startsAt]
   attach payment = money.transfer {
-    payer: owner, payee: operator, amount: 172.50 SAR
-    economics pay { purpose: earning, sourceParty: owner }
+    payer: customer, payee: operator, amount: 172.50 SAR
+    economics pay { purpose: earning, sourceParty: payer }
     expose create as create_payment
     expose pay as pay_for_lesson
     expose cancel as cancel_unpaid_lesson
   }
   attach booking = lesson_booking {
-    payment: payment, student: owner
+    payment: payment, student: customer
     rename { startsAt: startsAt }
     expose create as confirm_paid_lesson
     expose teach as record_lesson_taught

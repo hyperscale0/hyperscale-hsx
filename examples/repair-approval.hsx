@@ -71,7 +71,7 @@ object repair "Screen repair" {
   fields { item: text, serialNumber: text, problem: text }
   columns: [item, serialNumber, problem, quoteExpiresAt, repairDueAt]
   attach review = assessment {
-    customer: owner
+    customer: customer
     rename { quoteExpiresAt: quoteExpiresAt, repairDueAt: repairDueAt }
     expose create as request_repair
     expose inspect as inspect_repair

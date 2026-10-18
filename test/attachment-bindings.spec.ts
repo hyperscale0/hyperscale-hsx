@@ -6,7 +6,7 @@ import { testToolchain } from "./fixtures/toolchain.ts";
 const declarations = `party agency: business
 party alternate: business
 party underwriter: staff role underwrite
-party customer: person
+party walkin: person
 party roleless: staff`;
 function binding(
   parameters: string,
@@ -91,7 +91,7 @@ test("Resolved bindings are reused by executable references", () => {
 test("Invalid selected binding does not fall through", () => {
   for (const result of [
     binding("payer: party = agency", "payer: missing"),
-    binding("customer: party = agency"),
+    binding("walkin: party = agency"),
   ])
     expect(result.verdict).toBe("invalid");
 });
@@ -146,7 +146,7 @@ test("Declared businesses retain their binding kinds", () => {
 test("Attachment parameter kind controls admission", () => {
   for (const [type, party] of [
     ["party", "roleless"],
-    ["party", "customer"],
+    ["party", "walkin"],
   ])
     expect(
       binding(`binding: ${type}`, `binding: ${party}`).diagnostics.map(

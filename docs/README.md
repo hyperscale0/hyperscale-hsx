@@ -19,7 +19,7 @@ object lesson "Lesson" {
   fields { student: text }
   columns: [student]
   attach payment = money.transfer {
-    payer: owner, payee: operator, amount: 150 SAR
+    payer: customer, payee: operator, amount: 150 SAR
     expose create as book_lesson
     expose pay as pay_for_lesson
     expose cancel as cancel_lesson
@@ -48,8 +48,8 @@ have names such as
 `subject_party_unbound`. Read the message and fix, not just the code.
 
 At runtime, create a lesson object first, then call `book_lesson` to create its
-agreement. Call `pay_for_lesson` on that agreement to move 150 SAR from its bound
-owner to the operator. Object creation alone creates no agreement. Object
+agreement. Call `pay_for_lesson` on that agreement to move 150 SAR from the
+lesson's customer to the operator. Object creation alone creates no agreement. Object
 metadata such as `student` is optional until an action requires it. Account IDs
 and party IDs are not metadata supplied by the caller.
 
@@ -91,8 +91,10 @@ operator's return evidence; it does not verify the physical return. Time means
 the executor's current time when the action runs, not a caller-supplied return date.
 A late `due` permits the operator action; it does not schedule that action.
 
-The renter is a party parameter bound to the rental object's `owner`. Each rental
-can belong to a different customer without a fixed business binding. A
+The renter is a party parameter bound to `customer`. The object records the
+customer's rental, not a fleet item, so the compiler places the renter on its
+`owner`. Each rental can belong to a different customer without a fixed business
+binding. A
 parameterized program instrument exists only through its attachments. A `fee` on
 a move of an action input, such as `moves input.amount from holder to self.held
 fee { seller: 1% }`, is calculated when that action runs. Reusable custom headers
@@ -112,8 +114,39 @@ executor. Compilation cannot establish balances, permissions or provider readine
 
 ## Objects, metadata and parties
 
-Every attached party parameter binds to `owner`, `actor`, `operator`, a declared
-business, or a declared staff party with a supported role. Configure declared
+Every attached party parameter binds to `customer`, `operator`, a declared
+business, or a declared staff party with a supported role. The compiler places
+each `customer` on the record's `owner` or its `actor` by one rule:
+
+1. A customer that the create of an entry action names starts an agreement on a
+   record they do not own and binds `actor`. Any other customer of that
+   attachment binds `owner`.
+2. When an attachment binds two customers, the one its create names starts it
+   and binds `actor`, else the one whose account money leaves. The other owns
+   the record. In `escrow.hold` the buyer binds `actor` and the seller `owner`.
+   When neither says, as in `money.swap`, a role written by hand stands, a
+   `customer` beside it takes the other role, and two `customer` rows place
+   the header's first party on `actor`.
+3. Any other customer binds by whose thing the object records. An object that
+   declares `belongs_to: company`, such as a fleet car, a dealer's van or a
+   shop's stock item, is the company's, so its customers bind `actor`. Any other
+   object is its customer's, who binds `owner`. One parameter name on several
+   attachments is that one customer, as `borrower` across a loan and its
+   round. Two names that only this rule places and that some std template
+   takes as two of its parties, such as a `seller` on a listing and a `buyer`
+   on an order (`marketplace.reservation` takes both), would make one person
+   both sides of the money, so the compiler refuses them with
+   `customer_binding_rule`. List the create the non-owner starts in
+   `entryActions`, or mark the object `belongs_to: company`. Other names, such
+   as a lesson's `payer` and `student`, stay one customer.
+
+An attachment binds at most two customers. An unbound party parameter whose
+default is `party(person)` is a customer too, unless a declared party or subject
+role shares its name and binds it. `customer` is a reserved party
+name. `owner` and `actor` written by hand still compile. In rules 1 and 2 they
+must agree with the rule, or the compiler reports `customer_binding_rule`; a
+lone one stays as written. A seller fee on money paid to the company itself
+reports `fee_on_company_sale`, because no seller receives the rest of the price. Configure declared
 business participants per Build. The host binds a declared business to an
 organization customer of this company, and that business must be a customer with
 an account before the Build that binds it is saved. It also needs an open balance
@@ -178,8 +211,7 @@ Tunable constructors are `enum(choices)` and `integer(minimum, maximum)`.
 Other constructors, including `party(business)` and bounded `money(...)`, are
 rejected as tunable types. A default selector such as `payer: party = party(person)`
 is different: its type is plain `party`, and the call chooses a default binding.
-Use explicit `payer: owner` or `payer: actor` bindings when the participant comes
-from the object or session.
+Bind `payer: customer` when the participant is a customer.
 A qualified name such as `booking.reservation` loads its standard header the first time the
 compiler reaches it, so a program has no import lines. An unknown header fails with a
 suggestion from the published header names. There are no file imports, macros or executable
@@ -432,7 +464,7 @@ The [playground](https://hyperscale0.ai/playground/) compiles locally in the bro
 
 A seller-owned marketplace object can declare `entryActions: [create_order]`
 when `create_order` exposes an attachment's create action with its buyer bound
-to `actor`. This admits active enrolled customers to that action. The default
+to `customer`, which places the buyer on `actor`. This admits active enrolled customers to that action. The default
 is closed. A retained buyer can read the record and run its buyer actions;
 the seller remains owner. Entry never grants access to an existing escrow.
 Without entry actions, the company runs a two-customer sale from its Product
@@ -496,8 +528,8 @@ An attachment can declare the purpose of an imported action's money:
 
 ```hsx
 attach visit = wallet.spend {
-  wallet: balance, payee: operator, holder: owner
-  economics pay { purpose: earning, sourceParty: owner }
+  wallet: balance, payee: operator, holder: customer
+  economics pay { purpose: earning, sourceParty: holder }
   expose pay as charge_visit
 }
 ```
@@ -509,7 +541,8 @@ action takes the record name first: a schedule's payments are
 refuses an unknown action or move, a repeated selection, a void, or economics
 that conflict with the instrument or its reservation. Cash purposes require
 cash accounts. `sourceParty` resolves a party parameter, a subject role or a
-declared business. The attachment retains this binding even when only economics
+declared business. Name the parameter for a customer, such as
+`sourceParty: payer`, so the source follows the role the compiler places. The attachment retains this binding even when only economics
 uses it. The credited account supplies the destination participant.
 
 Stock transfers, splits and schedules declare no purpose, because the purpose

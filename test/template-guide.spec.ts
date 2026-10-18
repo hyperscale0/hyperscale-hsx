@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { templateGuide, templateIndex } from "../src/template-guide.ts";
 
 // Mutation: drop an attach from catalog-program.ts, or expose an action its
-// bindings exclude. That template's guide throws instead of answering.
+// bindings exclude. That template's guide throws instead of answering. Drop
+// the entered siblings from the entry form in template-guide.ts and the
+// marketplace.reservation guide binds `buyer: actor`, which Architect's
+// author check refuses. Fall back to `owner` in the purpose hint and the
+// lending.distribution note shows `sourceParty: owner`.
 test("every template's guide compiles its own example", () => {
   const index = templateIndex();
   expect(index.length).toBeGreaterThan(30);
@@ -13,6 +17,7 @@ test("every template's guide compiles its own example", () => {
     expect(guide?.qualifiedName).toBe(qualifiedName);
     expect(JSON.stringify(guide).length).toBeLessThan(50_000);
     expect(guide!.example).toContain(`= ${qualifiedName} {`);
+    expect(JSON.stringify(guide)).not.toMatch(/\b\w+: (?:owner|actor)\b/);
   }
   expect(templateGuide("money.nothing")).toBeUndefined();
   expect(templateGuide("money")).toBeUndefined();

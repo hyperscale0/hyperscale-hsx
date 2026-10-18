@@ -8,8 +8,9 @@ party dealer: business
 object car "Delivery van finance" {
   fields { make: text, model: text, year: integer, vin: text, price: money }
   columns: [make, model, year, vin, price]
+  belongs_to: company
   attach sale = escrow.hold {
-    payer: actor, payee: dealer
+    payer: customer, payee: dealer
     funding: { controllers: [checkout], reference: "funds", blocking_states: [active] }
     fee: { seller: 1%, tax: 15% }, deliver_within: 14d, accept_within: 3d
     expose create as agree_van_purchase
@@ -26,7 +27,7 @@ object car "Delivery van finance" {
     expose cancel as cancel_and_return_down_payment
   }
   attach limits = financing.limits {
-    borrower: actor, per_borrower: 250000 SAR
+    borrower: customer, per_borrower: 250000 SAR
     expose create as request_borrower_limit
     expose approve as approve_borrower_limit
   }
@@ -39,11 +40,11 @@ object car "Delivery van finance" {
   // 5,278.50 SAR. Financing service fee: 0%, tax: 0% on principal repayments.
   // Supply 36 future monthly dates. Approve limits before collecting and funding.
   attach checkout = purchase.checkout {
-    plans: plan, funds: sale, borrower: actor, capital: operator
+    plans: plan, funds: sale, borrower: customer, capital: operator
     expose create as prepare_financed_purchase
   }
   attach plan = financing.installments {
-    borrower: actor, capital: operator, share: 0%
+    borrower: customer, capital: operator, share: 0%
     months: 36, pricing: flat_total, profit_rate: 8.5%, down_payment: 10%
     apply: fines_profit_principal, payoff_rebate: 100%, write_off_after: 90d
     refund_within: 30d, payoff_quote_expiry: 1h, returned_goods: refund_all
@@ -68,7 +69,7 @@ object car "Delivery van finance" {
   // not the 50 SAR fine. Any charge VAT is invoiced outside this header.
   attach late = financing.late_charge {
     on: plan, grace: 3d, fine: 50 SAR, cap: 25 SAR
-    fines_to: operator, costs_to: operator, borrower: actor
+    fines_to: operator, costs_to: operator, borrower: customer
     expose create as record_late_assessment
     expose cancel as cancel_proposed_assessment
     expose refund as refund_collected_fine

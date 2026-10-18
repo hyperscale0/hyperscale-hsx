@@ -12,14 +12,14 @@ object rental "Camera rental" {
   fields { camera: text, returnBy: date }
   columns: [camera, returnBy]
   attach deposit = money.hold {
-    payer: owner, payee: operator, amount: 1000 SAR
+    payer: customer, payee: operator, amount: 1000 SAR
     expose create as agree_deposit
     expose fund as pay_deposit
     expose release as keep_deposit
     expose refund as return_deposit
   }
   attach late = money.late_fee {
-    payer: owner, payee: operator, amount: 50 SAR, cap: 300 SAR, period: 1d, grace: 1d
+    payer: customer, payee: operator, amount: 50 SAR, cap: 300 SAR, period: 1d, grace: 1d
     rename { dueAt: returnBy }
     expose create as start_late_fees
     expose stop as record_return

@@ -45,7 +45,7 @@ object rental "Equipment deposit" {
   fields { equipment: text, serialNumber: text, renterName: text }
   columns: [equipment, serialNumber, renterName, dueAt]
   attach security = deposit {
-    renter: owner
+    renter: customer
     rename { dueAt: dueAt }
     expose create as agree_rental
     expose fund as pay_deposit

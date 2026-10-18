@@ -46,12 +46,18 @@ import { lowerChecks, type CompiledCheck } from "./checks.ts";
 import { parseExpression, parseProgram } from "./parse.ts";
 import {
   applyAttachmentEconomics,
+  companyFees,
   purposeWarnings,
   samePartyMoves,
   unboundEconomicSources,
 } from "./attachment-economics.ts";
 import { instrumentChecks, parseHeader } from "./header-source.ts";
 import { clockRuled, ruledActor } from "./actors.ts";
+import {
+  customerBinding,
+  placeCustomers,
+  type CustomerSite,
+} from "./bindings.ts";
 import {
   lineColAt,
   type AssignmentDecl,
@@ -2365,12 +2371,15 @@ export function compile(
       }
       if (decl.kind === "assignment") assignments.set(decl.name, decl);
       if (decl.kind === "party") {
-        if (subjectPartyRoles.includes(decl.name as SubjectPartyRole))
+        if (
+          subjectPartyRoles.includes(decl.name as SubjectPartyRole) ||
+          decl.name === customerBinding
+        )
           failWithCode(
             decl,
             "party_name_reserved",
             `${decl.name} is a reserved subject role`,
-            "choose a party name other than owner, actor or operator",
+            "choose a party name other than owner, actor, operator or customer",
           );
         if (!["person", "business", "staff"].includes(decl.partyKind))
           fail(
@@ -2727,7 +2736,7 @@ export function compile(
               ? `\`${param.key}\` has no binding. An attached ${param.key} must resolve to a subject role or an eligible declared party.`
               : `${id} needs ${param.key}`,
             fix: partyParameter
-              ? `Use \`${param.key}: actor\` for the initiating customer or \`${param.key}: owner\` for the object owner. Declare a business for a fixed company counterparty.`
+              ? `Use \`${param.key}: customer\` for a customer, \`${param.key}: operator\` for your company, or a declared business for a fixed company counterparty.`
               : `add ${param.key}: value inside ${id}`,
             related: [
               {
@@ -3054,7 +3063,7 @@ export function compile(
                   ? `\`${param.key}: ${"value" in actual && typeof actual.value === "string" ? actual.value : param.key}\` has no binding. An attached ${param.key} must resolve to a subject role or an eligible declared party.`
                   : `${param.key} needs a declared party`,
                 attachmentInfo
-                  ? `Use \`${param.key}: actor\` for the initiating customer or \`${param.key}: owner\` for the object owner. Declare a business for a fixed company counterparty.`
+                  ? `Use \`${param.key}: customer\` for a customer, \`${param.key}: operator\` for your company, or a declared business for a fixed company counterparty.`
                   : "declare a party and use its name here",
               );
             const party = document.parties[v.value];
@@ -3066,7 +3075,7 @@ export function compile(
                 actual,
                 "party_kind_mismatch",
                 party?.kind === "person"
-                  ? `\`${v.value}\` is a declared person. Attachments resolve customer identity through \`owner\` or \`actor\`, rather than a fixed person declaration.`
+                  ? `\`${v.value}\` is a declared person. Bind a customer with \`customer\`, rather than a fixed person declaration.`
                   : `\`${v.value}\` is declared staff without a permission role.`,
                 "Replace this binding with the appropriate subject role. Use declared businesses for fixed counterparties and permission-bearing staff roles for authorized actions.",
               );
@@ -4451,15 +4460,26 @@ export function compile(
           key !== "fields" &&
           key !== "columns" &&
           key !== "entryActions" &&
+          key !== "belongs_to" &&
           !key.startsWith("attach ")
         ) {
           fail(
             decl,
             `unknown object clause ${key}`,
-            "use fields, columns, entryActions, or attach",
+            "use fields, columns, entryActions, belongs_to, or attach",
           );
         }
       }
+      const belongsTo = body.get("belongs_to");
+      if (
+        belongsTo &&
+        !(belongsTo.kind === "name" && belongsTo.value === "company")
+      )
+        fail(
+          belongsTo,
+          "belongs_to takes company",
+          "write `belongs_to: company` when your company owns the thing this object records, such as a fleet car or shop stock, or leave it out when a customer owns it",
+        );
 
       const authoredFields: UdlObjectField[] = [];
       const authoredNames: string[] = [];
@@ -4476,6 +4496,54 @@ export function compile(
         authoredFields.push(fieldDef);
         authoredNames.push(row.key);
       }
+
+      // Place every customer binding on owner or actor before any attach
+      // lowers, since the rule reads the object's entry actions, whose object
+      // it is, and both customers of an attachment.
+      const entryNames = new Set(
+        body.get("entryActions")?.kind === "list"
+          ? (body.get("entryActions") as Extract<Expr, { kind: "list" }>).items
+              .filter((item) => item.kind === "name")
+              .map(text)
+          : [],
+      );
+      const sites = new Map<Entry, CustomerSite>();
+      for (const entry of decl.body.entries) {
+        const match = /^attach\s+([A-Za-z0-9_]+)\s*=\s*(.+)$/.exec(entry.key);
+        if (!match) continue;
+        const template = templateAt(match[2]!, entry);
+        if (!template) continue;
+        const rows = asBlock(entry.value).entries;
+        sites.set(entry, {
+          name: match[1]!,
+          entry,
+          template,
+          rows: rows.filter(
+            (row) =>
+              !row.key.startsWith("economics ") &&
+              row.key !== "rename" &&
+              row.key !== "expose",
+          ),
+          exposed: new Map(
+            rows.flatMap((row) =>
+              row.key === "expose" && row.value.kind === "call"
+                ? [[row.value.name, text(row.value.args[0]!)] as const]
+                : [],
+            ),
+          ),
+        });
+      }
+      const placement = placeCustomers(
+        [...sites.values()],
+        entryNames,
+        belongsTo?.kind === "name" && belongsTo.value === "company",
+        decl.name,
+        toolchain.std,
+        (key) =>
+          subjectPartyRoles.includes(key as SubjectPartyRole) ||
+          !!document.parties[key],
+      );
+      bindingDiagnostics.push(...placement.diagnostics);
 
       const attachments: UdlObjectAttachment[] = [];
       for (const entry of decl.body.entries) {
@@ -4561,9 +4629,10 @@ export function compile(
         attachments.push({ name: attachmentName, instrument: instId, parties });
         attachEntries.set(instId, { entry, name: attachmentName, template });
 
+        const site = sites.get(entry);
         const tunableBlock: BlockExpr = {
           kind: "block",
-          entries: tunableEntries,
+          entries: (site && placement.rows.get(site)) ?? tunableEntries,
           span: entry.value.span,
         };
 
@@ -5196,11 +5265,12 @@ export function compile(
       attachedSelectors,
       attachEntries,
     );
-    if (sameParty.errors.length || unbound.length)
+    const fees = companyFees(document, attachedSelectors, attachEntries);
+    if (sameParty.errors.length || unbound.length || fees.length)
       return {
         verdict: "invalid",
         warnings: [],
-        diagnostics: [...sameParty.errors, ...unbound].map((d) =>
+        diagnostics: [...sameParty.errors, ...unbound, ...fees].map((d) =>
           diagnostic(d, "check"),
         ),
       };

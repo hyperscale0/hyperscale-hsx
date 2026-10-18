@@ -11,7 +11,7 @@ object employee "Catering expense card" {
   fields { employeeName: text, department: text }
   columns: [employeeName, department]
   attach holder = cards.cardholder {
-    holder: owner
+    holder: customer
     expose create as enrol_employee
     expose activate as activate_employee
     expose suspend as suspend_employee
@@ -20,7 +20,7 @@ object employee "Catering expense card" {
     expose operator_close as remove_employee_access
   }
   attach card = cards.card {
-    holder: holder, person: owner, issuer: operator, spend_limit: 5000 SAR
+    holder: holder, person: customer, issuer: operator, spend_limit: 5000 SAR
     expose create as issue_card
     expose activate as activate_card
     expose freeze as freeze_lost_card

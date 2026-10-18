@@ -6,7 +6,7 @@ const workshop = readFileSync(
   new URL("../examples/wallet.hsx", import.meta.url),
   "utf8",
 );
-const declaration = "economics pay { purpose: earning, sourceParty: owner }";
+const declaration = "economics pay { purpose: earning, sourceParty: holder }";
 
 // Mutation: drop economics or its source binding while specializing an attachment.
 test("an attachment retains its own purpose and payer without changing the imported instrument", () => {
@@ -115,8 +115,8 @@ test.each([
 test("an attachment cannot replace the standard instrument's economics", () => {
   const result = compile(
     workshop.replace(
-      "holder: owner",
-      "holder: owner\n economics withdraw { purpose: earning, sourceParty: holder }",
+      "holder: customer",
+      "holder: customer\n economics withdraw { purpose: earning, sourceParty: holder }",
     ),
   );
   expect(result.diagnostics[0]!.message).toContain(

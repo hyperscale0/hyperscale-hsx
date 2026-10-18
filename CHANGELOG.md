@@ -23,6 +23,19 @@ Added:
 - Customers can start the std agreements whose first party can be a customer on
   a record they do not own, through the object's `entryActions`.
 - `economics` can name a party reached through a reference.
+- The `customer` binding. The compiler places each customer on `owner` or
+  `actor` by a fixed rule (`src/bindings.ts`): an entry action's starter is
+  `actor`, two customers split by who creates or pays in, and any other
+  customer is `owner`, or `actor` on an object marked `belongs_to: company`.
+- `belongs_to: company` marks an object that records the company's own thing,
+  such as a fleet car or shop stock.
+- `customer_binding_rule` refuses a hand-written `owner` or `actor` that
+  disagrees with the rule in an entry or two-customer attachment, and
+  `fee_on_company_sale` refuses a seller fee on money paid to the company
+  itself. `customer_binding_rule` also refuses two customers that only the
+  whose-object rule places when some std template takes both names as two of
+  its parties, such as a seller on a listing and a buyer on an order, since
+  both would bind `owner`.
 
 Changed:
 
@@ -37,6 +50,14 @@ Changed:
 - A required instrument value with no fixed value becomes create `input` on the
   agreement. Only an explicit `rename` shares it as record metadata.
 - Record actions stay private until the program exposes them.
+- Examples and template guide examples bind customers with `customer`. Their
+  compiled UDL is unchanged, except that `lending.hsx` lists its investor
+  creates in `entryActions`. Their economics name the paying parameter, such as
+  `sourceParty: payer`. The `marketplace.reservation` guide lists the buyer's
+  creates in `entryActions` instead of binding `actor` by hand, and the purpose
+  hint for company-held money with no party parameter names `programOperator`.
+  `customer` is a reserved party name. An unbound
+  person parameter that shares a declared party's name keeps binding that party.
 - Std actions name an accountable actor, and std money pulled from a customer
   needs that customer's authority.
 - A split binds declared business and subject-role recipients itself, and a

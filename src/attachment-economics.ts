@@ -212,7 +212,7 @@ export function purposeWarnings(
         const source = from
           ? parameter(from)
           : purpose === "earning"
-            ? (parameters[0] ?? "owner")
+            ? (parameters[0] ?? "programOperator")
             : "programOperator";
         warnings.push({
           code: "economic_purpose_missing",
@@ -398,6 +398,72 @@ export function unboundEconomicSources(
         });
       }
     }
+  }
+  return errors;
+}
+
+/**
+ * A fee is the company's cut of money it passes through to a participant. A
+ * fee on a payment the company receives itself charges the company its own
+ * money, and the counterparty the fee implies is never paid: the company
+ * keeps the whole amount. Bind that party to the customer or business paid.
+ */
+export function companyFees(
+  document: UdlDocument,
+  selectors: Selectors,
+  attaches: Attaches,
+): Diagnostic[] {
+  const errors: Diagnostic[] = [];
+  for (const { instrument, selector, attach, parties, span } of attached(
+    document,
+    selectors,
+    attaches,
+  )) {
+    // The template's own parameter, as the founder bound it.
+    const parameter = (name: string) =>
+      Object.entries(parties).find(([, binding]) =>
+        isCompany(document, bound(binding))
+          ? isCompany(document, name)
+          : bound(binding) === name,
+      )?.[0] ?? name;
+    const charged: string[] = [];
+    let fee = "";
+    let payee = "";
+    for (const actionName of instrument.actionOrder) {
+      const action = instrument.actions[actionName]!;
+      for (const move of action.moves) {
+        const to = "to" in move ? partyName(move.to) : undefined;
+        if (!to || !isCompany(document, to)) continue;
+        const cut = action.moves.find((item) => item.key === `${move.key}Fee`);
+        if (!cut || !("to" in cut) || partyName(cut.to) !== "programOperator")
+          continue;
+        const target = `${actionName}_${move.key}_feeGross`;
+        const calculations = [
+          ...(instrument.calculate ?? []),
+          ...((action as { calculate?: typeof instrument.calculate })
+            .calculate ?? []),
+        ];
+        const bps = (
+          calculations.find((item) => item.target === target) as
+            | { bps?: { literal?: unknown } }
+            | undefined
+        )?.bps?.literal;
+        if (bps !== undefined && Number(bps) === 0) continue;
+        const label =
+          instrument.fields.find((field) => field.name === target)?.label ??
+          "Fee";
+        fee = `${bps === undefined ? "" : `${Number(bps) / 100}% `}${label.toLowerCase()}`;
+        payee = parameter(to);
+        charged.push(`${selector.prefix}${actionName}`);
+      }
+    }
+    if (!charged.length) continue;
+    errors.push({
+      code: "fee_on_company_sale",
+      message: `${attach.name}: ${charged.join(" and ")} ${charged.length === 1 ? "charges" : "charge"} the ${fee} on ${payee}'s share, but ${payee} is bound to the company itself, so no ${payee} is paid and the company keeps the whole price.`,
+      fix: `Bind \`${payee}: customer\` when a customer is paid, or a declared business for a fixed one. Drop the fee when the company itself is paid.`,
+      span,
+    });
   }
   return errors;
 }

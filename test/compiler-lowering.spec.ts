@@ -215,11 +215,11 @@ test("CLI points header errors at the header rather than the supplied program", 
     out: () => {},
     err: (line) => errors.push(line),
     readFile: async () =>
-      'program p "P"\nobject item "Item" { attach plan = financing.installments { disburse_to: borrower, months: 3, pricing: flat_total, profit_rate: 2% } }',
+      'program p "P"\nobject item "Item" { attach deposit = money.hold { amount: 10 SAR } }',
     writeFile: async () => {},
   });
   expect(code).toBe(1);
-  expect(errors.find((line) => line.startsWith("financing:"))).toContain(
+  expect(errors.find((line) => line.startsWith("money:"))).toContain(
     "subject_party_unbound",
   );
 });

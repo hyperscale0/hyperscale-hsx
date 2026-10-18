@@ -1,6 +1,6 @@
 import type { BlockExpr, Entry, Expr, InstrumentDecl } from "./ast.ts";
 import { catalogProgramSource } from "./catalog-program.ts";
-import { compile } from "./compile.ts";
+import { type CompileResult, compile } from "./compile.ts";
 import { parseHeader } from "./header-source.ts";
 import { headerManifest } from "./headers.ts";
 import { parseProgram } from "./parse.ts";
@@ -46,7 +46,7 @@ export interface TemplateGuide {
 
 // How to read runBy, the same for every template.
 const RUN_BY_NOTE =
-  "runBy names who runs each action: a party is whoever the attach binds to it (owner, actor, operator or a declared business), clock is the platform when the action falls due, parent runs only inside its parent record's action, and caller is anyone the exposed action admits.";
+  "runBy names who runs each action: a party is whoever the attach binds to it (a customer, operator or a declared business), clock is the platform when the action falls due, parent runs only inside its parent record's action, and caller is anyone the exposed action admits.";
 
 /**
  * A stock money move declares no purpose, because the purpose follows how
@@ -102,9 +102,8 @@ export function templateGuide(
   // that these bindings keep, and compile again to prove the example.
   const example = exampleProgram(qualifiedName, toolchain);
   const bare = compiledAttachment(
-    example.render([]),
+    example.compile(example.bare()),
     example.attachment,
-    toolchain,
   );
   const exposes = actions
     .filter(
@@ -115,7 +114,10 @@ export function templateGuide(
     )
     .map((action) => `expose ${action.name}`);
   const program = example.render(exposes);
-  const compiled = compiledAttachment(program, example.attachment, toolchain);
+  const compiled = compiledAttachment(
+    example.compile(program),
+    example.attachment,
+  );
   const create = compiled.actions.create;
   const economics = compiled.warnings.flatMap((warning) =>
     warning.code === "economic_purpose_missing" &&
@@ -473,6 +475,10 @@ function fieldValue(entry: Entry, spell: (expression: Expr) => string) {
 
 interface Example {
   attachment: string;
+  /** Compiles once per source. */
+  compile(source: string): CompileResult;
+  /** The catalog's own bindings, to list the actions they keep. */
+  bare(): string;
   render(exposes: string[]): string;
 }
 
@@ -539,25 +545,94 @@ function exampleProgram(qualifiedName: string, toolchain: Toolchain): Example {
   );
   const text = (span: { start: number; end: number }) =>
     catalogProgramSource.slice(span.start, span.end).trim();
+  // A sibling the catalog starts as actor enters through its own create, so
+  // the entry form exposes that create and lists it beside the target's.
+  const entered = included.filter(
+    (attach) =>
+      attach !== target && /\b\w+: actor\b/.test(text(attach.entry.span)),
+  );
+  const source = (
+    exposes: string[],
+    form: "written" | "customer" | "company" | "entry",
+  ) =>
+    [
+      `program example "${qualifiedName} example"`,
+      ...program.decls.flatMap((decl) =>
+        decl.kind === "party" && used.has(decl.name) ? [text(decl.span)] : [],
+      ),
+      `object item "Item" {`,
+      ...(form === "company" ? ["  belongs_to: company"] : []),
+      ...(form === "entry"
+        ? [
+            `  entryActions: [${["create", ...entered.map((attach) => `create_${attach.name}`)].join(", ")}]`,
+          ]
+        : []),
+      ...included.map((attach) => {
+        const written = text(attach.entry.span);
+        const line =
+          form === "written"
+            ? written
+            : written.replace(/\b(\w+): (?:owner|actor)\b/g, "$1: customer");
+        const own =
+          attach === target
+            ? exposes
+            : form === "entry" && entered.includes(attach)
+              ? [`expose create as create_${attach.name}`]
+              : [];
+        return wrapAttach(
+          own.length ? line.replace(/\s*\}$/, `, ${own.join(", ")} }`) : line,
+        );
+      }),
+      "}",
+    ].join("\n");
+  const compiled = new Map<string, CompileResult>();
+  const compileOnce = (code: string) => {
+    if (!compiled.has(code)) compiled.set(code, compile(code, toolchain));
+    return compiled.get(code)!;
+  };
+  const parties = (code: string) => {
+    const document = compileOnce(code).artifacts?.document;
+    return (
+      document &&
+      JSON.stringify(
+        document.objects[0]!.attachments.map((attach) => [
+          attach.name,
+          attach.parties,
+        ]),
+      )
+    );
+  };
+  // The Architect writes `customer`, so the example does too whenever the
+  // compiler places it on the catalog's own roles. Exposes leave the roles
+  // alone except through an entry action, so the bare forms decide, and only
+  // the parties each attach binds count.
+  let form: "written" | "customer" | "company" | "entry" | undefined;
+  const choose = () => {
+    const expected = parties(source([], "written"));
+    const create = ["expose create"];
+    return (
+      (["customer", "company"] as const).find(
+        (candidate) => expected && parties(source([], candidate)) === expected,
+      ) ??
+      (parties(source(create, "written")) &&
+      parties(source(create, "entry")) === parties(source(create, "written"))
+        ? "entry"
+        : "written")
+    );
+  };
   return {
     attachment: target.name,
-    render: (exposes) =>
-      [
-        `program example "${qualifiedName} example"`,
-        ...program.decls.flatMap((decl) =>
-          decl.kind === "party" && used.has(decl.name) ? [text(decl.span)] : [],
-        ),
-        `object item "Item" {`,
-        ...included.map((attach) => {
-          const line = text(attach.entry.span);
-          return wrapAttach(
-            attach === target && exposes.length
-              ? line.replace(/\s*\}$/, `, ${exposes.join(", ")} }`)
-              : line,
-          );
-        }),
-        "}",
-      ].join("\n"),
+    bare: () => source([], "written"),
+    compile: compileOnce,
+    render: (exposes) => {
+      form ??= choose();
+      return source(
+        exposes,
+        form === "entry" && !exposes.includes("expose create")
+          ? "written"
+          : form,
+      );
+    },
   };
 }
 
@@ -589,12 +664,7 @@ function wrapAttach(line: string): string {
 }
 
 /** The example's compiled root instrument, or the compiler's refusal. */
-function compiledAttachment(
-  source: string,
-  attachment: string,
-  toolchain: Toolchain,
-) {
-  const result = compile(source, toolchain);
+function compiledAttachment(result: CompileResult, attachment: string) {
   const document = result.artifacts?.document;
   if (!document)
     throw new Error(

@@ -205,10 +205,10 @@ test("unbound customer names point at subject identity", () => {
   refusal(
     `program deposits "Deposits"
 object rental "Rental" {
- attach deposit = money.hold { payer: customer, payee: owner }
+ attach deposit = money.hold { payer: renter, payee: owner }
 }`,
-    "`payer: customer` has no binding. An attached payer must resolve to a subject role or an eligible declared party.",
-    "Use `payer: actor` for the initiating customer or `payer: owner` for the object owner. Declare a business for a fixed company counterparty.",
+    "`payer: renter` has no binding. An attached payer must resolve to a subject role or an eligible declared party.",
+    "Use `payer: customer` for a customer, `payer: operator` for your company, or a declared business for a fixed company counterparty.",
   );
 });
 
@@ -216,17 +216,17 @@ object rental "Rental" {
 test("declared person refusal explains attachment identity and authority", () => {
   const { diagnostic } = refusal(
     `program deposits "Deposits"
-party customer: person
+party walkin: person
 object rental "Rental" {
- attach deposit = money.hold { payer: customer, payee: owner }
+ attach deposit = money.hold { payer: walkin, payee: owner }
 }`,
-    "`customer` is a declared person. Attachments resolve customer identity through `owner` or `actor`, rather than a fixed person declaration.",
+    "`walkin` is a declared person. Bind a customer with `customer`, rather than a fixed person declaration.",
     "Replace this binding with the appropriate subject role. Use declared businesses for fixed counterparties and permission-bearing staff roles for authorized actions.",
   );
   expect(diagnostic.code).toBe("party_kind_mismatch");
   expect(
     diagnostic.related?.some(
-      (location) => location.message === "Declared party customer",
+      (location) => location.message === "Declared party walkin",
     ),
   ).toBe(true);
 });

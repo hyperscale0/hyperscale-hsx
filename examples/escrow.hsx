@@ -10,7 +10,7 @@ object device "Laptop purchase" {
   fields { model: text, condition: text, serialNumber: text, price: money }
   columns: [model, condition, serialNumber, price]
   attach sale = escrow.hold {
-    payer: owner, payee: seller
+    payer: customer, payee: seller
     fee: { seller: 5%, tax: 15% }
     deliver_within: 7d, accept_within: 48h
     dispute: { refund_after: return_verified }

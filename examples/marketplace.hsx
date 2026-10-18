@@ -18,7 +18,7 @@ object project "Menu design project" {
     expose sell as close_sold_offer
   }
   attach order = marketplace.order {
-    listing: offer, buyer: owner, fulfiller: designer
+    listing: offer, buyer: customer, fulfiller: designer
     rename { price: price }
     expose create as request_design
     expose commit as place_order
@@ -27,7 +27,7 @@ object project "Menu design project" {
   }
   // Finishing the order does not release money. Run the payment actions too.
   attach payment = escrow.hold {
-    payer: owner, payee: designer
+    payer: customer, payee: designer
     fee: { seller: 10%, tax: 15% }
     deliver_within: 7d, accept_within: 3d
     dispute: { refund_after: return_verified }

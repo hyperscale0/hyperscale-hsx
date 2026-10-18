@@ -7,6 +7,7 @@ program neighbourhood_savings "Seattle shopkeepers circle"
 object group "Shopkeepers savings circle" {
   fields { groupName: text, purpose: text }
   columns: [groupName, purpose]
+  belongs_to: company
   attach circle = savings.circle {
     contribution: 500 SAR, members: 6, starts: 2027-01-01
     // At creation supply circleDates: the first of January through June 2027.
@@ -15,7 +16,7 @@ object group "Shopkeepers savings circle" {
     expose close as close_completed_circle
   }
   attach membership = savings.membership {
-    circle: circle, member: actor
+    circle: circle, member: customer
     // Assign a distinct seat from 1 to 6 to each member at creation.
     expose create as join_circle
     expose activate as confirm_membership_schedule

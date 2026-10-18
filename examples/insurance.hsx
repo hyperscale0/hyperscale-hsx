@@ -11,8 +11,8 @@ object device "Insured tablet" {
   fields { model: text, serialNumber: text, purchaseDate: date }
   columns: [model, serialNumber, purchaseDate, coverExpiresAt]
   attach purchase = money.transfer {
-    payer: owner, payee: operator, amount: 1725 SAR
-    economics pay { purpose: earning, sourceParty: owner }
+    payer: customer, payee: operator, amount: 1725 SAR
+    economics pay { purpose: earning, sourceParty: payer }
     expose create as create_purchase
     expose pay as pay_for_tablet
     expose cancel as cancel_unpaid_purchase
@@ -20,7 +20,7 @@ object device "Insured tablet" {
   // Bind the insurer's registered adapter before launch. fixture_bank
   // is only the sandbox adapter. Set the cover expiry to the policy end date.
   attach protection = insurance.cover {
-    holder: owner, broker: operator, adapter: "fixture_bank"
+    holder: customer, broker: operator, adapter: "fixture_bank"
     covers: purchase, premium: 115 SAR, commission: 10%, claim_limit: 1500 SAR
     rename { expiresAt: coverExpiresAt }
     expose create as request_cover

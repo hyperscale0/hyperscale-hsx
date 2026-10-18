@@ -5,13 +5,13 @@ object rental "Rental deposit" {
   fields { item: text, renter: text, price: money }
   columns: [item, renter, price]
   attach hire = rental.hire_charge {
-    renter: owner, security: security
+    renter: customer, security: security
     expose create as agree_hire
     expose fund as pay_hire
     expose release as complete_hire
   }
   attach security = rental.deposit {
-    renter: owner, hire: hire
+    renter: customer, hire: hire
     rename { price: price }
     expose create as agree_rental
     expose fund as pay_deposit
