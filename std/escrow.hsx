@@ -6,6 +6,9 @@ header escrow
 
 // Expose create, fund, deliver and accept for the purchase path. Create captures
 // subject.price; acceptance pays payee less the configured fee, not payer.
+// Accept takes an optional acceptanceReference and records it on the hold, so
+// confirming collection needs no input. A product that wants one requires it:
+// attach sale = escrow.hold { acceptance_reference: required, expose accept as confirm }
 // Expose dispute, verify_return and refund separately for the return path.
 // Payer disputes delivered goods; payee verifies return evidence from disputed.
 // Refunds return the held balance to the payer. A composition can supply funding
@@ -34,13 +37,13 @@ header escrow
 // transfer; accept expands the configured fee and tax into moves. Run hsx cost
 // on the composed program for instruction counts. The executor supplies prices.
 
-instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, deliver_within: duration = 14d, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }, funding: policy = { controllers: [], reference: "funds", blocking_states: [active] }, one_buyer: boolean = true) {
+instrument hold(payer: party = party(person), payee: party = programOperator, accept_within: duration = 48h, deliver_within: duration = 14d, fee: fee = { seller: 0%, tax: 0% }, dispute: policy = { refund_after: return_verified }, funding: policy = { controllers: [], reference: "funds", blocking_states: [active] }, one_buyer: boolean = true, acceptance_reference: enum(optional, required) = optional) {
   revisioned: true
   once_per_record: { applies: one_buyer, reopen_on: [cancelled, refunded] }
   summary: "Hold the subject price through delivery, acceptance and verified return."
   fields {
     payer: account of payer, payee: account of payee
-    held: account of self, fundedAt: date?, deliverBy: date?, deliveredAt: date?, blockingFunding: integer?
+    held: account of self, fundedAt: date?, deliverBy: date?, deliveredAt: date?, blockingFunding: integer?, acceptanceReference: text?
     price: money = subject.price
   }
   lifecycle { states: [pending, funded, delivered, disputed, return_verified, released, refunded, cancelled], initial: pending }
@@ -64,7 +67,8 @@ instrument hold(payer: party = party(person), payee: party = programOperator, ac
   }
   action accept { allowZero: true, requires self.price > "0";
     from: delivered, to: released, actor: { party: payer }
-    input { acceptanceReference: text }
+    input { when acceptance_reference is optional { acceptanceReference: text? }, when acceptance_reference is required { acceptanceReference: text } }
+    set: { acceptanceReference: { field: input.acceptanceReference } }
     deadline: { at: self.deliveredAt, offset: accept_within }
     moves self.price from self.held to payee fee fee economics { payee: { recipient: payee, company: { purpose: earning, sourceParty: payer }, participant: { purpose: pass_through, sourceParty: programOperator } }, fee: { purpose: earning, sourceParty: payer }, tax: { purpose: pass_through, sourceParty: programOperator } }
   }

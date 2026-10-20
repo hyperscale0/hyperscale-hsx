@@ -366,5 +366,5 @@ test("the std catalog compiles to the same UDL as before the actor rule", () => 
   const document = compile(catalogProgramSource).artifacts!.document;
   expect(
     createHash("sha256").update(JSON.stringify(document)).digest("hex"),
-  ).toBe("980552a6ded6f5ff7659fcf459edde0eff8271ad57bf6af168958ae9d33e4ce8");
+  ).toBe("5abcebf698189d68f23a27050656fcaf0248ae9b87fef68ff7c97e914d275d33");
 });

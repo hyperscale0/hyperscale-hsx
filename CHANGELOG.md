@@ -52,6 +52,10 @@ Changed:
 - `escrow.hold` runs once per record and takes `one_buyer: boolean = true`.
   A cancelled or refunded hold reopens the record. Programs that sell one
   record to many buyers bind `one_buyer: false`.
+- `escrow.hold` accept takes `acceptanceReference` as an optional input and
+  records it on the hold, so confirming collection needs no input. A product
+  that wants the reference binds `acceptance_reference: required`. Retained
+  Builds keep the required input they froze.
 - A program instrument with party parameters that leaves `actor` out gets it
   from the actor rule (`src/actors.ts`): follow actions stay `caller`, an
   unexposed `due` action with no input runs on the clock, the party whose money
