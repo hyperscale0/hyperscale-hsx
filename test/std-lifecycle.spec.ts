@@ -202,3 +202,38 @@ test("a captured card transaction can refund before authorization expiry", () =>
     },
   ]);
 });
+
+// Mutation: drop once_per_record from escrow.hold, ignore `applies`, or let
+// reopen_on name the initial state.
+test("an escrow hold runs once per record unless the program takes many buyers", async () => {
+  const { compile } = await import("../src/compile.ts");
+  const bikes = (terms: string) =>
+    compile(`program bikes "Kettle bikes"
+object bike "Bike sale" {
+ fields { make: text, price: money }
+ attach deal = escrow.hold { payer: customer, payee: customer, ${terms} expose create as start_escrow }
+}`);
+  const hold = (terms: string) =>
+    bikes(terms).artifacts!.document.instruments.find(
+      (item) => item.id === "bike_deal",
+    )!;
+  expect(hold("").oncePerRecord).toEqual({
+    reopenOn: ["cancelled", "refunded"],
+  });
+  expect(hold("one_buyer: false,").oncePerRecord).toBeUndefined();
+  const local = (reopen: string) =>
+    compile(`program shop "Shop"
+instrument sale(buyer: party) {
+  once_per_record: { applies: true, reopen_on: [${reopen}] }
+  fields { buyer: account of buyer }
+  lifecycle { states: [open, cancelled], initial: open }
+  action create { actor: { party: buyer } }
+  action cancel { from: open, to: cancelled, actor: { party: buyer } }
+}
+object item "Item" {
+ fields { name: text }
+ attach deal = sale { buyer: actor, expose create as buy }
+}`);
+  expect(local("cancelled").verdict).toBe("valid");
+  expect(local("open").verdict).toBe("invalid");
+});

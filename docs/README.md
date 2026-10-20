@@ -140,6 +140,14 @@ each `customer` on the record's `owner` or its `actor` by one rule:
    `entryActions`, or mark the object `belongs_to: company`. Other names, such
    as a lesson's `payer` and `student`, stay one customer.
 
+A create that a placed `customer` starts as `actor` joins the object's
+`entryActions`, listed or not. A program instrument's create names no actor:
+the actor rule gives it to the one party its money leaves, else to whoever
+binds `actor`. So in `instrument sale(buyer: party, seller: party)` bound
+`buyer: customer, seller: customer`, where only the buyer pays in, the buyer
+binds `actor`, the seller `owner`, and the buyer's create opens on the
+seller's record. An `owner` or `actor` written by hand opens nothing.
+
 An attachment binds at most two customers. An unbound party parameter whose
 default is `party(person)` is a customer too, unless a declared party or subject
 role shares its name and binds it. `customer` is a reserved party
@@ -467,9 +475,11 @@ when `create_order` exposes an attachment's create action with its buyer bound
 to `customer`, which places the buyer on `actor`. This admits active enrolled customers to that action. The default
 is closed. A retained buyer can read the record and run its buyer actions;
 the seller remains owner. Entry never grants access to an existing escrow.
-Without entry actions, the company runs a two-customer sale from its Product
-key: create the record with `onBehalfOf` naming the seller, then run the buyer's
-steps with `onBehalfOf` naming the buyer.
+An `escrow.hold` with `payer: customer, payee: customer` needs no list: the
+compiler adds the buyer's create. Without entry actions, the company runs a
+two-customer sale from its Product key: create the record with `onBehalfOf`
+naming the seller, then run the buyer's steps with `onBehalfOf` naming the
+buyer.
 
 The same rule admits the other std creates whose starting party can be a
 customer: `financing.limits` and `financing.installments` (borrower),
@@ -493,6 +503,23 @@ Create and approve the portfolio limit once per Product and the borrower limit
 once per borrower. Plans on later records resolve those shared references.
 Ordinary references remain on the current record; shared references must match
 the bound party accounts. The aggregate caps still apply across all plans.
+
+`escrow.hold` runs once per record, so a one-off sale takes one buyer. Once a
+payer creates a hold, no other customer lists or reads the record. A second
+create refuses whoever sends it, the live payer and the parties on earlier
+holds included, with `state_conflict` and reason `unique_claimed`. The owner
+and the parties on the record's holds still read it. A cancelled or refunded
+hold reopens the record to every enrolled customer, and a released hold keeps
+it sold. Bind `one_buyer: false` when each customer buys their own on one
+record, such as a shop's stock item sold many times.
+
+A program instrument declares the same rule with
+`once_per_record: { applies: true, reopen_on: [cancelled] }`. `reopen_on`
+lists the states that free the record and never the initial state, since a
+started agreement holds it. `applies` takes a boolean tunable, as escrow's
+`one_buyer` does, so an attachment can switch the rule off. A unique key cannot
+carry this rule: its receipt never releases, so a cancelled sale would stay
+closed.
 
 `programTax` transfers use an operator-owned cash account keyed `programTax`.
 The account primitive creates it automatically and shares it across the Product.

@@ -28,6 +28,13 @@ import { parseHeader } from "./header-source.ts";
  *
  * In rules 1 and 2 an `owner` or `actor` written by hand must agree. A lone one
  * written by hand stays as written.
+ *
+ * A customer placed on `actor` who runs the attachment's exposed create starts
+ * an agreement on a record they do not own, so that create is an entry action
+ * whether or not the author listed it. A program instrument's create names no
+ * actor, so the actor rule (actors.ts) says who runs it: the one party its
+ * money leaves, else whoever binds `actor`. Rules 1 and 2 read that party
+ * where a header's create names its own.
  */
 export const customerBinding = "customer";
 
@@ -82,34 +89,68 @@ function creator(template: InstrumentDecl) {
   return named(row(row(create, "actor"), "party"));
 }
 
+/** Adds to `found` each of `keys` that a move in `expr` takes money out of
+ * (`from self.payer` names the payer's account field). */
+function spentIn(
+  expr: Expr | undefined,
+  keys: ReadonlySet<string>,
+  found: Set<string>,
+) {
+  if (!expr) return;
+  if (expr.kind === "list")
+    expr.items.forEach((item) => spentIn(item, keys, found));
+  if (expr.kind !== "block") return;
+  for (const entry of expr.entries) {
+    if (entry.key === "moves") {
+      const items =
+        entry.value.kind === "list" ? entry.value.items : [entry.value];
+      for (const item of items) {
+        const from = named(row(item, "from"))?.replace(/^self\./, "");
+        if (from && keys.has(from)) found.add(from);
+      }
+    } else spentIn(entry.value, keys, found);
+  }
+}
+
 /** Party parameters whose own account some move takes money out of, in the
  * instrument's actions or its records' actions (`from self.payer` there). */
 function payers(template: InstrumentDecl, keys: ReadonlySet<string>) {
   const found = new Set<string>();
-  const walk = (expr: Expr | undefined) => {
-    if (!expr) return;
-    if (expr.kind === "list") expr.items.forEach(walk);
-    if (expr.kind !== "block") return;
-    for (const entry of expr.entries) {
-      if (entry.key === "moves") {
-        const items =
-          entry.value.kind === "list" ? entry.value.items : [entry.value];
-        for (const item of items) {
-          const from = named(row(item, "from"))?.replace(/^self\./, "");
-          if (from && keys.has(from)) found.add(from);
-        }
-      } else walk(entry.value);
-    }
-  };
   const actions = (entries: readonly Entry[]) => {
     for (const entry of entries)
-      if (entry.key.startsWith("action ")) walk(entry.value);
+      if (entry.key.startsWith("action ")) spentIn(entry.value, keys, found);
       else if (entry.key === "records" && entry.value.kind === "block")
         for (const record of entry.value.entries)
           if (record.value.kind === "block") actions(record.value.entries);
   };
   actions(template.body.entries);
   return found;
+}
+
+/**
+ * Who runs the template's create. A header's create names its actor. A
+ * program instrument's create names none, and the actor rule (actors.ts rules
+ * 4 to 6) gives it to the one party its money leaves, else to the company when
+ * it is due, else to whoever binds `actor`. Undefined is anyone else: the
+ * company, or several spenders the compiler refuses.
+ */
+function createRunner(
+  template: InstrumentDecl,
+): { party: string } | "actor" | undefined {
+  const named = creator(template);
+  if (named) return { party: named };
+  const create = template.body.entries.find(
+    (entry) => entry.key === "action create",
+  )?.value;
+  if (row(create, "actor")) return undefined;
+  const spent = new Set<string>();
+  spentIn(
+    create,
+    new Set(template.parameters.filter(isPartyParameter).map((p) => p.key)),
+    spent,
+  );
+  if (spent.size === 1) return { party: [...spent][0]! };
+  return spent.size || row(create, "due") ? undefined : "actor";
 }
 
 const sidesCache = new WeakMap<ReadonlyMap<string, string>, Set<string>>();
@@ -155,7 +196,12 @@ export function placeCustomers(
   std: ReadonlyMap<string, string>,
   /** A key an unbound parameter binds by name, a declared party or a subject role. */
   byName: (key: string) => boolean,
-): { rows: Map<CustomerSite, Entry[]>; diagnostics: Diagnostic[] } {
+): {
+  rows: Map<CustomerSite, Entry[]>;
+  /** Exposed creates a placed customer starts as actor, in site order. */
+  entryActions: string[];
+  diagnostics: Diagnostic[];
+} {
   const diagnostics: Diagnostic[] = [];
   const placed = new Map<CustomerSite, Customer[]>();
   for (const site of sites) {
@@ -190,24 +236,34 @@ export function placeCustomers(
       });
       continue;
     }
-    const starts = creator(site.template);
     const create = site.exposed.get("create");
     const entry = create !== undefined && entryActions.has(create);
     const keys = new Set(customers.map((item) => item.key));
     const paying = [...payers(site.template, keys)];
+    const runner = createRunner(site.template);
+    const starts = typeof runner === "object" ? runner.party : undefined;
     const starter =
       starts && keys.has(starts)
         ? starts
         : customers.length === 2 && paying.length === 1
           ? paying[0]
           : undefined;
+    // A program instrument's create that takes no customer's money runs for
+    // whoever binds actor, so its entry action places its one customer, or of
+    // two the one who pays in, on actor.
+    const enters =
+      runner === "actor"
+        ? customers.length === 1
+          ? customers[0]!.key
+          : starter
+        : starts;
     for (const customer of customers) {
       if (entry) {
-        customer.expected = customer.key === starts ? "actor" : "owner";
+        customer.expected = customer.key === enters ? "actor" : "owner";
         customer.reason =
-          customer.key === starts
+          customer.key === enters
             ? `Entry action ${create} lets ${customer.key} start ${site.name} on a record they do not own`
-            : `Entry action ${create} starts ${site.name} for ${starts ?? "another customer"}`;
+            : `Entry action ${create} starts ${site.name} for ${enters ?? "another customer"}`;
       } else if (customers.length === 2) {
         if (!starter) {
           const other = customers.find((item) => item !== customer)!;
@@ -273,8 +329,22 @@ export function placeCustomers(
     });
   }
   const rows = new Map<CustomerSite, Entry[]>();
+  const entries: string[] = [];
   for (const [site, customers] of placed) {
     const out = [...site.rows];
+    const create = site.exposed.get("create");
+    const runner = createRunner(site.template);
+    if (
+      create &&
+      customers.some(
+        (customer) =>
+          !customer.written &&
+          customer.expected === "actor" &&
+          (runner === "actor" ||
+            (typeof runner === "object" && customer.key === runner.party)),
+      )
+    )
+      entries.push(create);
     for (const customer of customers) {
       const span = customer.row?.value.span ?? site.entry.span;
       if (customer.written) {
@@ -300,5 +370,5 @@ export function placeCustomers(
     }
     rows.set(site, out);
   }
-  return { rows, diagnostics };
+  return { rows, entryActions: entries, diagnostics };
 }

@@ -3444,6 +3444,7 @@ export function compile(
             "reports",
             "revisioned",
             "scope",
+            "once_per_record",
           ].includes(key) &&
           !key.startsWith("action ")
         )
@@ -4297,6 +4298,43 @@ export function compile(
           (inst as unknown as Record<string, unknown>)[key] = data(
             body.get(key)!,
           );
+      // A one-off sale takes one live agreement per record. `applies` takes a
+      // boolean tunable, so a repeatable use of the same header opts out.
+      if (body.has("once_per_record")) {
+        const clause = asBlock(body.get("once_per_record"));
+        const given = entries(clause);
+        for (const key of given.keys())
+          if (key !== "applies" && key !== "reopen_on")
+            fail(
+              clause,
+              `unknown once_per_record key ${key}`,
+              "write once_per_record: { applies: true, reopen_on: [states] }",
+            );
+        const applies = given.has("applies")
+          ? resolve(given.get("applies")!)
+          : undefined;
+        if (
+          applies &&
+          (applies.kind !== "name" ||
+            !["true", "false"].includes(applies.value))
+        )
+          fail(applies, "applies needs true or false", "write applies: true");
+        const reopenOn = given.has("reopen_on")
+          ? data(given.get("reopen_on")!)
+          : undefined;
+        if (
+          !Array.isArray(reopenOn) ||
+          !reopenOn.length ||
+          reopenOn.some((state) => typeof state !== "string")
+        )
+          fail(
+            clause,
+            "once_per_record needs the states that reopen the record",
+            "write reopen_on: [cancelled, refunded]",
+          );
+        if (!applies || applies.value === "true")
+          inst.oncePerRecord = { reopenOn: reopenOn as string[] };
+      }
       let usesTax = false;
       for (const action of Object.values(inst.actions)) {
         for (const move of action.moves) {
@@ -4819,6 +4857,12 @@ export function compile(
           );
         entryActions = entryExpr.items.map(text);
       }
+      // The binding rule's placed starters enter too (bindings.ts).
+      const placedEntries = placement.entryActions.filter(
+        (name) => !entryActions?.includes(name),
+      );
+      if (placedEntries.length)
+        entryActions = [...(entryActions ?? []), ...placedEntries];
       document.objects.push({
         id: decl.name,
         title: decl.title,

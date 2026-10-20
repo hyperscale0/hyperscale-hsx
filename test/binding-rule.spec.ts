@@ -80,6 +80,102 @@ test("the bike sale binds the buyer as actor and the seller as owner", () => {
   expect(parties(bike("payer: actor, payee: owner")).sale).toEqual(expected);
 });
 
+// The bike build Architect made on r372 listed no entry action, so the buyer
+// its create runs for could neither read nor start the seller's sale.
+// Mutation: drop the placed-starter push in placeCustomers.
+test("a placed starter's create is an entry action, a hand-written actor's is not", () => {
+  const entries = (source: string) =>
+    compile(source).artifacts!.document.objects[0]!.entryActions;
+  expect(entries(bike("payer: customer, payee: customer"))).toEqual([
+    "start_sale",
+  ]);
+  expect(
+    entries(
+      bike(
+        "payer: customer, payee: customer",
+        "\n  entryActions: [start_sale]",
+      ),
+    ),
+  ).toEqual(["start_sale"]);
+  expect(entries(bike("payer: actor, payee: owner"))).toBeUndefined();
+  // A company's car with no entry list: the renter books it as actor.
+  expect(
+    entries(
+      fleet("  belongs_to: company\n").replace(
+        "  entryActions: [book_car]\n",
+        "",
+      ),
+    ),
+  ).toEqual(["book_car"]);
+});
+
+// The r373 stage build: Architect hand-wrote the escrow as a program
+// instrument whose create names no actor. The rule placed the paying buyer on
+// actor and the actor rule gave it the create, yet entryActions stayed empty,
+// and listing the create by hand put both customers on owner (HSX1001).
+// Mutation: read only a header's written create actor in placeCustomers.
+test("a program instrument's paying buyer opens its create on the seller's record", () => {
+  const sale = (
+    create: string,
+    bindings: string,
+    extra = "",
+  ) => `program kettle "Kettle & Co"
+instrument bike_escrow(buyer: party, seller: party) {
+  fields { held: account of self, price: money = subject.price, fee: money = rate(self.price, 5%) }
+  lifecycle { states: [pending, funded, collected], initial: pending }
+  ${create}
+  action collect {
+    from: funded, to: collected
+    moves self.fee from self.held to programOperator
+    moves self.held.balance from self.held to seller
+  }
+}
+object bike_listing "Bike listing" {
+  fields { title: text, price: money }${extra}
+  attach escrow = bike_escrow {
+    ${bindings}
+    rename { price: price }
+    expose create as pay_for_bike
+    expose collect as confirm_collection
+  }
+}`;
+  const paysOnCreate = `action create {
+    subject { price: money }
+    moves self.price from buyer to self.held
+  }
+  action ready { from: pending, to: funded }`;
+  const paysLater = `action create { subject { price: money } }
+  action pay { from: pending, to: funded, moves self.price from buyer to self.held }`;
+  const built = (source: string) => {
+    const result = compile(source);
+    if (!result.artifacts) throw new Error(JSON.stringify(result.diagnostics));
+    const object = result.artifacts.document.objects[0]!;
+    return {
+      entryActions: object.entryActions,
+      parties: object.attachments[0]!.parties,
+      actor: result.artifacts.document.instruments[0]!.actions.create!.actor,
+    };
+  };
+  const open = {
+    entryActions: ["pay_for_bike"],
+    parties: {
+      buyer: { role: "actor" as const },
+      seller: { role: "owner" as const },
+    },
+    actor: { party: "actor" },
+  };
+  const customers = "buyer: customer, seller: customer";
+  expect(built(sale(paysOnCreate, customers))).toEqual(open);
+  expect(built(sale(paysLater, customers))).toEqual(open);
+  expect(
+    built(sale(paysOnCreate, customers, "\n  entryActions: [pay_for_bike]")),
+  ).toEqual(open);
+  // A role written by hand stays closed.
+  expect(
+    built(sale(paysOnCreate, "buyer: actor, seller: owner")).entryActions,
+  ).toBeUndefined();
+});
+
 // Mutation: skip the agreement check on hand-written roles.
 test("a hand-written binding that breaks the rule names both sides", () => {
   expect(codes(bike("payer: owner, payee: actor"))).toEqual([
